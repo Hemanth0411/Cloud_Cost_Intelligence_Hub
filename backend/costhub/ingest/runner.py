@@ -124,8 +124,14 @@ def _ingest_one(
 ) -> RunResult:
     try:
         source = source_factory(conn)
-    except CredentialError as exc:
+    except (CredentialError, ExpectedIngestError) as exc:
+        # A missing adapter or an unusable credential is configuration.
+        # Report it and carry on to the next connection.
         log.error("%s: %s", conn.display_name, exc)
+        # Stamp the connection too, even though no run row exists yet:
+        # otherwise the connections screen shows "never attempted" for
+        # something that just failed, which is worse than saying nothing.
+        store.record_ingest(connection_id=conn.id, status="failed")
         return RunResult(conn.display_name, conn.account_id, "failed", error=str(exc))
 
     source_name = getattr(source, "name", "unknown")

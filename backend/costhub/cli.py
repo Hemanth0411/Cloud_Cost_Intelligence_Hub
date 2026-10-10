@@ -20,8 +20,8 @@ from costhub.connections import store
 from costhub.connections.credentials import Connection
 from costhub.db import fetch_all
 from costhub.ingest import runner
-from costhub.ingest.cost_explorer import CostExplorerSource, default_window
-from costhub.ingest.dev_seed import source_factory as dev_seed_factory
+from costhub.ingest.cost_explorer import default_window
+from costhub.ingest.sources import dev_seed_for, source_for
 from costhub.ingest.dev_seed import planted_summary
 from costhub.alerts import runner as alert_runner
 from costhub.anomaly import runner as anomaly_runner
@@ -103,7 +103,7 @@ def cmd_grant(args: argparse.Namespace) -> int:
 
 
 def _run_ingest(start: date, end: date, dev_seed: bool) -> int:
-    factory = dev_seed_factory if dev_seed else (lambda c: CostExplorerSource(c))
+    factory = dev_seed_for if dev_seed else source_for
     results = runner.ingest(
         source_factory=factory, start=start, end=end, triggered_by=_actor()
     )

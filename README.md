@@ -234,9 +234,10 @@ hosted path.
 | `cloud_connections` (004), audit append-only (005) | written |
 | ingest (`cost_explorer`, `dev_seed`, runner, CLI) | written |
 | API — 20 endpoints, Swagger at `/docs` | written |
-| `azure_cm` adapter | **pending** |
-| anomaly, alerts evaluation | **pending** |
-| Terraform | **pending** |
+| `azure_cm` adapter | written, unit-tested, **unverified live** |
+| anomaly detection (MAD, shape-classified) | written |
+| alerts (4 rule types, FR-34) | written |
+| Terraform (39 resources) + `do.sh` | written, plan clean |
 | Frontend + showcase fixtures | **pending** (teammate) |
 
 ### Build order

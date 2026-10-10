@@ -42,13 +42,14 @@ def handler_ingest(event, context):
     """
     from costhub.config import settings
     from costhub.ingest import runner
-    from costhub.ingest.cost_explorer import CostExplorerSource, default_window
+    from costhub.ingest.cost_explorer import default_window
+    from costhub.ingest.sources import source_for
 
     days = int((event or {}).get("days") or os.environ.get("INGEST_DAYS", "7"))
     start, end = default_window(days)
 
     results = runner.ingest(
-        source_factory=lambda c: CostExplorerSource(c),
+        source_factory=source_for,
         start=start,
         end=end,
         triggered_by=settings().system_actor,
