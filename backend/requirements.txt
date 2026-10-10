@@ -1,0 +1,7 @@
+psycopg[binary,pool]==3.2.3
+pydantic==2.9.2
+pydantic-settings==2.6.1
+fastapi==0.115.5
+uvicorn==0.32.1
+boto3==1.35.68
+python-dateutil==2.9.0.post0

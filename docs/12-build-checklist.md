@@ -1,0 +1,236 @@
+# Build checklist
+
+Everything to be built, by area. `[x]` = done, `[ ]` = pending.
+Size: **S** ≤2h, **M** ≤half a day, **L** ≤1 day.
+
+Requirement ids refer to [01-requirements.md](01-requirements.md).
+
+---
+
+## 0. Prerequisites (external — start first, they have lead times)
+
+| | Item | Owner | Blocks |
+|---|---|---|---|
+| [ ] | Postgres for dev — Neon project or local install | you | **everything** |
+| [ ] | `git init` + remote (Amplify builds from a repo) | you | frontend deploy |
+| [ ] | Decide the SES sender identity (domain you own, ideally) | you | login |
+| [ ] | Verify SES sender + each recipient | you | login |
+| [ ] | Personal account: enable Cost Explorer | you (root) | real data |
+| [ ] | Personal account: activate cost allocation tags | you (root) | **not retroactive** |
+| [ ] | Stemline: root enables billing-info IAM access | their root | stemline data |
+| [ ] | Stemline: `CloudMindsCostReader` role created | their IAM admin | stemline data |
+| [ ] | Azure subscription + Entra app registration | TBD | Azure data only |
+
+None of these block starting the backend — `dev_seed` covers development.
+
+---
+
+## 1. Database and schema
+
+| | Item | Size | Req |
+|---|---|---|---|
+| [x] | `001_core.sql` — users, identities, access_grants, audit_log | — | FR-4, FR-5 |
+| [x] | `002_facts.sql` — ingest_runs, dims, fact_cost_daily | — | FR-14 |
+| [x] | `003_alerts_anomaly.sql` — rules, events, findings | — | FR-31 |
+| [ ] | `004_connections.sql` — `cloud_connections` | S | FR-11–13 |
+| [ ] | `005_audit_grants.sql` — `GRANT INSERT, SELECT` only on `audit_log` | S | NFR-4, TODO-10 |
+| [x] | `migrate.py` runner | — | — |
+| [ ] | Run migrations against a real database | S | — |
+
+---
+
+## 2. Backend — core
+
+| | Item | Size | Req |
+|---|---|---|---|
+| [x] | `config.py` — settings, `CostAccount` | — | — |
+| [x] | `db.py` — transactional connect, fetch helpers | — | — |
+| [x] | `audit.py` — append-only writer, shares caller's transaction | — | FR-36, FR-37 |
+| [x] | `query/scoped.py` — the grant predicate, series/breakdown/compare | — | **NFR-1**, FR-18–22 |
+| [x] | `rbac/admin.py` — invite, grant, revoke, list | — | FR-5–7, FR-10 |
+| [ ] | `rbac/resolve.py` — effective grants for a user, now | S | FR-34 |
+| [ ] | **Tests for `scoped.py`** — all 10 cases, fail-closed first | M | FR-8 |
+
+The test suite is not optional padding. Every security claim in
+[07-security-rbac.md](07-security-rbac.md) is only true if those ten tests
+pass — in particular `test_no_grants_sees_nothing`.
+
+---
+
+## 3. Backend — connections and ingest
+
+| | Item | Size | Req |
+|---|---|---|---|
+| [ ] | `connections/store.py` — CRUD over `cloud_connections` | S | FR-11–13 |
+| [ ] | `connections/credentials.py` — `AssumeRole` / `self` / profile → boto3 session | M | FR-12 |
+| [ ] | `ingest/dev_seed.py` — generated rows, planted step/spike/creep | M | — |
+| [ ] | `ingest/cost_explorer.py` — CE adapter, DAILY, grouped by SERVICE | M | FR-14 |
+| [ ] | `ingest/runner.py` — per-connection loop, `ingest_runs` lineage, idempotent upsert | M | FR-15–17 |
+| [ ] | `ingest/backfill.py` — 14 months, chunked by month | S | FR-14 |
+| [ ] | `ingest/azure_cm.py` — Azure Cost Management Query API | L | FR-14 |
+
+Notes: CE is **us-east-1 only**; `GroupBy` takes at most 2 dimensions; the
+backfill is ~14 calls per account (~$0.28 total). Azure's response is
+parallel `columns`/`rows` arrays mapped by index — write it against a saved
+sample response, since it cannot be verified without a subscription.
+
+---
+
+## 4. Backend — anomaly and alerts
+
+| | Item | Size | Req |
+|---|---|---|---|
+| [ ] | `anomaly/ports.py` — `Detector` protocol, `Finding` | S | — |
+| [ ] | `anomaly/mad.py` — rolling median + MAD, step/spike/creep classifier | M | FR-27, FR-30 |
+| [ ] | `anomaly/runner.py` — per account × service, skip last 1–2 days | M | FR-26, FR-28 |
+| [ ] | `alerts/ports.py` — `Notifier` protocol | S | — |
+| [ ] | `alerts/evaluate.py` — threshold, forecast, digest, anomaly | M | FR-31, FR-32 |
+| [ ] | `alerts/inapp.py` — writes `alert_events` | S | FR-33 |
+| [ ] | `alerts/ses.py` — email via SES | S | FR-33 |
+| [ ] | **Grant re-check at send time** | S | **FR-34** |
+
+FR-34 is one call to `rbac.resolve` and is easy to forget. A rule can outlive
+the grant that justified it; without the re-check you email someone about an
+account they can no longer open.
+
+---
+
+## 5. Backend — API
+
+| | Item | Size | Req |
+|---|---|---|---|
+| [ ] | `api/deps.py` — **verify JWT signature** against JWKS → `Principal` | M | **TODO-4** |
+| [ ] | `api/routes/cost.py` — series, breakdown, compare | M | FR-18–22 |
+| [ ] | `api/routes/meta.py` — scoped accounts and services | S | FR-9, FR-20 |
+| [ ] | `api/routes/anomalies.py` — list, acknowledge | S | FR-29 |
+| [ ] | `api/routes/alerts.py` — rule CRUD, feed | M | FR-31–35 |
+| [ ] | `api/routes/admin.py` — users, grants, connections, audit | M | FR-1, FR-5, FR-39 |
+| [ ] | Response envelope: `as_of`, `metric`, `currency`, `partial_period` | S | FR-24, FR-25 |
+| [ ] | `cli.py` — `bootstrap-admin`, `add-connection`, `backfill` | S | — |
+
+`deps.py` is the one to get right: verifying issuer/audience/expiry but
+**not the signature** is the classic failure, and it is an open finding in
+the DFIQ RBAC audit.
+
+---
+
+## 6. Frontend
+
+| | Item | Size | Req |
+|---|---|---|---|
+| [ ] | Project scaffold (Vite + React + TS + Tailwind + shadcn) | S | — |
+| [ ] | Cognito auth — Managed Login, email OTP, no register/forgot screens | M | FR-1–3 |
+| [ ] | API client + TanStack Query setup | S | — |
+| [ ] | `FilterBar` — cascading, **options from `/meta/*`** | M | **FR-9**, FR-20 |
+| [ ] | `TimeGrainToggle` | S | FR-18 |
+| [ ] | `CostChart` (Recharts time series) | M | FR-18 |
+| [ ] | `BreakdownChart` | S | FR-19 |
+| [ ] | `ComparisonTable` — Δ absolute **and** percent | M | FR-21, FR-22 |
+| [ ] | `KpiTile` | S | — |
+| [ ] | `PartialPeriodBadge` | S | FR-24 |
+| [ ] | `AsOfLabel` | S | FR-25, NFR-10 |
+| [ ] | `EmptyState` — "no accounts shared with you yet" | S | **FR-8** |
+| [ ] | `AnomalyCard` + acknowledge | M | FR-29, FR-30 |
+| [ ] | `AlertRuleForm` + `AlertFeed` | L | FR-31–33 |
+| [ ] | Admin: Users, Grants, Connections, Audit | L | FR-1, FR-5, FR-39 |
+| [ ] | `ConnectionForm` — role ARN + external id, **no secret fields** | S | FR-12 |
+| [ ] | Showcase fixtures + toggle + banner, default **off** | M | FR-40–45 |
+
+`FilterBar` and `EmptyState` are the demo's proof of RBAC — a restricted
+user's dropdown containing only their accounts shows the access control
+working in about fifteen seconds.
+
+---
+
+## 7. Infrastructure (Terraform)
+
+| | Item | Size |
+|---|---|---|
+| [ ] | `main.tf` — `locals.env = terraform.workspace`, workspace guard | S |
+| [ ] | `provider default_tags` — Project / Environment / ManagedBy | S |
+| [ ] | `env/dev.tfvars`, `env/staging.tfvars`, `env/main.tfvars` | S |
+| [ ] | `variables.tf`, `outputs.tf` | S |
+| [ ] | `iam.tf` — Lambda roles under path `/cloudminds/` | M |
+| [ ] | `database.tf` — RDS, SG, parameter group (`rds.force_ssl=1`, encrypted) | M |
+| [ ] | `lambda.tf` — 5 functions, zip packaging, Function URL | L |
+| [ ] | `schedule.tf` — EventBridge rules | S |
+| [ ] | `cognito.tf` — pool (Essentials), Managed Login, pre-signup Lambda, SES sender | L |
+| [ ] | `amplify.tf` — app, branch, **basic auth** | M |
+| [ ] | `messaging.tf` — SNS, SES identity | S |
+| [ ] | `secrets.tf` — DB password, `recovery_window_in_days = 0` | S |
+| [ ] | `logs.tf` — **explicit** log groups, 7-day retention | S |
+| [ ] | Teardown flags on every resource | S |
+| [ ] | `terraform destroy` rehearsed | S |
+
+Teardown flags: `force_destroy`, `skip_final_snapshot`,
+`deletion_protection = false`, `recovery_window_in_days = 0`,
+`deletion_protection = "INACTIVE"` on Cognito. Without them destroy fails
+halfway (NFR-14).
+
+---
+
+## 8. Configuration and operations
+
+| | Item | Size |
+|---|---|---|
+| [ ] | `Makefile` — `up`, `teardown`, `restore`, `export-data`, `sweep`, `outputs`; `ENV` required, **no default** | M |
+| [ ] | `make teardown` — backup → **verify non-empty** → destroy → tag sweep | M |
+| [ ] | Backup guard: abort if the dump contains no `users` rows | S |
+| [ ] | `env/<env>.tfvars` filled in per environment | S |
+| [ ] | `frontend/.env.<env>` generated from `terraform output` | S |
+| [ ] | Budget alerts at 50% / 80% of credits | S |
+| [ ] | Credit-exhaustion alarm (Free plan **suspends**, not bills) | S |
+| [ ] | Ingest-failure alert | S |
+| [ ] | `make teardown ENV=dev` rehearsed, sweep returns empty | S |
+
+---
+
+## 9. Demo readiness
+
+| | Item |
+|---|---|
+| [ ] | Backfill complete; `ingest_runs` = `success` for every connection |
+| [ ] | Superadmin sees both accounts |
+| [ ] | Restricted analyst sees one account, two services |
+| [ ] | No-grant user sees the empty state — not an error, not everything |
+| [ ] | Account-vs-account comparison on **real** data |
+| [ ] | Anomaly detected, classified, with baseline vs observed |
+| [ ] | Alert fires into the in-app feed |
+| [ ] | Revoking a grant changes the view on refresh |
+| [ ] | Audit log shows all of the above |
+| [ ] | **A test OTP received in a real `@chryselys.com` inbox** |
+| [ ] | Amplify basic auth set, URL shared |
+| [ ] | Showcase toggle works and is clearly labelled |
+| [ ] | `terraform destroy` rehearsed |
+
+---
+
+## Counts
+
+| Area | Items | Done |
+|---|---|---|
+| Prerequisites | 9 | 0 |
+| Database | 7 | 4 |
+| Backend core | 7 | 5 |
+| Ingest | 7 | 0 |
+| Anomaly + alerts | 8 | 0 |
+| API | 8 | 0 |
+| Frontend | 17 | 0 |
+| Terraform | 12 | 0 |
+| Config + ops | 6 | 0 |
+| Demo readiness | 13 | 0 |
+| **Total** | **94** | **9** |
+
+Rough effort: backend ~5–6 days, frontend ~4–5 days (parallel), Terraform
+~1 day. Inside a 10-day window with two people — not loose.
+
+## Critical path
+
+```
+Postgres → 004 + tests → connections → cost_explorer → runner →
+backfill → API → [real data on screen] → anomaly → alerts → Terraform
+```
+
+Frontend runs in parallel from day one against the fixed API contract in
+[06-frontend.md](06-frontend.md). Azure sits off the critical path — build it
+once the AWS path works, so the access request is concrete.
