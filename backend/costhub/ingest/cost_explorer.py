@@ -21,6 +21,7 @@ from typing import Iterator
 from botocore.exceptions import ClientError
 
 from costhub.connections.credentials import Connection, aws_session
+from costhub.ingest.errors import AccessNotGranted
 from costhub.ingest.ports import CostRow
 
 CE_REGION = "us-east-1"
@@ -28,7 +29,7 @@ METRICS = ["UnblendedCost", "AmortizedCost"]
 MAX_MONTHS_PER_CALL = 1
 
 
-class CostExplorerDenied(Exception):
+class CostExplorerDenied(AccessNotGranted):
     """Raised when the account has not granted cost access.
 
     Distinct from a transport failure: this one is actionable (enable
