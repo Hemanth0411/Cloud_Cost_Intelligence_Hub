@@ -124,7 +124,7 @@ def make_user(exec_sql):
 def make_grant(exec_sql):
     def _make(
         user_id: str,
-        account_id: str,
+        account_id: str = "111111111111",
         service_name: str | None = None,
         *,
         provider: str = "aws",

@@ -23,6 +23,7 @@ from costhub.ingest import runner
 from costhub.ingest.cost_explorer import CostExplorerSource, default_window
 from costhub.ingest.dev_seed import source_factory as dev_seed_factory
 from costhub.ingest.dev_seed import planted_summary
+from costhub.alerts import runner as alert_runner
 from costhub.anomaly import runner as anomaly_runner
 from costhub.rbac import admin
 
@@ -156,6 +157,30 @@ def cmd_detect(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_alerts(args: argparse.Namespace) -> int:
+    result = alert_runner.run()
+    print(result)
+    for line in result.details:
+        print(f"  {line}")
+    if args.feed:
+        rows = fetch_all(
+            """
+            SELECT r.name, e.fired_at, e.observed_value, e.status,
+                   e.delivered_at, e.delivery_error
+            FROM alert_events e JOIN alert_rules r ON r.id = e.rule_id
+            ORDER BY e.fired_at DESC LIMIT 10
+            """
+        )
+        print()
+        print("  feed:")
+        for r in rows:
+            mark = "sent" if r["delivered_at"] else "HELD"
+            val = f"${r['observed_value']:,.2f}" if r["observed_value"] is not None else "-"
+            note = f"  {r['delivery_error'][:70]}" if r["delivery_error"] else ""
+            print(f"    {r['fired_at']:%m-%d %H:%M} {mark} {r['name']:<22} {val:>12}{note}")
+    return 0
+
+
 def cmd_status(_: argparse.Namespace) -> int:
     rows = fetch_all(
         """
@@ -239,6 +264,10 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--exclude-recent", type=int, default=2)
     a.add_argument("--threshold", type=float, default=3.5)
     a.set_defaults(fn=cmd_detect)
+
+    a = sub.add_parser("alerts")
+    a.add_argument("--feed", action="store_true", help="show recent events")
+    a.set_defaults(fn=cmd_alerts)
 
     sub.add_parser("status").set_defaults(fn=cmd_status)
     return p

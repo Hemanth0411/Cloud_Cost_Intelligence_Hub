@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     # Comma-separated allowed origins for the browser app.
     cors_origins: str = ""
 
+    ses_sender_email: str = ""
+
     def accounts(self) -> list[CostAccount]:
         return [CostAccount(**a) for a in json.loads(self.cost_accounts)]
 
