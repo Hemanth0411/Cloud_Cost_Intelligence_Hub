@@ -5,3 +5,6 @@ fastapi==0.115.5
 uvicorn==0.32.1
 boto3==1.35.68
 python-dateutil==2.9.0.post0
+pyjwt[crypto]==2.10.1
+httpx==0.28.1
+email-validator==2.2.0

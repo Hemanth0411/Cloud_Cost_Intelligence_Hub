@@ -34,6 +34,15 @@ class Settings(BaseSettings):
 
     aws_region: str = "us-east-1"
     currency_fallback: str = "USD"
+    allowed_email_domain: str = "chryselys.com"
+
+    # Auth. Empty pool id + app_env=dev enables the X-Dev-User header
+    # so the frontend can be built before Cognito exists.
+    cognito_user_pool_id: str = ""
+    cognito_client_id: str = ""
+
+    # Comma-separated allowed origins for the browser app.
+    cors_origins: str = ""
 
     def accounts(self) -> list[CostAccount]:
         return [CostAccount(**a) for a in json.loads(self.cost_accounts)]

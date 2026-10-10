@@ -57,6 +57,7 @@ See [`docs/01-requirements.md`](docs/01-requirements.md) for scope and
 | [11-configuration.md](docs/11-configuration.md) | Every config value, email setup, account-migration runbook |
 | [12-build-checklist.md](docs/12-build-checklist.md) | Everything to be built, by area |
 | [13-environments-and-teardown.md](docs/13-environments-and-teardown.md) | The `ENV` switch, and one-command teardown |
+| [14-frontend-build-spec.md](docs/14-frontend-build-spec.md) | **Buildable frontend spec: 9 pages, data per page, states** |
 
 ---
 
@@ -230,9 +231,11 @@ hosted path.
 | Schema (migrations 001–003) | written |
 | `query/scoped.py` | written |
 | `rbac/admin.py`, `audit.py`, `db.py`, `config.py` | written |
-| `cloud_connections` table (004) | **pending** |
-| ingest adapters (`cost_explorer`, `azure_cm`, `dev_seed`) | **pending** |
-| anomaly, alerts, api | **pending** |
+| `cloud_connections` (004), audit append-only (005) | written |
+| ingest (`cost_explorer`, `dev_seed`, runner, CLI) | written |
+| API — 20 endpoints, Swagger at `/docs` | written |
+| `azure_cm` adapter | **pending** |
+| anomaly, alerts evaluation | **pending** |
 | Terraform | **pending** |
 | Frontend + showcase fixtures | **pending** (teammate) |
 
