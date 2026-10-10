@@ -146,9 +146,9 @@ single most common reason teardown fails.
 explicit data step:
 
 ```bash
-make export-data   # pg_dump users, identities, access_grants,
+./do.sh export-data <env>   # pg_dump users, identities, access_grants,
                    # cloud_connections, alert_rules, audit_log
-make import-data   # restore into the new account's fresh database
+./do.sh restore   # restore into the new account's fresh database
 ```
 
 Facts are **not** migrated — they are re-ingested from Cost Explorer, which

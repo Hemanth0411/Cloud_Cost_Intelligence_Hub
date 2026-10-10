@@ -124,7 +124,7 @@ build-time environment selection logic to get wrong.
 ## 2. One-command teardown
 
 ```bash
-make teardown ENV=dev
+./do.sh teardown dev
 ```
 
 Four steps, and the verification steps are the point — a teardown you cannot
@@ -240,7 +240,7 @@ sweep in step 4 reports it forever, and the next apply collides with it.
 ## 3. Restore
 
 ```bash
-make restore ENV=dev FILE=backups/dev-20261010T0400Z.sql
+./do.sh restore dev backups/dev-20261010T0400Z.sql
 ```
 
 1. `terraform apply` the environment
@@ -262,12 +262,12 @@ recreated with `AdminCreateUser` from the restored `users` table.
 
 | Target | Does |
 |---|---|
-| `make up ENV=x` | workspace select, apply, migrate |
-| `make teardown ENV=x` | backup → verify → destroy → sweep |
-| `make restore ENV=x FILE=…` | apply, migrate, restore, re-ingest |
-| `make export-data ENV=x` | backup only |
-| `make sweep ENV=x` | tag sweep only, no changes |
-| `make outputs ENV=x` | write `frontend/.env.<env>` from Terraform outputs |
+| `./do.sh up <env>` | workspace select, apply, migrate |
+| `./do.sh teardown <env>` | backup → verify → destroy → sweep |
+| `./do.sh restore <env> <file>` | apply, migrate, restore, re-ingest |
+| `./do.sh export-data <env>` | backup only |
+| `./do.sh sweep <env>` | tag sweep only, no changes |
+| `./do.sh outputs <env>` | write `frontend/.env.<env>` from Terraform outputs |
 
 `ENV` is required on every target. No default — defaulting to an
 environment is how the wrong one gets destroyed.

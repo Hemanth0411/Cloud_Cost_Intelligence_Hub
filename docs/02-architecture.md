@@ -209,7 +209,7 @@ cannot touch `main`. Teardown is a single command that backs up, verifies the
 backup, destroys, then proves completion with a tag sweep:
 
 ```bash
-make teardown ENV=dev
+./do.sh teardown dev
 ```
 
 Full design in [13-environments-and-teardown.md](13-environments-and-teardown.md).

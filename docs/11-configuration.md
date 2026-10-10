@@ -231,7 +231,7 @@ is unavoidable here. Rotation is TODO-3.
 #    must update it to the new one, or AssumeRole fails.
 
 # ---- 3. export app data from the OLD deployment ----------------------
-make export-data
+./do.sh export-data <env>
 #   pg_dump: users, identities, access_grants,
 #            cloud_connections, alert_rules, audit_log
 #   NOT fact_cost_daily, NOT ingest_runs -- re-ingested
@@ -247,7 +247,7 @@ cd .. && DATABASE_URL=<new> python -m costhub.migrate
 cd terraform && terraform apply -var-file=new.tfvars
 
 # ---- 6. restore app data ---------------------------------------------
-make import-data
+./do.sh restore
 
 # ---- 7. refresh frontend config --------------------------------------
 terraform output -json > ../frontend/tf-outputs.json

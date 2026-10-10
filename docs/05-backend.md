@@ -6,10 +6,12 @@ Python 3.11, FastAPI on Lambda, `psycopg` 3 with plain SQL.
 
 ```
 costhub/
-├── config.py            settings from env; CostAccount model
-├── db.py                connections, fetch_all/fetch_one/execute
+├── config.py            settings from env -- the ONLY module reading os.environ
+├── db.py                pooled connections, fetch_all/fetch_one/execute
 ├── migrate.py           applies migrations/*.sql once each
 ├── audit.py             append-only audit_log writer
+├── cli.py               operator commands (bootstrap/connections/ingest/detect/alerts)
+├── lambda_handlers.py   the five Lambda entry points, one zip
 │
 ├── rbac/
 │   ├── admin.py         invite, grant, revoke, list_grants   [superadmin]
@@ -24,6 +26,8 @@ costhub/
 │
 ├── ingest/
 │   ├── ports.py         CostRow, CostSource protocol
+│   ├── sources.py       provider -> adapter, the only dispatch point
+│   ├── errors.py        ExpectedIngestError: configuration, not a defect
 │   ├── cost_explorer.py AWS Cost Explorer adapter
 │   ├── azure_cm.py      Azure Cost Management adapter
 │   ├── dev_seed.py      local seed data -- dev only, never the demo
@@ -37,13 +41,14 @@ costhub/
 │
 ├── alerts/
 │   ├── ports.py         Notifier protocol
-│   ├── rules.py         rule model
 │   ├── evaluate.py      threshold / forecast / digest / anomaly
 │   ├── inapp.py         writes alert_events
-│   ├── ses.py           email
-│   └── sns.py           fan-out
+│   ├── ses.py           email (never raises; returns a failed Delivery)
+│   └── runner.py        orchestration + the FR-34 access check
 │
 └── api/
+    ├── main.py          FastAPI app, OpenAPI metadata, /health
+    ├── envelope.py      as_of / metric / currency / partial_period
     ├── deps.py          JWT verify → Principal
     └── routes/
         ├── cost.py      series, breakdown, compare
@@ -53,8 +58,9 @@ costhub/
         └── admin.py     users, grants, connections, audit
 ```
 
-Status: `config`, `db`, `migrate`, `audit`, `rbac/admin`, `query/scoped`,
-`ingest/ports` are written. The rest is pending.
+Status: all of the above is written except `focus_export.py` (TODO-15).
+88 tests green. `azure_cm.py` is unit-tested against recorded response
+shapes but has no subscription to verify against -- see TODO-16b.
 
 ---
 
@@ -118,12 +124,13 @@ translation layer (NFR-20).
 
 | Adapter | Source | Status |
 |---|---|---|
-| `dev_seed` | generated rows so the backend can be built without AWS credentials | planned |
-| `cost_explorer` | `ce:GetCostAndUsage`, `DAILY`, grouped by `SERVICE` | planned |
-| `azure_cm` | Azure Cost Management Query API | planned |
-| `focus_export` | Athena over FOCUS 1.2 export | future |
+| `dev_seed` | generated rows so the backend can be built without AWS credentials | built |
+| `cost_explorer` | `ce:GetCostAndUsage`, `DAILY`, grouped by `SERVICE` + `REGION` | built |
+| `azure_cm` | Azure Cost Management Query API | built, **unverified live** |
+| `focus_export` | Athena over FOCUS 1.2 export | TODO-15 |
 
-Adding a provider is one new class here plus one line in `runner.py` (NFR-17).
+Adding a provider is one new class plus one entry in `sources.py` (NFR-17).
+`runner.py`, `cli.py` and the Lambda handler never change.
 
 ### Two different things called "mock"
 
@@ -149,9 +156,11 @@ FOCUS-aligned.
 |---|---|
 | Auth | Entra app registration: tenant id, client id, client secret. Azure has **no cross-cloud equivalent of `AssumeRole`**, so a long-lived secret is unavoidable — it goes in Secrets Manager, rotation is TODO-3 |
 | Role needed | **Cost Management Reader** at subscription or billing-account scope (*Contributor* only if creating exports) |
-| Response shape | parallel `columns` / `rows` arrays, mapped by column index — mechanical but easy to get subtly wrong. Write it against a saved sample response. |
+| Response shape | parallel `columns` / `rows` arrays. The column **order is not contractual** — it shifts with the grouping requested — so values are mapped by NAME. A positional read silently swaps cost and date; `test_columns_are_mapped_by_name_not_position` pins it. |
+| Date format | daily granularity returns `UsageDate` as the integer `20261010`, not a date string |
+| Agreement split | EA returns `PreTaxCost` where MCA returns `Cost`; both accepted |
 | Multi-tenant | one app registration per tenant, one `cloud_connections` row each |
-| Testability | **can be built but not verified** without a subscription. Unit-test against recorded responses and say so plainly rather than implying it is live. |
+| Testability | **built but not verified** without a subscription. 20 unit tests cover parsing and transport through a mock httpx client, so the request shape and pagination are real; the live path is not. Say so plainly. |
 
 ### Cost Explorer specifics
 

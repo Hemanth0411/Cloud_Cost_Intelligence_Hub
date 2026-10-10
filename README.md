@@ -114,7 +114,7 @@ makes moving to another account a variable change rather than a hunt.
 **Teardown is one command**, and it proves completion rather than assuming it:
 
 ```bash
-make teardown ENV=dev   # backup → verify non-empty → destroy → tag sweep
+./do.sh teardown dev   # backup → verify non-empty → destroy → tag sweep
 ```
 
 Everything else — Lambda environment variables, Amplify environment

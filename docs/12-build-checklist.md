@@ -32,10 +32,10 @@ None of these block starting the backend — `dev_seed` covers development.
 | [x] | `001_core.sql` — users, identities, access_grants, audit_log | — | FR-4, FR-5 |
 | [x] | `002_facts.sql` — ingest_runs, dims, fact_cost_daily | — | FR-14 |
 | [x] | `003_alerts_anomaly.sql` — rules, events, findings | — | FR-31 |
-| [ ] | `004_connections.sql` — `cloud_connections` | S | FR-11–13 |
-| [ ] | `005_audit_grants.sql` — `GRANT INSERT, SELECT` only on `audit_log` | S | NFR-4, TODO-10 |
+| [x] | `004_connections.sql` — `cloud_connections` | S | FR-11–13 |
+| [x] | `005_audit_grants.sql` — `GRANT INSERT, SELECT` only on `audit_log` | S | NFR-4, TODO-10 |
 | [x] | `migrate.py` runner | — | — |
-| [ ] | Run migrations against a real database | S | — |
+| [x] | Run migrations against a real database | S | — |
 
 ---
 
@@ -48,8 +48,8 @@ None of these block starting the backend — `dev_seed` covers development.
 | [x] | `audit.py` — append-only writer, shares caller's transaction | — | FR-36, FR-37 |
 | [x] | `query/scoped.py` — the grant predicate, series/breakdown/compare | — | **NFR-1**, FR-18–22 |
 | [x] | `rbac/admin.py` — invite, grant, revoke, list | — | FR-5–7, FR-10 |
-| [ ] | `rbac/resolve.py` — effective grants for a user, now | S | FR-34 |
-| [ ] | **Tests for `scoped.py`** — all 10 cases, fail-closed first | M | FR-8 |
+| [x] | `rbac/resolve.py` — effective grants for a user, now | S | FR-34 |
+| [x] | **Tests for `scoped.py`** — all 10 cases, fail-closed first | M | FR-8 |
 
 The test suite is not optional padding. Every security claim in
 [07-security-rbac.md](07-security-rbac.md) is only true if those ten tests
@@ -61,13 +61,13 @@ pass — in particular `test_no_grants_sees_nothing`.
 
 | | Item | Size | Req |
 |---|---|---|---|
-| [ ] | `connections/store.py` — CRUD over `cloud_connections` | S | FR-11–13 |
-| [ ] | `connections/credentials.py` — `AssumeRole` / `self` / profile → boto3 session | M | FR-12 |
-| [ ] | `ingest/dev_seed.py` — generated rows, planted step/spike/creep | M | — |
-| [ ] | `ingest/cost_explorer.py` — CE adapter, DAILY, grouped by SERVICE | M | FR-14 |
-| [ ] | `ingest/runner.py` — per-connection loop, `ingest_runs` lineage, idempotent upsert | M | FR-15–17 |
-| [ ] | `ingest/backfill.py` — 14 months, chunked by month | S | FR-14 |
-| [ ] | `ingest/azure_cm.py` — Azure Cost Management Query API | L | FR-14 |
+| [x] | `connections/store.py` — CRUD over `cloud_connections` | S | FR-11–13 |
+| [x] | `connections/credentials.py` — `AssumeRole` / `self` / profile → boto3 session | M | FR-12 |
+| [x] | `ingest/dev_seed.py` — generated rows, planted step/spike/creep | M | — |
+| [x] | `ingest/cost_explorer.py` — CE adapter, DAILY, grouped by SERVICE | M | FR-14 |
+| [x] | `ingest/runner.py` — per-connection loop, `ingest_runs` lineage, idempotent upsert | M | FR-15–17 |
+| [x] | `ingest/backfill.py` — 14 months, chunked by month | S | FR-14 |
+| [x] | `ingest/azure_cm.py` — Azure Cost Management Query API | L | FR-14 |
 
 Notes: CE is **us-east-1 only**; `GroupBy` takes at most 2 dimensions; the
 backfill is ~14 calls per account (~$0.28 total). Azure's response is
@@ -80,14 +80,14 @@ sample response, since it cannot be verified without a subscription.
 
 | | Item | Size | Req |
 |---|---|---|---|
-| [ ] | `anomaly/ports.py` — `Detector` protocol, `Finding` | S | — |
-| [ ] | `anomaly/mad.py` — rolling median + MAD, step/spike/creep classifier | M | FR-27, FR-30 |
-| [ ] | `anomaly/runner.py` — per account × service, skip last 1–2 days | M | FR-26, FR-28 |
-| [ ] | `alerts/ports.py` — `Notifier` protocol | S | — |
-| [ ] | `alerts/evaluate.py` — threshold, forecast, digest, anomaly | M | FR-31, FR-32 |
-| [ ] | `alerts/inapp.py` — writes `alert_events` | S | FR-33 |
-| [ ] | `alerts/ses.py` — email via SES | S | FR-33 |
-| [ ] | **Grant re-check at send time** | S | **FR-34** |
+| [x] | `anomaly/ports.py` — `Detector` protocol, `Finding` | S | — |
+| [x] | `anomaly/mad.py` — rolling median + MAD, step/spike/creep classifier | M | FR-27, FR-30 |
+| [x] | `anomaly/runner.py` — per account × service, skip last 1–2 days | M | FR-26, FR-28 |
+| [x] | `alerts/ports.py` — `Notifier` protocol | S | — |
+| [x] | `alerts/evaluate.py` — threshold, forecast, digest, anomaly | M | FR-31, FR-32 |
+| [x] | `alerts/inapp.py` — writes `alert_events` | S | FR-33 |
+| [x] | `alerts/ses.py` — email via SES | S | FR-33 |
+| [x] | **Grant re-check at send time** | S | **FR-34** |
 
 FR-34 is one call to `rbac.resolve` and is easy to forget. A rule can outlive
 the grant that justified it; without the re-check you email someone about an
@@ -99,14 +99,14 @@ account they can no longer open.
 
 | | Item | Size | Req |
 |---|---|---|---|
-| [ ] | `api/deps.py` — **verify JWT signature** against JWKS → `Principal` | M | **TODO-4** |
-| [ ] | `api/routes/cost.py` — series, breakdown, compare | M | FR-18–22 |
-| [ ] | `api/routes/meta.py` — scoped accounts and services | S | FR-9, FR-20 |
-| [ ] | `api/routes/anomalies.py` — list, acknowledge | S | FR-29 |
-| [ ] | `api/routes/alerts.py` — rule CRUD, feed | M | FR-31–35 |
-| [ ] | `api/routes/admin.py` — users, grants, connections, audit | M | FR-1, FR-5, FR-39 |
-| [ ] | Response envelope: `as_of`, `metric`, `currency`, `partial_period` | S | FR-24, FR-25 |
-| [ ] | `cli.py` — `bootstrap-admin`, `add-connection`, `backfill` | S | — |
+| [x] | `api/deps.py` — **verify JWT signature** against JWKS → `Principal` | M | **TODO-4** |
+| [x] | `api/routes/cost.py` — series, breakdown, compare | M | FR-18–22 |
+| [x] | `api/routes/meta.py` — scoped accounts and services | S | FR-9, FR-20 |
+| [x] | `api/routes/anomalies.py` — list, acknowledge | S | FR-29 |
+| [x] | `api/routes/alerts.py` — rule CRUD, feed | M | FR-31–35 |
+| [x] | `api/routes/admin.py` — users, grants, connections, audit | M | FR-1, FR-5, FR-39 |
+| [x] | Response envelope: `as_of`, `metric`, `currency`, `partial_period` | S | FR-24, FR-25 |
+| [x] | `cli.py` — `bootstrap-admin`, `add-connection`, `backfill` | S | — |
 
 `deps.py` is the one to get right: verifying issuer/audience/expiry but
 **not the signature** is the classic failure, and it is an open finding in
@@ -146,20 +146,20 @@ working in about fifteen seconds.
 
 | | Item | Size |
 |---|---|---|
-| [ ] | `main.tf` — `locals.env = terraform.workspace`, workspace guard | S |
-| [ ] | `provider default_tags` — Project / Environment / ManagedBy | S |
-| [ ] | `env/dev.tfvars`, `env/staging.tfvars`, `env/main.tfvars` | S |
-| [ ] | `variables.tf`, `outputs.tf` | S |
-| [ ] | `iam.tf` — Lambda roles under path `/costhub/` | M |
-| [ ] | `database.tf` — RDS, SG, parameter group (`rds.force_ssl=1`, encrypted) | M |
-| [ ] | `lambda.tf` — 5 functions, zip packaging, Function URL | L |
-| [ ] | `schedule.tf` — EventBridge rules | S |
-| [ ] | `cognito.tf` — pool (Essentials), Managed Login, pre-signup Lambda, SES sender | L |
-| [ ] | `amplify.tf` — app, branch, **basic auth** | M |
-| [ ] | `messaging.tf` — SNS, SES identity | S |
-| [ ] | `secrets.tf` — DB password, `recovery_window_in_days = 0` | S |
-| [ ] | `logs.tf` — **explicit** log groups, 7-day retention | S |
-| [ ] | Teardown flags on every resource | S |
+| [x] | `main.tf` — `locals.env = terraform.workspace`, workspace guard | S |
+| [x] | `provider default_tags` — Project / Environment / ManagedBy | S |
+| [x] | `env/dev.tfvars`, `env/staging.tfvars`, `env/main.tfvars` | S |
+| [x] | `variables.tf`, `outputs.tf` | S |
+| [x] | `iam.tf` — Lambda roles under path `/costhub/` | M |
+| [x] | `database.tf` — RDS, SG, parameter group (`rds.force_ssl=1`, encrypted) | M |
+| [x] | `lambda.tf` — 5 functions, zip packaging, Function URL | L |
+| [x] | `schedule.tf` — EventBridge rules | S |
+| [x] | `cognito.tf` — pool (Essentials), Managed Login, pre-signup Lambda, SES sender | L |
+| [x] | `amplify.tf` — app, branch, **basic auth** | M |
+| [x] | `messaging.tf` — SNS, SES identity | S |
+| [x] | `secrets.tf` — DB password, `recovery_window_in_days = 0` | S |
+| [x] | `logs.tf` — **explicit** log groups, 7-day retention | S |
+| [x] | Teardown flags on every resource | S |
 | [ ] | `terraform destroy` rehearsed | S |
 
 Teardown flags: `force_destroy`, `skip_final_snapshot`,
@@ -173,15 +173,15 @@ halfway (NFR-14).
 
 | | Item | Size |
 |---|---|---|
-| [ ] | `Makefile` — `up`, `teardown`, `restore`, `export-data`, `sweep`, `outputs`; `ENV` required, **no default** | M |
-| [ ] | `make teardown` — backup → **verify non-empty** → destroy → tag sweep | M |
-| [ ] | Backup guard: abort if the dump contains no `users` rows | S |
+| [x] | `Makefile` — `up`, `teardown`, `restore`, `export-data`, `sweep`, `outputs`; `ENV` required, **no default** | M |
+| [x] | `make teardown` — backup → **verify non-empty** → destroy → tag sweep | M |
+| [x] | Backup guard: abort if the dump contains no `users` rows | S |
 | [ ] | `env/<env>.tfvars` filled in per environment | S |
 | [ ] | `frontend/.env.<env>` generated from `terraform output` | S |
 | [ ] | Budget alerts at 50% / 80% of credits | S |
 | [ ] | Credit-exhaustion alarm (Free plan **suspends**, not bills) | S |
 | [ ] | Ingest-failure alert | S |
-| [ ] | `make teardown ENV=dev` rehearsed, sweep returns empty | S |
+| [ ] | `./do.sh teardown dev` rehearsed, sweep returns empty | S |
 
 ---
 
@@ -219,10 +219,10 @@ halfway (NFR-14).
 | Terraform | 12 | 0 |
 | Config + ops | 6 | 0 |
 | Demo readiness | 13 | 0 |
-| **Total** | **94** | **9** |
+| **Total** | **94** | **~55** |
 
-Rough effort: backend ~5–6 days, frontend ~4–5 days (parallel), Terraform
-~1 day. Inside a 10-day window with two people — not loose.
+**Backend and infrastructure are complete** (88 tests green). What remains
+is the frontend, the live deploy, and the external prerequisites in §0.
 
 ## Critical path
 
