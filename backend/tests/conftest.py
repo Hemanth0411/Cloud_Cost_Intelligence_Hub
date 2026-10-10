@@ -154,6 +154,71 @@ def make_grant(exec_sql):
 
 
 @pytest.fixture
+def make_series():
+    """Insert a whole daily series in ONE transaction.
+
+    `make_facts` opens a connection per call, which is fine for a handful
+    of rows but costs a network round-trip each time -- a 50-day series
+    built that way takes minutes against a remote database.
+    """
+    from costhub.db import connect
+
+    def _make(
+        account_id: str,
+        service_name: str,
+        values: list[float],
+        *,
+        provider: str = "aws",
+        end: date | None = None,
+        charge_category: str = "Usage",
+        region: str = "us-east-1",
+    ) -> str:
+        # Series ends `end` (default: 2 days ago, since detectors skip the
+        # most recent days as unfinalised).
+        end = end or date.today() - timedelta(days=2)
+        first = end - timedelta(days=len(values) - 1)
+
+        with connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO ingest_runs
+                  (source, provider, period_start, period_end, status,
+                   triggered_by, created_by, updated_by)
+                VALUES ('test', %(p)s, %(s)s, %(e)s, 'success',
+                        %(sys)s, %(sys)s, %(sys)s)
+                RETURNING id
+                """,
+                {"p": provider, "s": first, "e": end, "sys": SYS},
+            )
+            run_id = cur.fetchone()["id"]
+
+            cur.executemany(
+                """
+                INSERT INTO fact_cost_daily
+                  (provider, account_id, service_name, region, charge_category,
+                   usage_date, billed_cost, effective_cost, currency,
+                   ingest_run_id, source, created_by, updated_by)
+                VALUES
+                  (%(p)s, %(a)s, %(sv)s, %(rg)s, %(cc)s, %(d)s,
+                   %(c)s, %(c)s, 'USD', %(r)s, 'test', %(s)s, %(s)s)
+                ON CONFLICT DO NOTHING
+                """,
+                [
+                    {
+                        "p": provider, "a": account_id, "sv": service_name,
+                        "rg": region, "cc": charge_category,
+                        "d": first + timedelta(days=i),
+                        "c": Decimal(str(v)), "r": run_id, "s": SYS,
+                    }
+                    for i, v in enumerate(values)
+                ],
+            )
+        return str(run_id)
+
+    return _make
+
+
+@pytest.fixture
 def make_facts(exec_sql):
     """Insert cost rows, exercising ingest_runs lineage as well."""
 

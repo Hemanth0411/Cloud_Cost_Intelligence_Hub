@@ -23,6 +23,7 @@ from costhub.ingest import runner
 from costhub.ingest.cost_explorer import CostExplorerSource, default_window
 from costhub.ingest.dev_seed import source_factory as dev_seed_factory
 from costhub.ingest.dev_seed import planted_summary
+from costhub.anomaly import runner as anomaly_runner
 from costhub.rbac import admin
 
 
@@ -125,6 +126,36 @@ def cmd_backfill(args: argparse.Namespace) -> int:
     return _run_ingest(start, end, args.dev_seed)
 
 
+def cmd_detect(args: argparse.Namespace) -> int:
+    from costhub.anomaly.mad import MadDetector
+
+    det = MadDetector(
+        exclude_recent_days=args.exclude_recent,
+        scan_days=args.scan_days,
+        z_threshold=args.threshold,
+    )
+    result = anomaly_runner.scan(detector=det, lookback_days=args.lookback)
+    print(result)
+
+    rows = fetch_all(
+        """
+        SELECT account_id, service_name, detected_for_date, kind,
+               baseline_value, observed_value, delta_abs, delta_pct, score
+        FROM anomaly_findings WHERE status = 'new'
+        ORDER BY abs(delta_abs) DESC LIMIT 20
+        """
+    )
+    for r in rows:
+        pct = f"{r['delta_pct']:+.0f}%" if r["delta_pct"] is not None else "  new"
+        print(
+            f"  {r['kind']:<6} {r['account_id']:<14} {r['service_name']:<18} "
+            f"{r['detected_for_date']}  "
+            f"${r['baseline_value']:.2f} -> ${r['observed_value']:.2f}  "
+            f"{pct:>7}  z={r['score']:.1f}"
+        )
+    return 0
+
+
 def cmd_status(_: argparse.Namespace) -> int:
     rows = fetch_all(
         """
@@ -201,6 +232,13 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--months", type=int, default=14)
     a.add_argument("--dev-seed", action="store_true")
     a.set_defaults(fn=cmd_backfill)
+
+    a = sub.add_parser("detect")
+    a.add_argument("--lookback", type=int, default=120)
+    a.add_argument("--scan-days", type=int, default=7)
+    a.add_argument("--exclude-recent", type=int, default=2)
+    a.add_argument("--threshold", type=float, default=3.5)
+    a.set_defaults(fn=cmd_detect)
 
     sub.add_parser("status").set_defaults(fn=cmd_status)
     return p

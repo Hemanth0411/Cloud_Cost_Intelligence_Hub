@@ -79,6 +79,25 @@ class Principal:
         return self.role == "superadmin"
 
 
+SYSTEM_EMAIL = "system@costhub.internal"
+
+
+def system_principal() -> Principal:
+    """The identity background jobs read with.
+
+    Detection and alert evaluation have to see every account by design --
+    an anomaly in an account nobody has been granted is still an anomaly.
+    This is deliberately a named, greppable function rather than scattered
+    `role="superadmin"` literals, and callers log one audit entry per run
+    rather than per query.
+    """
+    return Principal(
+        user_id="00000000-0000-0000-0000-000000000000",
+        email=SYSTEM_EMAIL,
+        role="superadmin",
+    )
+
+
 @dataclass(frozen=True)
 class Filters:
     start: date
