@@ -10,7 +10,7 @@ graph TB
     U["Analyst<br/>(scoped view)"]
     ST["Stakeholder<br/>(read-only demo)"]
 
-    subgraph CM["CloudMinds (personal AWS account)"]
+    subgraph CM["Cloud Cost Intelligence Hub (personal AWS account)"]
         APP["Application"]
     end
 
@@ -161,11 +161,11 @@ graph TB
         EB["EventBridge rules"]
         SNS["SNS topic"]
         CWL["CloudWatch Logs"]
-        ROLE["IAM roles<br/>path /cloudminds/"]
+        ROLE["IAM roles<br/>path /costhub/"]
     end
 
     subgraph STEMLINE["AWS account: stemline (data only)"]
-        CRR["IAM role<br/>CloudMindsCostReader<br/>read-only + ExternalId"]
+        CRR["IAM role<br/>CostHubCostReader<br/>read-only + ExternalId"]
     end
 
     LAM -->|sts:AssumeRole| CRR

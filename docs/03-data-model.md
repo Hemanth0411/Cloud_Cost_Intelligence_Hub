@@ -1,7 +1,7 @@
 # Data model
 
 13 tables in one PostgreSQL database. Migrations in `/migrations`, applied by
-`python -m cloudminds.migrate`.
+`python -m costhub.migrate`.
 
 | # | Table | Migration | Purpose |
 |---|---|---|---|
@@ -132,7 +132,7 @@ disagree with the data is worse than none.
 Enforced append-only by database grants, not convention:
 
 ```sql
-GRANT INSERT, SELECT ON audit_log TO cloudminds_app;
+GRANT INSERT, SELECT ON audit_log TO costhub_app;
 -- deliberately no UPDATE, no DELETE
 ```
 

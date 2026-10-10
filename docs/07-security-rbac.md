@@ -52,7 +52,7 @@ EXISTS (
 )
 ```
 
-`cloudminds/query/scoped.py` is the only module that queries
+`costhub/query/scoped.py` is the only module that queries
 `fact_cost_daily`, and `_where()` always injects this. Nothing else — not the
 API, not the alert evaluator, not the anomaly scanner — touches the fact
 table directly.
@@ -178,7 +178,7 @@ The app is deployed in **one** account and reads others through a role.
 sequenceDiagram
     participant L as Lambda (personal acct)
     participant S as STS
-    participant R as CloudMindsCostReader (stemline)
+    participant R as CostHubCostReader (stemline)
     participant CE as Cost Explorer
 
     L->>S: AssumeRole(role_arn, ExternalId)
@@ -226,7 +226,7 @@ can disagree with the data is worse than none.
 **Append-only by database grant**, not convention:
 
 ```sql
-GRANT INSERT, SELECT ON audit_log TO cloudminds_app;
+GRANT INSERT, SELECT ON audit_log TO costhub_app;
 -- deliberately no UPDATE, no DELETE
 ```
 

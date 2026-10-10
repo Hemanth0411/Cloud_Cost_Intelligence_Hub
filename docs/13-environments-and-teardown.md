@@ -31,7 +31,7 @@ from it. Nothing else in the repository names an environment.
 ```hcl
 locals {
   env    = terraform.workspace
-  prefix = "cloudminds-${terraform.workspace}"
+  prefix = "costhub-${terraform.workspace}"
 }
 
 # refuse to deploy into the implicit workspace
@@ -56,13 +56,13 @@ That safety property is why this and not a `-var`.
 
 | Thing | Pattern |
 |---|---|
-| Resource names | `cloudminds-${env}-<role>` |
-| Lambda log groups | `/aws/lambda/cloudminds-${env}-<fn>` |
-| Secrets | `cloudminds/${env}/db-password` |
-| Cognito pool | `cloudminds-${env}` |
+| Resource names | `costhub-${env}-<role>` |
+| Lambda log groups | `/aws/lambda/costhub-${env}-<fn>` |
+| Secrets | `costhub/${env}/db-password` |
+| Cognito pool | `costhub-${env}` |
 | Amplify branch | `${env}` |
-| Database name | `cloudminds_${env}` |
-| Tags | `Project=cloudminds`, `Environment=${env}`, `ManagedBy=terraform` |
+| Database name | `costhub_${env}` |
+| Tags | `Project=costhub`, `Environment=${env}`, `ManagedBy=terraform` |
 
 ### Per-environment values: one file each
 
@@ -134,7 +134,7 @@ confirm is not a teardown.
 1. BACKUP   pg_dump app tables → backups/<env>-<utc-timestamp>.sql
 2. VERIFY   refuse to continue if the dump is empty or missing users
 3. DESTROY  terraform destroy on that workspace only
-4. SWEEP    list anything still tagged Project=cloudminds,Environment=<env>
+4. SWEEP    list anything still tagged Project=costhub,Environment=<env>
 ```
 
 ### Step 1 — what gets backed up
@@ -197,7 +197,7 @@ Every taggable resource is tagged automatically:
 provider "aws" {
   default_tags {
     tags = {
-      Project     = "cloudminds"
+      Project     = "costhub"
       Environment = local.env
       ManagedBy   = "terraform"
     }
@@ -209,7 +209,7 @@ Which makes the sweep possible:
 
 ```bash
 aws resourcegroupstaggingapi get-resources \
-  --tag-filters Key=Project,Values=cloudminds \
+  --tag-filters Key=Project,Values=costhub \
                 Key=Environment,Values=$ENV \
   --query 'ResourceTagMappingList[].ResourceARN' --output text
 ```
@@ -227,7 +227,7 @@ mean re-doing a wait or asking another team.
 | Survives | Why |
 |---|---|
 | **SES verified identities** | re-verification is a manual round trip; kept outside Terraform |
-| **`CloudMindsCostReader`** in data-source accounts | we do not own those accounts |
+| **`CostHubCostReader`** in data-source accounts | we do not own those accounts |
 | Account-level billing settings (IAM billing access, Cost Explorer, cost allocation tags) | root-only, and tag activation is **never retroactive** |
 
 ### The rule no flag can replace
@@ -244,7 +244,7 @@ make restore ENV=dev FILE=backups/dev-20261010T0400Z.sql
 ```
 
 1. `terraform apply` the environment
-2. `python -m cloudminds.migrate`
+2. `python -m costhub.migrate`
 3. restore the dump
 4. re-ingest facts
 5. re-verify: SES recipients are per-account, and the cross-account role's

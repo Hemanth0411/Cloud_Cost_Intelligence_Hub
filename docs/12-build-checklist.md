@@ -18,7 +18,7 @@ Requirement ids refer to [01-requirements.md](01-requirements.md).
 | [ ] | Personal account: enable Cost Explorer | you (root) | real data |
 | [ ] | Personal account: activate cost allocation tags | you (root) | **not retroactive** |
 | [ ] | Stemline: root enables billing-info IAM access | their root | stemline data |
-| [ ] | Stemline: `CloudMindsCostReader` role created | their IAM admin | stemline data |
+| [ ] | Stemline: `CostHubCostReader` role created | their IAM admin | stemline data |
 | [ ] | Azure subscription + Entra app registration | TBD | Azure data only |
 
 None of these block starting the backend — `dev_seed` covers development.
@@ -150,7 +150,7 @@ working in about fifteen seconds.
 | [ ] | `provider default_tags` — Project / Environment / ManagedBy | S |
 | [ ] | `env/dev.tfvars`, `env/staging.tfvars`, `env/main.tfvars` | S |
 | [ ] | `variables.tf`, `outputs.tf` | S |
-| [ ] | `iam.tf` — Lambda roles under path `/cloudminds/` | M |
+| [ ] | `iam.tf` — Lambda roles under path `/costhub/` | M |
 | [ ] | `database.tf` — RDS, SG, parameter group (`rds.force_ssl=1`, encrypted) | M |
 | [ ] | `lambda.tf` — 5 functions, zip packaging, Function URL | L |
 | [ ] | `schedule.tf` — EventBridge rules | S |

@@ -20,7 +20,7 @@ from urllib.parse import quote
 
 import pytest
 
-SYS = "test@cloudminds"
+SYS = "test@costhub"
 SCHEMA = f"t_{uuid.uuid4().hex[:10]}"
 MIGRATIONS = Path(__file__).resolve().parent.parent / "migrations"
 
@@ -43,7 +43,7 @@ def schema():
     """Create an isolated schema, migrate into it, drop it afterwards."""
     import psycopg
 
-    from cloudminds.config import settings
+    from costhub.config import settings
 
     # Read through settings, not os.environ: in dev the URL comes from .env.
     try:
@@ -59,7 +59,7 @@ def schema():
     os.environ["DATABASE_URL"] = _with_schema(base, SCHEMA)
     settings.cache_clear()
 
-    from cloudminds.db import connect, reset_pool
+    from costhub.db import connect, reset_pool
 
     reset_pool()  # rebuild against the schema-pinned URL
 
@@ -81,7 +81,7 @@ def clean(schema):
     TRUNCATE rather than DELETE: audit_log carries a BEFORE DELETE trigger
     enforcing append-only (migration 005), and TRUNCATE does not fire it.
     """
-    from cloudminds.db import connect
+    from costhub.db import connect
 
     with connect() as conn, conn.cursor() as cur:
         cur.execute(f"TRUNCATE {', '.join(TABLES)} RESTART IDENTITY CASCADE")
@@ -91,7 +91,7 @@ def clean(schema):
 @pytest.fixture
 def exec_sql():
     """Run a statement in its own committed transaction."""
-    from cloudminds.db import connect
+    from costhub.db import connect
 
     def _exec(sql: str, params: dict | None = None):
         with connect() as conn, conn.cursor() as cur:

@@ -1,4 +1,4 @@
-# CloudMinds — Multi-Account Cloud Cost Intelligence
+# Cloud Cost Intelligence Hub
 
 One scoped view of cloud cost across **independent** AWS accounts, with
 per-user visibility control, anomaly detection and alerting.
@@ -126,7 +126,7 @@ those; they will be overwritten on the next apply.
 # env/dev.tfvars  (one file per ENV; dev shown)
 # ---- identity of this deployment -------------------------------------
 aws_region   = "us-east-1"          # Cost Explorer is us-east-1 only
-name_prefix  = "cloudminds"         # change to run two deployments side by side
+name_prefix  = "costhub"         # change to run two deployments side by side
 
 # ---- who administers it ----------------------------------------------
 superadmin_email     = "you@chryselys.com"
@@ -137,7 +137,7 @@ ses_sender_email  = "noreply@yourdomain.com"
 ses_sender_region = "us-east-1"
 
 # ---- stakeholder gate on the frontend --------------------------------
-amplify_repo_url         = "https://bitbucket.org/<org>/cloudminds-frontend"
+amplify_repo_url         = "https://bitbucket.org/<org>/costhub-frontend"
 amplify_branch           = "main"
 amplify_basic_auth_user  = "demo"
 amplify_basic_auth_pass  = "<set this>"
@@ -151,8 +151,8 @@ db_allocated_storage = 20
 data_source_accounts = [
   { account_id = "self",         name = "personal", role_arn = null, external_id = null },
   { account_id = "881953306582", name = "stemline",
-    role_arn    = "arn:aws:iam::881953306582:role/CloudMindsCostReader",
-    external_id = "cloudminds-7f3a9c21" },
+    role_arn    = "arn:aws:iam::881953306582:role/CostHubCostReader",
+    external_id = "costhub-7f3a9c21" },
 ]
 
 log_retention_days = 7
@@ -171,7 +171,7 @@ Not used in deployment; Terraform supplies the Lambda environment instead.
 ```ini
 DATABASE_URL=postgresql://user:pass@host/db?sslmode=require
 APP_ENV=dev
-SYSTEM_ACTOR=system@cloudminds
+SYSTEM_ACTOR=system@costhub
 ALLOWED_EMAIL_DOMAIN=chryselys.com
 COGNITO_USER_POOL_ID=us-east-1_xxxxx     # from terraform output
 COGNITO_CLIENT_ID=xxxxx                  # from terraform output
@@ -183,7 +183,7 @@ COGNITO_CLIENT_ID=xxxxx                  # from terraform output
 VITE_API_BASE_URL=https://xxxx.lambda-url.us-east-1.on.aws
 VITE_COGNITO_USER_POOL_ID=us-east-1_xxxxx
 VITE_COGNITO_CLIENT_ID=xxxxx
-VITE_COGNITO_DOMAIN=cloudminds.auth.us-east-1.amazoncognito.com
+VITE_COGNITO_DOMAIN=costhub.auth.us-east-1.amazoncognito.com
 VITE_AWS_REGION=us-east-1
 VITE_USE_MOCK=false                      # showcase fixtures; OFF by default
 ```
@@ -204,7 +204,7 @@ cd terraform && terraform output -json > ../frontend/tf-outputs.json
 | Activate cost allocation tags | billing access | **never retroactive** — do it day one |
 | Verify the SES sender identity | you | **required** for email OTP |
 | Verify each recipient address | you | SES sandbox; 200/day is plenty for a demo |
-| Create `CloudMindsCostReader` in each data-source account | their IAM admin | read-only, External ID gated |
+| Create `CostHubCostReader` in each data-source account | their IAM admin | read-only, External ID gated |
 
 Full reference and the account-migration runbook:
 [`docs/11-configuration.md`](docs/11-configuration.md).
@@ -215,7 +215,7 @@ Full reference and the account-migration runbook:
 python -m venv .venv && . .venv/Scripts/activate   # Python 3.11
 pip install -r requirements-dev.txt
 cp .env.example .env            # set DATABASE_URL (Neon for dev)
-python -m cloudminds.migrate
+python -m costhub.migrate
 pytest
 ```
 

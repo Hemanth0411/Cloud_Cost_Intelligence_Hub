@@ -31,7 +31,7 @@ Requires someone with root and someone with IAM access:
 |---|---|---|
 | 1 | Enable "IAM User and Role Access to Billing Information" | **root** |
 | 2 | Confirm Cost Explorer is enabled | billing access |
-| 3 | Create role `CloudMindsCostReader` | IAM access |
+| 3 | Create role `CostHubCostReader` | IAM access |
 
 Role specification:
 
@@ -68,7 +68,7 @@ account, and it must survive our teardown.
 terraform/
 ├── main.tf          providers, locals
 ├── variables.tf     region, name_prefix, account ids, external id
-├── iam.tf           Lambda execution roles under path /cloudminds/
+├── iam.tf           Lambda execution roles under path /costhub/
 ├── database.tf      RDS instance, subnet group, parameter group, SG
 ├── lambda.tf        5 functions + Function URL
 ├── schedule.tf      EventBridge rules
@@ -171,20 +171,20 @@ terraform apply -target=aws_db_instance.main
 
 # 2. migrations (from the laptop, DB is publicly reachable)
 cd ..
-DATABASE_URL=... python -m cloudminds.migrate
+DATABASE_URL=... python -m costhub.migrate
 
 # 3. everything else
 cd terraform && terraform apply
 
 # 4. seed the superadmin and connections
-python -m cloudminds.cli bootstrap-admin --email you@chryselys.com
-python -m cloudminds.cli add-connection --account-id ... --role-arn ...
+python -m costhub.cli bootstrap-admin --email you@chryselys.com
+python -m costhub.cli add-connection --account-id ... --role-arn ...
 
 # 5. frontend
 #    Amplify builds on push to the connected branch
 
 # 6. first ingest
-aws lambda invoke --function-name cloudminds-ingest /dev/stdout
+aws lambda invoke --function-name costhub-ingest /dev/stdout
 ```
 
 Step 1 is targeted because Lambda's environment needs the DB endpoint, which
@@ -215,7 +215,7 @@ insists on deploying into a work account.
 **How to actually ask.** Itemising 60 actions will stall in review. Ask for
 **`PowerUserAccess`** (covers everything except IAM) **plus** a small policy
 allowing `CreateRole` / `PassRole` / `AttachRolePolicy` **restricted to the
-path `/cloudminds/`**. Path-scoped role creation is a much easier approval,
+path `/costhub/`**. Path-scoped role creation is a much easier approval,
 because it provably cannot touch anything else.
 
 Without `iam:CreateRole` and `iam:PassRole` you cannot deploy at all — a

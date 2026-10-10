@@ -18,7 +18,7 @@ days, so figures are given monthly and for the window.
 | **SNS** | alert fan-out | personal | $0 | $0 |
 | **SES** | alert email | personal | $0 (<62k) | $0 |
 | **CloudWatch Logs** | Lambda logs, 7-day retention | personal | ~$0.50 | ~$0.17 |
-| **IAM** | roles under path `/cloudminds/` | personal | $0 | $0 |
+| **IAM** | roles under path `/costhub/` | personal | $0 | $0 |
 | **Cost Explorer API** | **the data source** | both accounts | $0.01/request | <$1 |
 | **STS** | `AssumeRole` into stemline | both | $0 | $0 |
 | | | **Total** | **~$16** | **~$6** |

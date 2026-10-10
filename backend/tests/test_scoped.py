@@ -10,8 +10,8 @@ from datetime import date, timedelta
 
 import pytest
 
-from cloudminds.query import scoped
-from cloudminds.query.scoped import Filters, Principal
+from costhub.query import scoped
+from costhub.query.scoped import Filters, Principal
 
 TODAY = date.today()
 WIDE = Filters(start=TODAY - timedelta(days=30), end=TODAY + timedelta(days=1))

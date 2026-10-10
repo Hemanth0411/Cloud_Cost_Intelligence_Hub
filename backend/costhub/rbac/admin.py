@@ -9,9 +9,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from cloudminds.audit import log
-from cloudminds.config import settings
-from cloudminds.db import connect
+from costhub.audit import log
+from costhub.config import settings
+from costhub.db import connect
 
 ALLOWED_EMAIL_DOMAIN = "chryselys.com"
 

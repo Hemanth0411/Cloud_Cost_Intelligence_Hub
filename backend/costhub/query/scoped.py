@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Literal
 
-from cloudminds.db import fetch_all
+from costhub.db import fetch_all
 
 # --------------------------------------------------------------------------
 # The security boundary. Read this carefully; everything else is plumbing.

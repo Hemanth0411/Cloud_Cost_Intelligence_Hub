@@ -29,7 +29,7 @@ class Settings(BaseSettings):
 
     database_url: str
     app_env: str = "dev"
-    system_actor: str = "system@cloudminds"
+    system_actor: str = "system@costhub"
     cost_accounts: str = "[]"
 
     aws_region: str = "us-east-1"

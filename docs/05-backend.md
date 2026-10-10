@@ -5,7 +5,7 @@ Python 3.11, FastAPI on Lambda, `psycopg` 3 with plain SQL.
 ## Module map
 
 ```
-cloudminds/
+costhub/
 ├── config.py            settings from env; CostAccount model
 ├── db.py                connections, fetch_all/fetch_one/execute
 ├── migrate.py           applies migrations/*.sql once each

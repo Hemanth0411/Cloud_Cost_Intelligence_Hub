@@ -3,14 +3,14 @@
 Deliberately not Alembic: the schema is small, the migrations are plain
 SQL, and a 30-line runner has no behaviour to debug.
 
-    python -m cloudminds.migrate
+    python -m costhub.migrate
 """
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-from cloudminds.db import connect
+from costhub.db import connect
 
 MIGRATIONS = Path(__file__).resolve().parent.parent / "migrations"
 BOOTSTRAP = """
