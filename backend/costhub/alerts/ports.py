@@ -73,7 +73,17 @@ def due(rule: Rule, last_fired_at: datetime | None, now: datetime) -> bool:
 
     Without this a daily job re-sends every still-true threshold every
     run, and the feed becomes noise within a week.
+
+    `now` must come from the SAME clock that wrote `last_fired_at` --
+    i.e. the database. Measured skew between this machine and Neon was
+    +4.1s, which silently made just-fired `immediate` rules "not due".
+    `runner.run()` therefore reads `now()` from Postgres rather than the
+    local clock.
     """
+    # "immediate" means do not throttle at all. Expressing that as a
+    # 0-hour gap turned a sub-second clock difference into a skipped run.
+    if rule.frequency == "immediate":
+        return True
     if last_fired_at is None:
         return True
     gap = FREQUENCY_HOURS.get(rule.frequency, 23.0)

@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     currency_fallback: str = "USD"
     allowed_email_domain: str = "chryselys.com"
 
+    # Seeded as the first superadmin by migrate. Without it a fresh
+    # environment has nobody who can invite anyone.
+    superadmin_email: str = ""
+
     # Auth. Empty pool id + app_env=dev enables the X-Dev-User header
     # so the frontend can be built before Cognito exists.
     cognito_user_pool_id: str = ""

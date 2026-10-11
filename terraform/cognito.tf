@@ -84,7 +84,37 @@ resource "aws_cognito_user_pool_client" "web" {
 }
 
 resource "aws_cognito_user_pool_domain" "main" {
-  domain                = local.prefix
+  domain                = "${local.prefix}-${data.aws_caller_identity.current.account_id}"
   user_pool_id          = aws_cognito_user_pool.main.id
   managed_login_version = 2 # 1 is the classic Hosted UI, which cannot do OTP
+}
+
+
+# The first superadmin, created declaratively.
+#
+# Without this, `invite_user` writes a Postgres row and nothing else:
+# the user does not exist in the pool, so Cognito can never send them a
+# code. A fresh environment had zero users and no way in.
+#
+# No password and no temporary_password: the pool is passwordless, and
+# AdminCreateUser without a password puts the user straight into
+# CONFIRMED rather than FORCE_CHANGE_PASSWORD.
+resource "aws_cognito_user" "superadmin" {
+  user_pool_id = aws_cognito_user_pool.main.id
+  username     = var.superadmin_email
+
+  attributes = {
+    email          = var.superadmin_email
+    email_verified = true
+  }
+
+  # SUPPRESS: no invitation email. The user signs in with an email OTP,
+  # so there is nothing to send them in advance.
+  message_action = "SUPPRESS"
+
+  lifecycle {
+    # Changing the superadmin's address should not silently destroy and
+    # recreate the account that administers the environment.
+    ignore_changes = [attributes]
+  }
 }

@@ -350,3 +350,31 @@ def test_disabled_owner_is_skipped(make_series, make_user, make_grant, exec_sql)
     result = runner.run(today=TODAY, notifiers={"inapp": Recorder()})
     assert result.skipped_owner_disabled == 1
     assert result.fired == 0
+
+
+# --------------------------------------------------------- clock skew
+
+def test_immediate_frequency_is_never_throttled():
+    """Measured skew between this machine and Neon was +4.1s, and
+    expressing "immediate" as a 0-hour gap turned that into a skipped
+    run: a rule that had just fired looked "not due" because the DB
+    timestamp was in the local clock's future."""
+    rule = Rule(
+        id="r", name="n", owner_user_id="u", owner_email="e", owner_role="user",
+        type="threshold", scope_provider=None, scope_account=None,
+        scope_service=None, metric="effective_cost", comparator="gt",
+        threshold_value=Decimal("1"), window_days=1, frequency="immediate",
+        channels=["inapp"],
+    )
+    future = NOW + timedelta(seconds=5)   # DB clock ahead of ours
+    assert due(rule, future, NOW) is True
+
+
+def test_runner_uses_the_database_clock():
+    """Throttling must not depend on the gap between two clocks."""
+    from costhub.alerts.runner import _db_now
+
+    db = _db_now()
+    assert db.tzinfo is not None, "must be timezone-aware"
+    # Same clock that writes fired_at, so a round trip cannot go backwards.
+    assert _db_now() >= db

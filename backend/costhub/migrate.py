@@ -10,6 +10,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from costhub.config import settings
 from costhub.db import connect
 
 MIGRATIONS = Path(__file__).resolve().parent.parent / "migrations"
@@ -42,6 +43,19 @@ def main() -> int:
                 "INSERT INTO schema_migrations (filename) VALUES (%(f)s)",
                 {"f": path.name},
             )
+
+        # Seed the superadmin on every run, not only when 006 is first
+        # applied: the address can change, and a fresh environment with
+        # nobody who can invite anyone is unusable. Idempotent, and it
+        # never demotes an existing row.
+        email = settings().superadmin_email
+        if email:
+            cur.execute("SELECT seed_superadmin(%(e)s)", {"e": email})
+            print(f"  superadmin: {email}")
+        else:
+            print("  SUPERADMIN_EMAIL unset -- no superadmin seeded; nobody "
+                  "will be able to invite users")
+
     print("migrations up to date")
     return 0
 

@@ -4,7 +4,12 @@
 # Built by `make build` (pip --platform manylinux2014_x86_64, since there
 # is no Docker on the dev machine). Terraform only consumes the result.
 locals {
-  bundle = "${path.module}/../dist/lambda.zip"
+  # fileexists guard: filebase64sha256 is evaluated even by
+  # `terraform plan -destroy`, so a missing bundle made DESTROY
+  # impossible on a fresh clone (dist/ is gitignored). Verified by
+  # reproducing the error.
+  bundle        = "${path.module}/../dist/lambda.zip"
+  bundle_exists = fileexists("${path.module}/../dist/lambda.zip")
 
   # The app functions. `presignup` is deliberately NOT here: the user pool
   # needs that function's ARN, while these need the pool's id, so keeping
@@ -27,6 +32,7 @@ locals {
     ALLOWED_EMAIL_DOMAIN = var.allowed_email_domain
     AWS_REGION_NAME      = var.aws_region
     SES_SENDER_EMAIL     = var.ses_sender_email
+    SUPERADMIN_EMAIL     = var.superadmin_email
     ALERT_TOPIC_ARN      = aws_sns_topic.alerts.arn
   }
 }
@@ -42,7 +48,7 @@ resource "aws_lambda_function" "fn" {
   memory_size   = each.value.memory
 
   filename         = local.bundle
-  source_code_hash = filebase64sha256(local.bundle)
+  source_code_hash = local.bundle_exists ? filebase64sha256(local.bundle) : null
 
   environment {
     variables = merge(local.common_env, {
@@ -89,7 +95,7 @@ resource "aws_lambda_function" "presignup" {
   memory_size   = 256
 
   filename         = local.bundle
-  source_code_hash = filebase64sha256(local.bundle)
+  source_code_hash = local.bundle_exists ? filebase64sha256(local.bundle) : null
 
   environment {
     variables = {

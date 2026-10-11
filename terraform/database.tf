@@ -6,12 +6,21 @@ resource "aws_db_subnet_group" "main" {
 # A custom parameter group only to force TLS; the default group cannot be
 # modified.
 resource "aws_db_parameter_group" "main" {
-  name   = "${local.prefix}-pg16"
-  family = "postgres16"
+  # name_prefix, not name: create_before_destroy with a fixed name
+  # guarantees DBParameterGroupAlreadyExists the first time anything
+  # forces replacement (e.g. bumping family to postgres17).
+  name_prefix = "${local.prefix}-pg"
+  family      = "postgres16"
 
   parameter {
     name  = "rds.force_ssl"
     value = "1"
+    # rds.force_ssl is a STATIC parameter, and RDS rejects the provider's
+    # default apply_method of "immediate" for static parameters with
+    # InvalidParameterCombination. pending-reboot is the only valid value
+    # -- and because the instance is created WITH this group attached, the
+    # setting is in effect from first boot; no reboot is pending.
+    apply_method = "pending-reboot"
   }
 
   lifecycle {

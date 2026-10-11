@@ -20,7 +20,7 @@ from costhub.alerts import evaluate as evaluator
 from costhub.alerts.inapp import InAppNotifier
 from costhub.alerts.ports import Delivery, Event, Notifier, Rule, due
 from costhub.alerts.ses import SesNotifier
-from costhub.db import connect, fetch_all
+from costhub.db import connect, fetch_all, fetch_one
 from costhub.rbac import resolve
 
 log = logging.getLogger(__name__)
@@ -71,6 +71,13 @@ class AlertResult:
         )
 
 
+def _db_now() -> datetime:
+    """Wall clock as the database sees it."""
+    row = fetch_one("SELECT now() AS t")
+    assert row is not None
+    return row["t"]
+
+
 def _load_rules() -> list[tuple[Rule, datetime | None, str]]:
     out = []
     for r in fetch_all(RULES):
@@ -115,7 +122,11 @@ def run(
     actor: str = "system@costhub.internal",
 ) -> AlertResult:
     today = today or date.today()
-    now = now or datetime.now(timezone.utc)
+    # The DATABASE clock, not this process's. fired_at is written by
+    # Postgres now(), so comparing it against a local clock makes
+    # throttling depend on skew -- measured at +4.1s against Neon, which
+    # was enough to make a just-fired rule look "not due".
+    now = now or _db_now()
     channels = _notifiers(notifiers)
     result = AlertResult()
 
@@ -181,6 +192,8 @@ def _lapse_already_recorded(rule_id: str, now: datetime) -> bool:
 
     Otherwise an `immediate` rule whose grant has gone would record a
     notice on every single run.
+
+    `now` is the database clock (see `_db_now`), matching `fired_at`.
     """
     row = fetch_all(LAST_LAPSE, {"rule_id": rule_id})
     last = row[0]["t"] if row else None
