@@ -49,7 +49,7 @@ changed mid-project when an apply replaced a resource. Always
 
 | Area | State |
 |---|---|
-| Cognito email-OTP sign-in | **live**, proven end to end |
+| Cognito email-OTP sign-in | **live**, proven end to end; the managed login page is branded from `branding/` — see its README |
 | Backend API (all endpoints) | **live**, 140 tests passing |
 | Database + migrations | **live** (RDS) |
 | `/admin/users`, `/admin/audit` | **live data** |
@@ -168,13 +168,10 @@ Ordered. Items 1–3 are in flight under a separate brief.
    `aws lambda invoke --function-name costhub-dev-anomaly out.json`
 6. **Update `NEXT_PUBLIC_API_BASE_URL` in the Amplify console** and redeploy
    `dev` whenever `api_url` changes.
-7. **Brand the Cognito Managed Login page.** It is currently AWS's default
-   skin, which is jarring mid-flow. Passwordless OTP *requires* Managed
-   Login, so the redirect itself cannot be removed — only styled.
-8. **Install `pg_dump` before teardown day**, then rehearse
+7. **Install `pg_dump` before teardown day**, then rehearse
    `./do.sh teardown dev`. It has never been run, and it takes a backup
    before destroying anything.
-9. Cleanup when done: revoke the GitHub PAT, `aws lambda remove-permission
+8. Cleanup when done: revoke the GitHub PAT, `aws lambda remove-permission
    --function-name costhub-dev-api --statement-id FunctionURLAllowPublicAccess`,
    and tear the stack down so credits stop.
 
