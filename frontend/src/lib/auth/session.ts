@@ -34,13 +34,20 @@ export function isUser(value: unknown): value is User {
   );
 }
 
+/** `; secure` only over https, or the cookie is silently rejected on localhost. */
+function secureAttr(): string {
+  return typeof window !== 'undefined' && window.location.protocol === 'https:' ? '; secure' : '';
+}
+
 export function startSession(user: User): void {
   const value = encodeURIComponent(JSON.stringify(user));
-  document.cookie = `${SESSION_COOKIE}=${value}; path=/; max-age=${60 * 60 * 8}; samesite=lax`;
+  document.cookie = `${SESSION_COOKIE}=${value}; path=/; max-age=${60 * 60 * 8}; samesite=lax${secureAttr()}`;
 }
 
 export function endSession(): void {
-  document.cookie = `${SESSION_COOKIE}=; path=/; max-age=0; samesite=lax`;
+  // The attributes must match the ones it was set with, or the browser
+  // treats this as a different cookie and the original survives.
+  document.cookie = `${SESSION_COOKIE}=; path=/; max-age=0; samesite=lax${secureAttr()}`;
 }
 
 export function readSession(): User | null {

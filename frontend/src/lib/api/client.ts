@@ -22,7 +22,8 @@
  *    zero rows"), so it must surface as an empty state and never as a
  *    sign-in loop.
  */
-import { refreshTokens } from '@/lib/auth/cognito';
+import { AuthError, refreshTokens } from '@/lib/auth/cognito';
+import { endSession } from '@/lib/auth/session';
 import { clearTokens, isStale, readTokens, writeTokens } from '@/lib/auth/tokens';
 import { API_BASE_URL } from '@/lib/config';
 import { camelKeys } from './case';
@@ -31,15 +32,15 @@ export class ApiError extends Error {
   readonly status: number;
   /** The server named who the caller is and refused. Render an empty state. */
   readonly forbidden: boolean;
-  /** No usable token. The caller has already been sent to re-authenticate. */
-  readonly unauthorized: boolean;
 
+  // No `unauthorized` flag. A 401 is intercepted below and turned into a
+  // re-authentication, so no caller is left in a position to inspect it;
+  // `status` is there for anything that genuinely needs the number.
   constructor(status: number, message: string) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.forbidden = status === 403;
-    this.unauthorized = status === 401;
   }
 }
 
@@ -74,11 +75,20 @@ async function bearerToken(): Promise<string | null> {
       writeTokens(fresh);
       return fresh.idToken;
     })
-    .catch(() => {
-      // The refresh token is spent or revoked: this session is over.
-      // Clearing it here is what stops the next request retrying
-      // forever with the same dead token.
-      clearTokens();
+    .catch((cause: unknown) => {
+      // ONLY a definite rejection ends the session.
+      //
+      // `AuthError` means the token endpoint answered and refused --
+      // spent, revoked, or the wrong client. Anything else (offline, a
+      // DNS blip, a blocked preflight on the Cognito domain) is a
+      // transport failure, and clearing on that threw away a refresh
+      // token still valid for up to two days: thirty seconds of flaky
+      // wifi at minute 58 ended the session for no reason.
+      //
+      // Keeping the token on a transport failure cannot loop, because
+      // the request that triggered it fails anyway and the next attempt
+      // re-enters here rather than retrying with something dead.
+      if (cause instanceof AuthError) clearTokens();
       return null;
     })
     .finally(() => {
@@ -97,14 +107,42 @@ let reauthenticating = false;
  * A full-page navigation, not a router push: the token store is gone,
  * so every mounted component is about to fail, and the cheapest correct
  * thing is to stop running this document.
+ *
+ * `endSession()` IS NOT OPTIONAL, and leaving it out made
+ * re-authentication impossible. The tokens live in sessionStorage and
+ * the marker cookie is separate, so clearing only the former leaves
+ * middleware.ts believing there is a session. `/login` is in
+ * GUEST_ONLY_PATHS, so it then redirects a "signed-in" visitor straight
+ * to /dashboard:
+ *
+ *   $ curl -i '/login?next=%2Fadmin%2Fusers' -H 'Cookie: cloudlens_session=...'
+ *   HTTP/1.1 307 Temporary Redirect
+ *   location: /dashboard
+ *
+ * The user could not reach the sign-in page by any route, including
+ * typing it, until the cookie aged out 8 hours later. Clearing both
+ * makes the router's view agree with the token store's.
+ *
+ * And it must not fire on the pages that ARE signing in. A 401 from
+ * `GET /meta/me` during the callback would otherwise navigate to
+ * /login, which auto-starts a new sign-in, which Cognito answers with a
+ * fresh code from its own still-live session -- an unbounded loop that
+ * re-posts to the token endpoint every cycle and never paints the
+ * error screen built to explain it. Returning early lets the 401
+ * propagate to the caller, which is the only place that can say what
+ * went wrong.
  */
 function reauthenticate(): void {
   if (reauthenticating || typeof window === 'undefined') return;
-  reauthenticating = true;
+
   clearTokens();
+  endSession();
+
   const here = `${window.location.pathname}${window.location.search}`;
-  const next = here.startsWith('/login') ? '' : `?next=${encodeURIComponent(here)}`;
-  window.location.assign(`/login${next}`);
+  if (here.startsWith('/login') || here.startsWith('/auth/callback')) return;
+
+  reauthenticating = true;
+  window.location.assign(`/login?next=${encodeURIComponent(here)}`);
 }
 
 // ---- requests ----------------------------------------------------------
@@ -116,7 +154,6 @@ export interface RequestOptions {
   body?: unknown;
   /** Keys whose values must not be key-renamed (free-form JSON). */
   opaque?: readonly string[];
-  signal?: AbortSignal;
 }
 
 function url(path: string, query: RequestOptions['query']): string {
@@ -163,17 +200,20 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       method: options.method ?? 'GET',
       headers,
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
-      signal: options.signal,
       // No cookies: authorization is the bearer token, and sending
       // credentials would tighten the CORS requirements for nothing.
       credentials: 'omit',
     });
   } catch {
-    // fetch rejects for network failure AND for a blocked CORS
-    // preflight, and the browser deliberately hides which. Saying both
-    // is more useful than guessing one.
+    // fetch rejects for network failure, for a blocked CORS preflight,
+    // AND for a response that carries no CORS headers -- which includes
+    // every unhandled server-side 500, since the API installs no
+    // exception handler and Starlette's error response is synthesised
+    // outside the CORS middleware. The browser deliberately hides which
+    // of the three happened, so naming all three is the honest message;
+    // blaming CORS alone sent people to the wrong place.
     throw new NetworkError(
-      `Could not reach the API at ${API_BASE_URL}. It may be unreachable, or this origin may not be in its CORS allow list.`,
+      `Could not reach the API at ${API_BASE_URL}. It may be unreachable, this origin may not be in its CORS allow list, or the request failed server-side.`,
     );
   }
 
@@ -201,38 +241,20 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 }
 
 /**
- * The read envelope: `{data, as_of, metric, currency, partial_period,
- * row_count}`, camelised. `metric` and `asOf` are not decoration -- a
- * cost figure with neither is unlabelled, and `billed_cost` and
- * `effective_cost` differ.
+ * Just the rows out of a `{data: [...]}` response.
+ *
+ * Reads also carry `as_of`, `metric`, `currency` and `partial_period`,
+ * and those are NOT decoration for the cost screens: `billed_cost` and
+ * `effective_cost` differ, and a figure labelled with neither (nor with
+ * how stale it is) is the kind of number that gets disputed. No caller
+ * needs them yet -- the admin endpoints return money-free rows -- so
+ * there is deliberately no Envelope type here to go stale. Whoever
+ * wires the cost screens should add one and surface those fields rather
+ * than reach for this function.
  */
-export interface Envelope<T> {
-  data: T[];
-  asOf: string | null;
-  metric: string | null;
-  currency: string;
-  partialPeriod: boolean;
-  rowCount: number;
-}
-
-export async function getEnvelope<T>(
-  path: string,
-  options: RequestOptions = {},
-): Promise<Envelope<T>> {
-  const raw = await request<Partial<Envelope<T>>>(path, { ...options, method: 'GET' });
-  return {
-    data: raw.data ?? [],
-    asOf: raw.asOf ?? null,
-    metric: raw.metric ?? null,
-    currency: raw.currency ?? 'USD',
-    partialPeriod: raw.partialPeriod ?? false,
-    rowCount: raw.rowCount ?? (raw.data?.length ?? 0),
-  };
-}
-
-/** Just the rows, for endpoints whose envelope fields nothing reads. */
 export async function getRows<T>(path: string, options: RequestOptions = {}): Promise<T[]> {
-  return (await getEnvelope<T>(path, options)).data;
+  const raw = await request<{ data?: T[] }>(path, { ...options, method: 'GET' });
+  return raw.data ?? [];
 }
 
 export function get<T>(path: string, options: RequestOptions = {}): Promise<T> {
