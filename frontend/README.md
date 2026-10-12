@@ -66,14 +66,13 @@ Filters (range, provider, account) live in the URL, so views are shareable and b
 |---|---|
 | `/login` `/register` `/forgot-password` `/reset-password` | Authentication (simulated) |
 | `/dashboard` | KPIs, charts, savings, anomalies, AI summary |
-| `/providers` | Provider cards: spend, health, anomalies, last sync |
 | `/accounts` | Cloud accounts with simulated connect / disconnect / sync |
 | `/services` | Services table with category filter, search and sorting |
 | `/compare` | Current vs previous / year-ago; providers, accounts, services; head to head |
 | `/anomalies` | Rule-based anomaly detection and workflow |
-| `/insights` | AI insights (deterministic templates) and optimization estimates |
+| `/insights` | **Concept, not wired.** AI insights (deterministic templates) and optimization estimates — mock mode only; no endpoint backs it |
 | `/alerts` | Alerts, read/unread, acknowledge/resolve, notification preferences |
-| `/settings` | Profile, notification preferences, reset demo data |
+| `/settings` | Profile, **data source switch** (mock / live), notification preferences, reset browser state |
 
 ## Cloud accounts (`/accounts`)
 Every AWS, Azure and GCP account with environment, **connection status**, period spend (with change vs previous) and
@@ -81,7 +80,9 @@ Every AWS, Azure and GCP account with environment, **connection status**, period
 becomes healthy). **Disconnect** asks for confirmation, stops "syncing" and raises a high-severity alert. **Connect** opens
 a provider-specific wizard (IAM role ARN / tenant + subscription / project ID) that validates the *format* only and then
 steps through simulated validation. Nothing calls a cloud API and no credentials are stored. State persists locally and
-flows into the dashboard's *Connected accounts* KPI, provider health, and alerts.
+flows into the dashboard's *Connected accounts* KPI and alerts. **All of this is mock-mode only** — the live API
+stores registration, not health, so the connection column, the sync and connect/disconnect actions and the health
+tiles are not rendered against it.
 
 ## Cost comparison (`/compare`)
 Compare against the **previous period** (identical to the dashboard's "vs previous") or the **same period last year**,
@@ -127,9 +128,12 @@ every provider/account/service figure match the dashboard.
 - **Investigation dialog:** cost curve around the detection date with the expected level, account-level contribution,
   billed-usage comparison, neighbouring anomalies, suggested checks and actions.
 
-### AI insights (`/insights`)
-- Explanations are **deterministic templates** filled with numbers calculated from the dataset. No AI model is called, and the
-  UI says so. Nothing asserts a root cause the data cannot show: possible causes are phrased as "things to check".
+### AI insights (`/insights`) — a concept, not wired
+- **There is no insights endpoint, and nothing here runs against live data.** The page is kept because it is the only
+  description of an intended capability; it is labelled "Concept" in the nav and renders nothing but that explanation in
+  live mode. Building it for real needs a model behind it (TODO-18, Amazon Bedrock).
+- In mock mode the full design renders. Explanations are **deterministic templates** filled with numbers calculated from
+  the generated dataset. No AI model is called, and the UI says so. Nothing asserts a root cause the data cannot show: possible causes are phrased as "things to check".
 - Each insight explains **what changed**, **which account and service contributed** (with how concentrated the change is in
   time), **what to investigate next**, and **recommended actions**, with the supporting figures listed.
 - Insight types: change vs previous period, anomalies, budget risk, growth trends and year-over-year, spend concentration,
@@ -177,7 +181,7 @@ every provider/account/service figure match the dashboard.
 | 3 | Dashboard: filters, KPIs, trend, provider/service charts, accounts table, anomalies | done |
 | 3b | Full dashboard: 8 KPIs, 4 granularities, comparison, breakdowns, savings, service + custom-date filters | done |
 | 6-7 | Anomaly detection engine + workflow, AI insights, optimization opportunities | done |
-| 4-5 | Authentication, cloud accounts, comparison, alerts and notifications, providers and services pages | done |
+| 4-5 | Authentication, cloud accounts, comparison, alerts and notifications, services page | done |
 | 9 | Final polish: error/404 pages, failure handling, a11y, responsive QA, honest labelling | done |
 
 

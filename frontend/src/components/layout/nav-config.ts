@@ -19,6 +19,16 @@ export interface NavItem {
   icon: LucideIcon;
   /** False until the page is implemented; shown with a "Soon" tag. */
   ready: boolean;
+  /**
+   * The page describes a capability nothing is wired to.
+   *
+   * NOT the same as `ready: false`, which means "coming". This means
+   * "this is a design and the backend for it does not exist", so it
+   * is labelled permanently rather than optimistically -- the whole
+   * point being that someone clicking it is told before they read
+   * the numbers, not after.
+   */
+  concept?: boolean;
   /** Shows a live counter next to the label. */
   badge?: 'alerts';
   /**
@@ -44,7 +54,6 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Explore',
     items: [
-      { label: 'Providers', href: '/providers', icon: Cloud, ready: true },
       { label: 'Accounts', href: '/accounts', icon: Building2, ready: true },
       { label: 'Services', href: '/services', icon: Layers, ready: true },
       { label: 'Comparison', href: '/compare', icon: GitCompare, ready: true },
@@ -54,7 +63,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Intelligence',
     items: [
       { label: 'Anomalies', href: '/anomalies', icon: Activity, ready: true },
-      { label: 'AI Insights', href: '/insights', icon: Sparkles, ready: true },
+      { label: 'AI Insights', href: '/insights', icon: Sparkles, ready: true, concept: true },
       { label: 'Alerts', href: '/alerts', icon: Bell, ready: true, badge: 'alerts' },
     ],
   },

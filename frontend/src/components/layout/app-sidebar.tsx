@@ -67,7 +67,11 @@ export function SidebarContent({ collapsed, onNavigate, onToggleCollapse }: Side
                       href={item.href}
                       onClick={onNavigate}
                       aria-current={active ? 'page' : undefined}
-                      title={collapsed ? item.label : undefined}
+                      // Collapsed, the badge has nowhere to go, so the
+                      // label carries it: the point of the tag is that
+                      // nobody reaches the page without having been
+                      // told, and a collapsed sidebar is still a way in.
+                      title={collapsed ? (item.concept ? `${item.label} (concept — not wired)` : item.label) : undefined}
                       className={cn(
                         'group relative flex items-center gap-3 rounded-md px-2.5 py-2 text-sm font-medium transition-colors',
                         collapsed && 'justify-center px-0',
@@ -89,6 +93,20 @@ export function SidebarContent({ collapsed, onNavigate, onToggleCollapse }: Side
                       {!collapsed && !item.ready && (
                         <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
                           Soon
+                        </Badge>
+                      )}
+                      {!collapsed && item.ready && item.concept && (
+                        // `warning`, not `secondary`: secondary is
+                        // byte-identical to the "Soon" tag two lines
+                        // up, and these mean opposite things. "Soon"
+                        // is a promise; this is "there is no backend
+                        // and there is not going to be one soon".
+                        <Badge
+                          variant="warning"
+                          className="px-1.5 py-0 text-[10px]"
+                          title="A design. Nothing on this page is computed from your data."
+                        >
+                          Concept
                         </Badge>
                       )}
                     </Link>

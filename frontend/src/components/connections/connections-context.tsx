@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useToast } from '@/components/ui/toast';
 import { demoNow } from '@/lib/clock';
-import { deriveProviderStatus, parseConnectionOverrides, summarizeConnections, type ConnectionSummary } from '@/lib/connections';
+import { parseConnectionOverrides, summarizeConnections, type ConnectionSummary } from '@/lib/connections';
 import { getBaseConnection, getFilterOptions } from '@/lib/services/cost-service';
 import type { AccountConnection, Connectivity, ProviderId } from '@/types/domain';
 
@@ -19,7 +19,6 @@ export interface ConnectionView extends AccountConnection {
 interface ConnectionsContextValue {
   connectionOf: (accountId: string) => ConnectionView;
   statusOf: (accountId: string) => Connectivity;
-  providerStatus: (providerId: ProviderId) => Connectivity;
   summarize: (accounts: ReadonlyArray<{ id: string; providerId: ProviderId }>) => ConnectionSummary;
   sync: (accountId: string) => void;
   syncAll: (accountIds: readonly string[]) => void;
@@ -61,12 +60,6 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
 
   const connectionOf = useCallback((id: string): ConnectionView => ({ ...base(id), syncing: syncing.has(id) }), [base, syncing]);
   const statusOf = useCallback((id: string): Connectivity => base(id).status, [base]);
-
-  const providerStatus = useCallback(
-    (providerId: ProviderId): Connectivity =>
-      deriveProviderStatus(getFilterOptions().accounts.filter((a) => a.providerId === providerId).map((a) => statusOf(a.id))),
-    [statusOf],
-  );
 
   const summarize = useCallback(
     (accounts: ReadonlyArray<{ id: string; providerId: ProviderId }>) => summarizeConnections(accounts, statusOf),
@@ -132,8 +125,8 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<ConnectionsContextValue>(
-    () => ({ connectionOf, statusOf, providerStatus, summarize, sync, syncAll, disconnect, connect }),
-    [connectionOf, statusOf, providerStatus, summarize, sync, syncAll, disconnect, connect],
+    () => ({ connectionOf, statusOf, summarize, sync, syncAll, disconnect, connect }),
+    [connectionOf, statusOf, summarize, sync, syncAll, disconnect, connect],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

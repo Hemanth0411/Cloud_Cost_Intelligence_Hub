@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronsDownUp, ChevronsUpDown, Download, Loader2, RefreshCw } from 'lucide-react';
+import { ChevronsDownUp, ChevronsUpDown, Download, FlaskConical, Loader2, RefreshCw } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useDetectionConfig } from '@/components/anomalies/detection-config-context';
 import { InvestigationDialog } from '@/components/anomalies/investigation-dialog';
@@ -14,6 +14,7 @@ import { Card } from '@/components/ui/card';
 import { SegmentedControl, type SegmentedOption } from '@/components/ui/segmented-control';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useInsightReport } from '@/hooks/use-insight-report';
+import { COST_CAPABILITIES } from '@/lib/services/cost-service';
 import { downloadTextFile } from '@/lib/download';
 import { insightsToCsv, savingsToCsv } from '@/lib/export';
 import { formatCompactCurrency } from '@/lib/format';
@@ -41,7 +42,71 @@ function InsightsSkeleton() {
   );
 }
 
+/**
+ * THIS PAGE IS A CONCEPT, AND IT NOW SAYS SO.
+ *
+ * KEPT RATHER THAN DELETED, deliberately. There is no insights
+ * endpoint and there cannot be one without a model behind it
+ * (TODO-18, Bedrock). But what the page renders in mock mode is a
+ * deterministic rule pass over the invented dataset -- a faithful
+ * picture of what the feature would look like in use, which is
+ * exactly what the mock is for. Deleting it would throw away the only
+ * description of an intended capability; the problem was never that
+ * it existed, it was that nothing said what it was.
+ *
+ * In LIVE mode the rules have nothing to run over: `buildInsightBundle`
+ * returns null because the browser never holds the fact rows they
+ * read. The page used to render anyway, and that was the violation --
+ * "Plain-English explanations written by deterministic rules from your
+ * cost data" over an empty list, five category chips reading 0, a
+ * "No insights in this category" card asserting the engine had run and
+ * found nothing, and a Refresh button that played a five-stage
+ * "Scanning cost records... Estimating savings opportunities" animation
+ * for two seconds and produced nothing. Every one of those is a claim
+ * about an analysis that never happened.
+ *
+ * So in live mode the page renders ONLY the explanation below. The
+ * sidebar carries a permanent "Concept" tag either way, because the
+ * label has to arrive before the numbers, not after.
+ */
+function ConceptNotice() {
+  return (
+    <>
+      <PageHeader
+        title="AI insights"
+        description="A design for plain-English explanations and savings ideas generated from your cost data."
+      />
+      <Card className="border-warning/50 bg-warning/5 p-6">
+        <div className="flex items-start gap-3">
+          <FlaskConical className="mt-0.5 h-5 w-5 shrink-0 text-warning" aria-hidden />
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base font-semibold">Not wired to anything</h2>
+              <Badge className="bg-warning/15 text-warning">Concept</Badge>
+            </div>
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              There is no insights endpoint in the API, and nothing here is computed from your live
+              cost data. Producing these explanations needs a model behind it, which is tracked as
+              TODO-18 (Amazon Bedrock) and has not been built.
+            </p>
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              Switch to mock data on the Settings page to see the full design — the explanations, the
+              evidence lines and the savings estimates. Every figure there comes from an invented
+              dataset.
+            </p>
+          </div>
+        </div>
+      </Card>
+    </>
+  );
+}
+
 export function InsightsView() {
+  if (!COST_CAPABILITIES.insights) return <ConceptNotice />;
+  return <GeneratedInsights />;
+}
+
+function GeneratedInsights() {
   const { filters } = useFilters();
   const { config } = useDetectionConfig();
   const { overrides } = useAnomalyStatus();
@@ -53,7 +118,9 @@ export function InsightsView() {
 
   const bundle = state.bundle;
   const analyzing = state.status === 'analyzing';
-  const insights: CostInsight[] = bundle?.report.insights ?? [];
+  // Memoised for a stable identity: two useMemos below depend on it,
+  // and a fresh [] every render re-ran both.
+  const insights: CostInsight[] = useMemo(() => bundle?.report.insights ?? [], [bundle]);
 
   const counts = useMemo(() => {
     const result: Record<Category, number> = { all: insights.length, anomaly: 0, budget: 0, change: 0, savings: 0 };
@@ -99,7 +166,7 @@ export function InsightsView() {
     <>
       <PageHeader
         title="AI insights"
-        description="Plain-English explanations and savings ideas written by deterministic rules from your cost data. No AI model is called."
+        description="A concept: plain-English explanations and savings ideas written by deterministic rules over the mock dataset. No AI model is called, and no endpoint backs this."
         actions={
           <>
             <Button variant="outline" size="sm" disabled={!bundle || analyzing} onClick={() => bundle && downloadTextFile(`cloudlens-insights-${bundle.data.range.from}_${bundle.data.range.to}.csv`, insightsToCsv(bundle.report.insights))}>
@@ -149,7 +216,9 @@ export function InsightsView() {
               <Badge variant="outline">All figures are estimates</Badge>
             </div>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Each estimate applies a stated saving range to matching spend in this view, normalized to a month. They are starting points to validate, not guarantees.
+              Each estimate applies a stated saving range to matching spend in this view, normalized to a month. They are
+              starting points to validate, not guarantees — and like the rest of this page, they are computed from the mock
+              dataset, not from your account.
             </p>
           </div>
           <div className="flex items-center gap-2">
