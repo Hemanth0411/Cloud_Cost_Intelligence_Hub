@@ -1,9 +1,8 @@
 'use client';
 
 import { ChevronDown, LogOut } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import { DropdownMenu, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
-import { endSession } from '@/lib/auth/session';
+import { signOut } from '@/lib/services/session-service';
 import { useSession } from '@/hooks/use-session';
 
 const initials = (name: string): string =>
@@ -15,12 +14,20 @@ const initials = (name: string): string =>
     .toUpperCase();
 
 export function UserMenu() {
-  const router = useRouter();
   const { user } = useSession();
 
+  /**
+   * Delegated to session-service, not done here.
+   *
+   * Clearing the cookie and pushing to /login is enough in mock mode
+   * and is NOT signing out in live mode: Cognito holds its own session,
+   * so the next authorize request returns a code with no prompt and the
+   * user is immediately back in. session-service redirects through
+   * Cognito's /logout, which is why this is a full navigation rather
+   * than a router push.
+   */
   function handleSignOut(): void {
-    endSession();
-    router.replace('/login');
+    signOut();
   }
 
   return (

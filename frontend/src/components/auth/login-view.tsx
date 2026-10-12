@@ -1,16 +1,18 @@
 'use client';
 
-import { CheckCircle2, Loader2 } from 'lucide-react';
+import { CheckCircle2, Loader2, Mail } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { fieldA11y, FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
+import { beginSignIn, takeSignedOut } from '@/lib/auth/cognito';
 import { DEMO_CREDENTIALS } from '@/lib/auth/constants';
 import { startSession } from '@/lib/auth/session';
 import { browserStore, emptyStore, signIn } from '@/lib/auth/store';
 import { validateLogin, type FieldErrors } from '@/lib/auth/validation';
+import { USE_MOCK } from '@/lib/config';
 import { AuthShell, DemoNotice } from './auth-shell';
 import { PasswordField } from './password-field';
 
@@ -21,7 +23,98 @@ function safeNext(value: string | null): string {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * `/login` in both modes.
+ *
+ * Live mode has no form to render. The pool is passwordless email OTP,
+ * which REQUIRES Cognito Managed Login -- the one-time-code screen is
+ * Cognito's, not ours, and there is no API this app could call to
+ * replace it. So the live path is a hand-off.
+ */
 export function LoginView() {
+  return USE_MOCK ? <MockLogin /> : <ManagedLoginHandoff />;
+}
+
+// --------------------------------------------------------------- live
+
+function ManagedLoginHandoff() {
+  const params = useSearchParams();
+  const nextPath = safeNext(params.get('next'));
+  /** Cognito reports a refused authorize request back here. */
+  const cognitoError = params.get('error_description') ?? params.get('error');
+
+  const [error, setError] = useState<string | null>(cognitoError);
+  const [redirecting, setRedirecting] = useState(false);
+  const started = useRef(false);
+
+  const go = (): void => {
+    setError(null);
+    setRedirecting(true);
+    void beginSignIn(nextPath).catch((cause: unknown) => {
+      setRedirecting(false);
+      setError(cause instanceof Error ? cause.message : 'Could not start sign-in.');
+    });
+  };
+
+  /**
+   * Auto-hand-off, with two deliberate exceptions.
+   *
+   * Redirecting unconditionally makes two states impossible to escape.
+   * After signing out, `/logout` returns here and an immediate
+   * re-authorize means "sign out" shows the code screen again with no
+   * way to simply leave. And when Cognito has refused the request, the
+   * error arrives as a query parameter on this page -- auto-redirecting
+   * would retry it forever and the user would never see why.
+   *
+   * The ref guards React strict mode, which runs effects twice in dev.
+   */
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    if (takeSignedOut() || cognitoError) return;
+    go();
+    // `go` is stable for the life of this component and intentionally
+    // not a dependency: re-running this effect would restart sign-in.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cognitoError]);
+
+  return (
+    <AuthShell>
+      <div className="space-y-1.5">
+        <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
+        <p className="text-sm text-muted-foreground">
+          CostHub sends a one-time code to your work email. There is no password to remember —
+          none is ever set.
+        </p>
+      </div>
+
+      {error && (
+        <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </p>
+      )}
+
+      <Button size="lg" className="w-full" disabled={redirecting} onClick={go}>
+        {redirecting ? (
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+        ) : (
+          <Mail className="h-4 w-4" aria-hidden />
+        )}
+        {redirecting ? 'Opening sign-in…' : 'Continue with email code'}
+      </Button>
+
+      <DemoNotice>
+        Access is by invitation only, and only <code className="font-mono">@chryselys.com</code>{' '}
+        addresses are accepted. Signing in grants no access to cost data by itself — a superadmin
+        has to grant you an account first, and until then your dashboard is empty by design.
+      </DemoNotice>
+    </AuthShell>
+  );
+}
+
+// --------------------------------------------------------------- mock
+
+function MockLogin() {
   const router = useRouter();
   const params = useSearchParams();
   const nextPath = safeNext(params.get('next'));

@@ -15,7 +15,19 @@ export interface KeyValueStore {
   removeItem(key: string): void;
 }
 
-export const DEMO_ADMIN: User = { name: 'Alex Morgan', email: DEMO_CREDENTIALS.email, role: 'FinOps Admin' };
+/**
+ * `role` is 'superadmin', not a job title.
+ *
+ * It used to read 'FinOps Admin', which is a label and not a role --
+ * and `useSession().isSuperadmin` tests `role === 'superadmin'`, so the
+ * demo admin was silently a non-superadmin and `navGroupsFor` hid all
+ * three admin links. The pages existed and were reachable only by
+ * typing the URL. The two roles the system has are the two in
+ * `Role` ('superadmin' | 'user'), and the live session takes its value
+ * from `GET /meta/me`, so mock mode has to speak the same vocabulary or
+ * the two modes disagree about who can see what.
+ */
+export const DEMO_ADMIN: User = { name: 'Alex Morgan', email: DEMO_CREDENTIALS.email, role: 'superadmin' };
 
 export const USERS_KEY = 'cloudlens:demo-users';
 export const TOKENS_KEY = 'cloudlens:reset-tokens';
