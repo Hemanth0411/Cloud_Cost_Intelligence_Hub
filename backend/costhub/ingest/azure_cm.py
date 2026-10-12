@@ -27,6 +27,7 @@ import logging
 import time
 from datetime import date
 from typing import Iterator
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -47,6 +48,31 @@ log = logging.getLogger(__name__)
 
 AUTHORITY = "https://login.microsoftonline.com"
 MANAGEMENT = "https://management.azure.com"
+
+
+def _check_continuation(url: str) -> None:
+    """Refuse a nextLink that points anywhere but Azure.
+
+    Pagination follows a URL taken from the RESPONSE BODY, and every
+    request on this client carries the bearer token. Without this check,
+    a response that set
+
+        "nextLink": "https://attacker.example/collect"
+
+    would have the adapter send an Azure management access token to that
+    host, as an Authorization header, on the next loop iteration. The
+    body is not a trusted source of request targets.
+
+    Scheme is checked too: http:// would put the same token on the wire
+    in clear text.
+    """
+    parsed = urlsplit(url)
+    expected = urlsplit(MANAGEMENT)
+    if parsed.scheme != expected.scheme or parsed.netloc != expected.netloc:
+        raise AzureQueryFailed(
+            f"refusing to follow a continuation link off {expected.netloc}: "
+            f"{parsed.scheme}://{parsed.netloc}"
+        )
 API_VERSION = "2023-03-01"
 SCOPE = f"{MANAGEMENT}/.default"
 
@@ -185,6 +211,7 @@ class AzureCostManagementSource:
             nxt = props.get("nextLink") or payload.get("nextLink")
             if not nxt:
                 return
+            _check_continuation(nxt)
             # Continuation carries the query, so the body is dropped.
             url, body = nxt, None
 

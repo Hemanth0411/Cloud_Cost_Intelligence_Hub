@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import date, timedelta
 
 logging.getLogger().setLevel(logging.INFO)
 log = logging.getLogger(__name__)
@@ -41,7 +40,7 @@ def handler_ingest(event, context):
     that idempotent.
     """
     from costhub.config import settings
-    from costhub.ingest import runner
+    from costhub.ingest import report, runner
     from costhub.ingest.cost_explorer import default_window
     from costhub.ingest.sources import source_for
 
@@ -54,7 +53,7 @@ def handler_ingest(event, context):
         end=end,
         triggered_by=settings().system_actor,
     )
-    summary = runner.summarize(results)
+    summary = report.summarize(results)
     log.info("ingest %s..%s\n%s", start, end, summary)
 
     failed = [r for r in results if not r.ok]

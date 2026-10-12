@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 

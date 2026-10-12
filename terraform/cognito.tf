@@ -16,7 +16,13 @@ resource "aws_cognito_user_pool" "main" {
   auto_verified_attributes = ["email"]
 
   sign_in_policy {
-    allowed_first_auth_factors = ["EMAIL_OTP", "PASSWORD"]
+    # EMAIL_OTP only. Leaving PASSWORD in the list made the pool
+    # password-capable, and AdminCreateUser on a password-capable pool
+    # generates a temporary password -- which puts the seeded superadmin
+    # into FORCE_CHANGE_PASSWORD, a state an OTP-only client cannot
+    # clear. The comment on aws_cognito_user below claiming "the pool is
+    # passwordless" was false until this line changed.
+    allowed_first_auth_factors = ["EMAIL_OTP"]
   }
 
   email_configuration {
@@ -82,14 +88,18 @@ resource "aws_cognito_user_pool_client" "web" {
 
   prevent_user_existence_errors = "ENABLED"
 
-  # The client may read email but NOT write it. Cognito's default is
-  # every mutable attribute, and with ALLOW_USER_AUTH a token carries
-  # aws.cognito.signin.user.admin -- so a user could rewrite their own
-  # email to a known superadmin's address and inherit that role. The
-  # API also rejects email_verified=false; this removes the capability
-  # rather than only catching its effect.
-  read_attributes  = ["email", "email_verified"]
-  write_attributes = []
+  read_attributes = ["email", "email_verified"]
+
+  # write_attributes is deliberately NOT set to []. AWS exempts required
+  # attributes from it -- all app clients can write a pool's required
+  # attributes -- and `email` is required = true in the schema above, so
+  # the empty list was either silently ignored or an apply error. It read
+  # like a control and was not one.
+  #
+  # The actual defence against a user rewriting their email to a
+  # superadmin's address is in the API: api/deps.py requires
+  # email_verified to be exactly True before it will look the row up, and
+  # changing email through Cognito resets email_verified to false.
 }
 
 resource "aws_cognito_user_pool_domain" "main" {
@@ -110,7 +120,14 @@ resource "aws_cognito_user_pool_domain" "main" {
 # CONFIRMED rather than FORCE_CHANGE_PASSWORD.
 resource "aws_cognito_user" "superadmin" {
   user_pool_id = aws_cognito_user_pool.main.id
-  username     = var.superadmin_email
+
+  # The pool's pre-sign-up trigger fires on AdminCreateUser too, and
+  # Cognito needs permission to invoke it. Without an explicit edge
+  # Terraform is free to create this user before that permission exists,
+  # which fails the apply roughly half the time -- the kind of bug that
+  # passes once and breaks a demo.
+  depends_on = [aws_lambda_permission.cognito_presignup]
+  username   = var.superadmin_email
 
   attributes = {
     email          = var.superadmin_email

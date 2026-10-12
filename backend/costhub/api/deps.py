@@ -18,7 +18,6 @@ and will not proceed without it.
 """
 from __future__ import annotations
 
-import logging
 import time
 from typing import Annotated, Any
 
@@ -27,12 +26,10 @@ import jwt
 from fastapi import Depends, Header, HTTPException, status
 from jwt import PyJWKClient
 
-from costhub.audit import log as audit_log
 from costhub.config import settings
-from costhub.db import connect, fetch_one
+from costhub.db import fetch_one
 from costhub.query.scoped import Principal
 
-log = logging.getLogger(__name__)
 
 _jwks: PyJWKClient | None = None
 _jwks_url: str | None = None
@@ -116,13 +113,33 @@ def _email_from(claims: dict[str, Any]) -> str:
     re-authenticating yielded that role -- `email_verified` goes false on
     change, which is exactly the signal to reject on.
     """
-    email = claims.get("email") or claims.get("username") or claims.get("cognito:username")
+    # No fallback to `username` / `cognito:username`. Those are the
+    # pool's username, and this pool is username_attributes = ["email"],
+    # so for a normal user they happen to BE the email -- which is
+    # exactly what made the fallback look harmless. It is not: those
+    # claims carry no verification status, so accepting one took the
+    # identity from a field that `email_verified` says nothing about. A
+    # token with no `email` claim is a token this app cannot
+    # authenticate, and saying so is the safe answer.
+    email = claims.get("email")
     if not email:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "token carries no email")
 
-    # Only enforce where the claim exists: access tokens do not carry it,
-    # and absence is not the same as false.
-    if "email_verified" in claims and not claims["email_verified"]:
+    # STRICT: absent is rejected, not accepted.
+    #
+    # The old test was `"email_verified" in claims and not ...`, on the
+    # reasoning that an access token does not carry the claim and
+    # absence is not falsity. True, and still wrong -- the check existed
+    # to stop a user rewriting their email to a superadmin's address,
+    # and that attack is carried out with a token that simply lacks the
+    # claim. A missing claim means "unproven", and unproven is what this
+    # must refuse. An access token without `email` now fails above
+    # anyway, so nothing legitimate depends on the lenient branch.
+    #
+    # Cognito sends a JSON boolean, but the string forms appear via
+    # federation and from some SDK versions, so both are accepted.
+    verified = claims.get("email_verified")
+    if verified is not True and str(verified).strip().lower() != "true":
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             "email address is not verified",
@@ -153,43 +170,10 @@ def _load_user(email: str) -> Principal:
     return Principal(user_id=str(row["id"]), email=row["email"], role=row["role"])
 
 
-BYPASS_SEEN = """
-SELECT 1 FROM audit_log
-WHERE actor = %(actor)s
-  AND action = 'access.superadmin_bypass'
-  AND at > now() - interval '1 hour'
-LIMIT 1
-"""
-
-
-def _audit_bypass(who: Principal) -> None:
-    """Record that a superadmin read data outside any grant.
-
-    FR-38. `scoped.SUPERADMIN_BYPASS` has always carried a comment saying
-    callers log this; no caller did, so the detection control for every
-    privilege-escalation path was simply absent.
-
-    Throttled to one row per actor per hour: a dashboard issues half a
-    dozen requests per page load, and a row each would bury the log it is
-    meant to make readable.
-    """
-    try:
-        with connect() as conn, conn.cursor() as cur:
-            cur.execute(BYPASS_SEEN, {"actor": who.email})
-            if cur.fetchone():
-                return
-            audit_log(
-                cur,
-                actor=who.email,
-                action="access.superadmin_bypass",
-                entity_type="user",
-                entity_id=who.user_id,
-                after={"role": who.role, "window": "1h", "throttled": True},
-            )
-    except Exception:
-        # Never fail a request because the audit write failed -- but say
-        # so loudly, because a silent gap here is the whole problem.
-        log.exception("could not record superadmin bypass for %s", who.email)
+# The superadmin bypass IS audited, in query/scoped._note_bypass --
+# at the point the predicate is actually replaced, carrying the scope
+# that was read. It used to be logged here instead, which recorded
+# "a superadmin authenticated" and nothing about what they opened.
 
 
 async def principal(
@@ -199,16 +183,10 @@ async def principal(
     """The authenticated caller. Built from the token, never a request body."""
     if authorization and authorization.lower().startswith("bearer "):
         claims = _verify(authorization.split(" ", 1)[1].strip())
-        who = _load_user(_email_from(claims))
-        if who.is_superadmin:
-            _audit_bypass(who)
-        return who
+        return _load_user(_email_from(claims))
 
     if x_dev_user and dev_mode():
-        who = _load_user(x_dev_user.strip().lower())
-        if who.is_superadmin:
-            _audit_bypass(who)
-        return who
+        return _load_user(x_dev_user.strip().lower())
 
     raise HTTPException(
         status.HTTP_401_UNAUTHORIZED,

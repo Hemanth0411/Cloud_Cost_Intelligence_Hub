@@ -13,7 +13,17 @@ from costhub.audit import log
 from costhub.config import settings
 from costhub.db import connect
 
-ALLOWED_EMAIL_DOMAIN = "chryselys.com"
+def allowed_email_domain() -> str:
+    """The one source of truth: config.Settings.
+
+    This module used to hardcode the domain while config.py, the Cognito
+    pre-signup trigger and api/deps.py all read a setting -- so changing
+    ALLOWED_EMAIL_DOMAIN in the environment moved three of the four
+    checks and silently left this one behind. For a deployment in a
+    different tenant that means invitations rejected with a message
+    naming someone else's domain.
+    """
+    return settings().allowed_email_domain
 
 
 class NotPermitted(Exception):
@@ -40,8 +50,9 @@ def normalize_email(email: str) -> str:
     if "@" not in cleaned:
         raise InvalidEmail(email)
     domain = cleaned.rsplit("@", 1)[1]
-    if domain != ALLOWED_EMAIL_DOMAIN:
-        raise InvalidEmail(f"only @{ALLOWED_EMAIL_DOMAIN} addresses are allowed")
+    allowed = allowed_email_domain()
+    if allowed and domain != allowed:
+        raise InvalidEmail(f"only @{allowed} addresses are allowed")
     return cleaned
 
 

@@ -33,7 +33,7 @@ None of these block starting the backend — `dev_seed` covers development.
 | [x] | `002_facts.sql` — ingest_runs, dims, fact_cost_daily | — | FR-14 |
 | [x] | `003_alerts_anomaly.sql` — rules, events, findings | — | FR-31 |
 | [x] | `004_connections.sql` — `cloud_connections` | S | FR-11–13 |
-| [x] | `005_audit_grants.sql` — `GRANT INSERT, SELECT` only on `audit_log` | S | NFR-4, TODO-10 |
+| [x] | `005_audit_append_only.sql` — statement triggers that RAISE on UPDATE/DELETE | S | NFR-4, TODO-10 |
 | [x] | `migrate.py` runner | — | — |
 | [x] | Run migrations against a real database | S | — |
 
@@ -66,7 +66,7 @@ pass — in particular `test_no_grants_sees_nothing`.
 | [x] | `ingest/dev_seed.py` — generated rows, planted step/spike/creep | M | — |
 | [x] | `ingest/cost_explorer.py` — CE adapter, DAILY, grouped by SERVICE | M | FR-14 |
 | [x] | `ingest/runner.py` — per-connection loop, `ingest_runs` lineage, idempotent upsert | M | FR-15–17 |
-| [x] | `ingest/backfill.py` — 14 months, chunked by month | S | FR-14 |
+| [x] | backfill — `cli.py:cmd_backfill`, month-chunked with a 400-day floor (not a separate module) | S | FR-14 |
 | [x] | `ingest/azure_cm.py` — Azure Cost Management Query API | L | FR-14 |
 
 Notes: CE is **us-east-1 only**; `GroupBy` takes at most 2 dimensions; the
@@ -156,7 +156,7 @@ working in about fifteen seconds.
 | [x] | `schedule.tf` — EventBridge rules | S |
 | [x] | `cognito.tf` — pool (Essentials), Managed Login, pre-signup Lambda, SES sender | L |
 | [x] | `amplify.tf` — app, branch, **basic auth** | M |
-| [x] | `messaging.tf` — SNS, SES identity | S |
+| [x] | `messaging.tf` — budget, SES identity ARN | S |
 | [x] | `secrets.tf` — DB password, `recovery_window_in_days = 0` | S |
 | [x] | `logs.tf` — **explicit** log groups, 7-day retention | S |
 | [x] | Teardown flags on every resource | S |
@@ -207,21 +207,32 @@ halfway (NFR-14).
 
 ## Counts
 
-| Area | Items | Done |
-|---|---|---|
-| Prerequisites | 9 | 0 |
-| Database | 7 | 4 |
-| Backend core | 7 | 5 |
-| Ingest | 7 | 0 |
-| Anomaly + alerts | 8 | 0 |
-| API | 8 | 0 |
-| Frontend | 17 | 0 |
-| Terraform | 12 | 0 |
-| Config + ops | 6 | 0 |
-| Demo readiness | 13 | 0 |
-| **Total** | **94** | **~55** |
+Counted from the checkboxes above, not estimated — the previous version of
+this table claimed 0 done for Ingest, API and Terraform while every box in
+those sections was ticked, and a total (94) that matched no section sum.
 
-**Backend and infrastructure are complete** (88 tests green). What remains
+| § | Area | Items | Done |
+|---|---|---|---|
+| 0 | Prerequisites (external) | 9 | 0 |
+| 1 | Database and schema | 7 | 7 |
+| 2 | Backend — core | 7 | 7 |
+| 3 | Backend — connections and ingest | 7 | 7 |
+| 4 | Backend — anomaly and alerts | 8 | 8 |
+| 5 | Backend — API | 8 | 8 |
+| 6 | Frontend | 17 | 0 |
+| 7 | Infrastructure (Terraform) | 15 | 14 |
+| 8 | Configuration and operations | 9 | 3 |
+| 9 | Demo readiness | 13 | 0 |
+| | **Total** | **100** | **54** |
+
+To re-derive after an edit:
+
+```bash
+grep -c '^| \[x\]' docs/12-build-checklist.md   # done
+grep -c '^| \[ \]' docs/12-build-checklist.md   # outstanding
+```
+
+**Backend and infrastructure are complete** (132 tests green). What remains
 is the frontend, the live deploy, and the external prerequisites in §0.
 
 ## Critical path

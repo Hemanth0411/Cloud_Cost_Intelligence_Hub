@@ -114,6 +114,84 @@ def test_security_surface_is_still_named_as_expected(name):
     assert name in src
 
 
+# ------------------------------------------- fabricated superadmins
+
+def _superadmin_principals(path: Path) -> list[int]:
+    """Lines constructing a Principal with role="superadmin".
+
+    The grant predicate is replaced wholesale for a superadmin, so a
+    module that builds its own superadmin Principal has written an
+    access-control bypass -- whatever it is actually for. There is one
+    legitimate need (background jobs must see every account) and
+    `scoped.system_principal()` is it: named, greppable, and excluded
+    from the bypass audit for that reason.
+
+    This looks for the CONSTRUCTOR specifically, not the string. Other
+    modules legitimately mention the role -- cli.py passes
+    `actor_role="superadmin"` to assert the operator's own authority,
+    and comparisons against the role are how permission checks are
+    written.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    hits = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        name = getattr(func, "id", None) or getattr(func, "attr", None)
+        if name != "Principal":
+            continue
+        for kw in node.keywords:
+            if (
+                kw.arg == "role"
+                and isinstance(kw.value, ast.Constant)
+                and kw.value.value == "superadmin"
+            ):
+                hits.append(node.lineno)
+    return hits
+
+
+def test_only_scoped_can_mint_a_superadmin():
+    offenders = []
+    for path in _modules():
+        rel = path.relative_to(PACKAGE)
+        if rel == Path("query/scoped.py"):
+            continue
+        for lineno in _superadmin_principals(path):
+            offenders.append(f"{rel.as_posix()}:{lineno}")
+
+    assert not offenders, (
+        "These construct a superadmin Principal directly, which replaces the "
+        "grant predicate with TRUE and bypasses access control. Use "
+        "scoped.system_principal() for a background job that must see every "
+        f"account: {offenders}"
+    )
+
+
+def test_the_superadmin_check_would_catch_a_violation():
+    """Guard the guard, again."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as d:
+        bad = Path(d) / "bad.py"
+        bad.write_text(
+            'p = Principal(user_id="x", email="e", role="superadmin")\n',
+            encoding="utf-8",
+        )
+        assert _superadmin_principals(bad) == [1]
+
+        # The forms that must NOT trip it: asserting the operator's own
+        # authority, and comparing against the role.
+        ok = Path(d) / "ok.py"
+        ok.write_text(
+            'grant(actor="me", actor_role="superadmin")\n'
+            'if who.role == "superadmin":\n'
+            "    pass\n",
+            encoding="utf-8",
+        )
+        assert _superadmin_principals(ok) == []
+
+
 # ------------------------------------------------- the size convention
 
 MAX_LINES = 300

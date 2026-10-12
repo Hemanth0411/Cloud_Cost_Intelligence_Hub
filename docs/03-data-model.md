@@ -103,7 +103,7 @@ erDiagram
 
 ## Audit conventions
 
-### Audit columns — on every table, no exceptions
+### Audit columns — on every table that records a human action
 
 ```sql
 created_at timestamptz NOT NULL DEFAULT now(),
@@ -114,6 +114,12 @@ deleted_at timestamptz,          -- soft delete; no hard DELETE
 deleted_by text,
 revision   integer     NOT NULL DEFAULT 1
 ```
+
+Seven of the thirteen tables deliberately carry less: `schema_migrations`
+and `audit_log` have none at all (one is bookkeeping, the other *is* the
+trail), and `ingest_runs`, `dim_account`, `dim_service`, `alert_events`
+and `anomaly_findings` omit `deleted_at`/`deleted_by` because nothing
+soft-deletes them. This section used to say "no exceptions".
 
 **A distinction worth being deliberate about.** For human-edited tables
 `created_by` is a user email. For machine-written fact rows it is the ingest
@@ -129,7 +135,7 @@ connections. It is written **inside the caller's transaction** (see
 `audit.log()` taking a cursor, not a connection) — an audit log that can
 disagree with the data is worse than none.
 
-Enforced append-only by database grants, not convention:
+Enforced append-only by **statement triggers**, not convention — and not by grants, which was claimed here for a long time and never existed:
 
 ```sql
 -- migration 005: BEFORE UPDATE/DELETE statement triggers that RAISE.
@@ -237,7 +243,7 @@ Backs the UI "Connect account" form (FR-11).
 | `display_name` | shown in the UI |
 | `role_arn` | role to assume in the target account |
 | `external_id` | confused-deputy protection |
-| `credential_mode` | `assume_role` \| `local_profile` |
+| `credential_mode` | `assume_role` \| `profile` |
 | `enabled` | disable without losing history |
 | `last_ingest_at`, `last_ingest_status` | surfaced on the connections screen |
 

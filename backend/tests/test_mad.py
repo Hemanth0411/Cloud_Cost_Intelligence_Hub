@@ -169,10 +169,21 @@ def test_flat_zero_mad_series_still_detects_a_real_jump():
 
 
 def test_zero_baseline_gives_null_percent_not_infinity():
-    det = D(exclude_recent_days=0, scan_days=5, min_abs_delta=Decimal("1.00"))
-    found = det.detect(series(flat(50, 0.0) + [25.0]))
-    assert len(found) == 1
-    assert found[0].delta_pct is None
+    """Percent must be None rather than infinity when there is nothing
+    to compare against.
+
+    This used to assert that a zero-baseline series PRODUCES a finding,
+    using that as the vehicle for checking the percent. That behaviour
+    was deliberately removed -- see
+    `test_a_zero_baseline_never_passes_by_default` -- because zero-filling
+    sparse series turned it into a false-positive generator. The intent
+    survives, tested against the function that owns it.
+    """
+    from costhub.anomaly.mad import _pct
+
+    assert _pct(Decimal("25"), Decimal("0")) is None
+    assert _pct(Decimal("30"), Decimal("10")) == 200.0
+    assert _pct(Decimal("5"), Decimal("10")) == -50.0
 
 
 # ----------------------------------------------------------- recency guard
@@ -218,3 +229,61 @@ def test_plateau_after_jump_is_still_a_step():
     det = D(exclude_recent_days=0, scan_days=20)
     f = det.detect(series(noisy(40) + flat(18, 40.0)))[0]
     assert f.kind == "step"
+
+
+# ------------------------------- sparse series (regression, finding B)
+
+def sparse(n_days: int, every: int, value: float) -> list[float]:
+    """A legitimately intermittent series, zero-filled like _densify does.
+
+    AWS Support, Route 53 hosted zones, Marketplace monthly charges and
+    weekly batch jobs all look like this once densified.
+
+    Charges are anchored to the END of the series, not the start: a
+    charge has to fall inside `scan_days` to be scored at all. My first
+    attempt at these tests put them on days 0/30/60/90 of 120, so
+    nothing was ever examined and the tests passed against the bug.
+    """
+    return [
+        value if (n_days - 1 - i) % every == 0 else 0.0
+        for i in range(n_days)
+    ]
+
+
+def test_monthly_charge_on_a_sparse_series_is_not_an_anomaly():
+    """The regression that densification introduced.
+
+    Zero-filling made the injected zeros the whole baseline, so the
+    median was 0; `_score`'s mad==0/baseline==0 branch then returned
+    EXACTLY z_threshold while `_flag_days` tests `>=`. Every ordinary
+    charge on a sparse series flagged -- AWS Support at $500/month was
+    reported as a spike on every scan day.
+    """
+    det = D(exclude_recent_days=0, scan_days=10)
+    found = det.detect(series(sparse(120, 30, 500.0)))
+    assert found == [], [(f.kind, str(f.baseline_value), str(f.observed_value))
+                         for f in found]
+
+
+def test_thrice_weekly_batch_job_is_not_an_anomaly():
+    det = D(exclude_recent_days=0, scan_days=10)
+    assert det.detect(series(sparse(120, 2, 30.0))) == []
+
+
+def test_a_zero_baseline_never_passes_by_default():
+    """No baseline means no anomaly: a first-ever charge is a new
+    service, not a spike. The old code returned exactly the threshold,
+    which `>=` then accepted."""
+    det = D(exclude_recent_days=0, scan_days=5)
+    found = det.detect(series(flat(50, 0.0) + [25.0]))
+    assert found == []
+
+
+def test_a_real_step_on_a_sparse_series_is_still_caught():
+    """The fix must not simply mute sparse series entirely."""
+    det = D(exclude_recent_days=0, scan_days=10)
+    # Weekday-shaped series that genuinely trebles and stays there.
+    base = [0.0 if i % 7 in (5, 6) else 20.0 for i in range(60)]
+    raised = [0.0 if i % 7 in (5, 6) else 60.0 for i in range(14)]
+    found = det.detect(series(base + raised))
+    assert found, "a real sustained rise must still be detected"

@@ -7,6 +7,21 @@ data source only.
 
 ## Prerequisites
 
+### On the machine you deploy from
+
+| Tool | Why | Note |
+|---|---|---|
+| Terraform | the whole deployment | `required_version >= 1.5`; `.terraform.lock.hcl` **is committed**, so the provider version is pinned — do not delete it to "fix" an init |
+| AWS CLI v2 | `do.sh` probes what the tagging API cannot see | must be authenticated to the deploy account |
+| Python 3.11+ | the Lambda bundle and the CLI | |
+| **PostgreSQL client tools** (`pg_dump`, `psql`) | **`teardown`, `export-data` and `restore`** | **not** bundled with the AWS CLI or Git for Windows. `winget install PostgreSQL.PostgreSQL.17`, then put `…\PostgreSQL\17\bin` on PATH |
+
+`pg_dump` is the one that bites. Teardown takes a backup *before* it
+destroys anything, so without the client tools that step cannot run —
+`do.sh` now checks for both up front and refuses rather than reaching the
+destroy with an empty dump file. The client also has to be at least as
+new as the server, so a Postgres 17 database needs a 17 client.
+
 ### In the deploy account (personal — you are root)
 
 | # | Step | Note |
@@ -14,7 +29,7 @@ data source only.
 | 1 | Enable **"IAM User and Role Access to Billing Information"** | Account settings; root only |
 | 2 | Enable **Cost Explorer** | once; up to 24h to populate |
 | 3 | Activate **cost allocation tags** | **never retroactive** — do this on day one or the history is lost |
-| 4 | Set a **Budget** at $50 / $80 | also earns credit task |
+| 4 | *(Terraform creates the Budget — no manual step)* | thresholds are 50% / 80% of `budget_limit_usd` |
 | 5 | Verify an **SES** sender identity | **required** — email OTP does not work without SES. Also verify each recipient while in sandbox (200/day, no approval needed) |
 
 Steps 2, 3 and 5 all have waiting periods and are all free. Do them first.
@@ -69,12 +84,13 @@ terraform/
 ├── main.tf          providers, locals
 ├── variables.tf     region, name_prefix, account ids, external id
 ├── iam.tf           Lambda execution roles under path /costhub/
-├── database.tf      RDS instance, subnet group, parameter group, SG
+├── network.tf       security group for the database
+├── database.tf      RDS instance, subnet group, parameter group, AZ filter
 ├── lambda.tf        5 functions + Function URL
 ├── schedule.tf      EventBridge rules
-├── cognito.tf       user pool, client, Managed Login domain, pre-signup
+├── cognito.tf       user pool, client, Managed Login domain, superadmin user
 ├── amplify.tf       app, branch, basic auth
-├── messaging.tf     SNS topic, SES identity
+├── messaging.tf     budget + the SES identity ARN (neither the identity nor any topic is managed here)
 ├── secrets.tf       Secrets Manager entries
 ├── logs.tf          explicit log groups with retention
 └── outputs.tf       frontend URL, API URL, pool id, DB endpoint
@@ -184,11 +200,26 @@ python -m costhub.cli add-connection --account-id ... --role-arn ...
 #    Amplify builds on push to the connected branch
 
 # 6. first ingest
-aws lambda invoke --function-name costhub-ingest /dev/stdout
+aws lambda invoke --function-name costhub-dev-ingest /dev/stdout
 ```
 
 Step 1 is targeted because Lambda's environment needs the DB endpoint, which
 does not exist until the instance does.
+
+### If the API returns 403 and Terraform says everything applied
+
+A Function URL with `authorization_type = "NONE"` still needs a
+resource-based policy allowing `lambda:InvokeFunctionUrl`. The console
+adds one when you create a URL by hand; Terraform does not. Without it
+the config plans and applies perfectly and the URL serves 403 to
+everything.
+
+`aws_lambda_permission.api_url` in `lambda.tf` is that policy. If a 403
+ever comes back, check it exists before looking anywhere else:
+
+```bash
+aws lambda get-policy --function-name costhub-dev-api
+```
 
 ---
 
@@ -207,7 +238,6 @@ insists on deploying into a work account.
 | Amplify | `CreateApp`, `CreateBranch`, `UpdateApp`, `UpdateBranch`, `DeleteApp`, `DeleteBranch`, `CreateDeployment`, `StartDeployment`, `GetApp`, `ListApps` |
 | EventBridge | `PutRule`, `PutTargets`, `DeleteRule`, `RemoveTargets`, `DescribeRule` |
 | CloudWatch Logs | `CreateLogGroup`, `DeleteLogGroup`, `PutRetentionPolicy`, `DescribeLogGroups` |
-| SNS | `CreateTopic`, `Subscribe`, `DeleteTopic`, `GetTopicAttributes`, `SetTopicAttributes` |
 | SES | `VerifyEmailIdentity`, `SendEmail`, `GetIdentityVerificationAttributes` |
 | Cognito | `CreateUserPool`, `CreateUserPoolClient`, `CreateUserPoolDomain`, `UpdateUserPool`, `DeleteUserPool`, `AdminCreateUser`, `SetUserPoolMfaConfig` |
 | STS | `GetCallerIdentity` |
@@ -240,7 +270,7 @@ Identical code; only `DATABASE_URL` and the job trigger differ (NFR-21).
 ## Demo-day checklist
 
 - [ ] Amplify branch password set and shared with stakeholders
-- [ ] Budget alerts at $50 / $80 active
+- [ ] Budget alerts active (50% / 80% of `budget_limit_usd`)
 - [ ] SES sender verified, or recipients verified if still sandboxed
 - [ ] Both connections ingesting; `ingest_runs` shows `success`
 - [ ] Superadmin and restricted analyst accounts both invited and tested

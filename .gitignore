@@ -7,7 +7,10 @@
 
 # terraform
 .terraform/
-.terraform.lock.hcl
+# .terraform.lock.hcl is deliberately NOT ignored. It is the only thing
+# pinning provider versions, and every provider-specific claim in docs/
+# (which Cognito resources exist, what ses:FromAddress means) is true of
+# aws 5.100.0 and not guaranteed of anything else.
 *.tfstate
 *.tfstate.*
 terraform.tfstate.d/

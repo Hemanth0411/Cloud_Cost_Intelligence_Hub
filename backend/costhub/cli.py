@@ -17,9 +17,7 @@ from datetime import date, timedelta
 
 from costhub.config import settings
 from costhub.connections import store
-from costhub.connections.credentials import Connection
-from costhub.db import fetch_all
-from costhub.ingest import runner
+from costhub.ingest import report, runner
 from costhub.ingest.cost_explorer import default_window
 from costhub.ingest.sources import dev_seed_for, source_for
 from costhub.ingest.dev_seed import planted_summary
@@ -107,7 +105,7 @@ def _run_ingest(start: date, end: date, dev_seed: bool) -> int:
         source_factory=factory, start=start, end=end, triggered_by=_actor()
     )
     print(f"window {start} .. {end}  source={'dev_seed' if dev_seed else 'cost_explorer'}")
-    print(runner.summarize(results))
+    print(report.summarize(results))
     if dev_seed:
         print(planted_summary())
     return 0 if all(r.ok for r in results) else 1

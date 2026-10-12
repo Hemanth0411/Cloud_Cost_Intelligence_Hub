@@ -23,7 +23,7 @@ from it. Nothing else in the repository names an environment.
 | Terraform | `terraform.workspace` — the workspace **is** the environment |
 | Backend (local) | `APP_ENV` in `.env` |
 | Backend (Lambda) | `APP_ENV`, set by Terraform from the workspace |
-| Frontend (local) | `VITE_ENV` in `.env` |
+| Frontend (local) | `frontend/.env.<env>`, written by `./do.sh outputs` |
 | Frontend (Amplify) | per-branch environment variable |
 
 ### Why Terraform workspaces, not `-var env=`
@@ -35,7 +35,7 @@ locals {
 }
 
 # refuse to deploy into the implicit workspace
-resource "null_resource" "guard" {
+resource "terraform_data" "workspace_guard" {
   lifecycle {
     precondition {
       condition     = contains(["dev","staging","main"], terraform.workspace)
@@ -58,10 +58,11 @@ That safety property is why this and not a `-var`.
 |---|---|
 | Resource names | `costhub-${env}-<role>` |
 | Lambda log groups | `/aws/lambda/costhub-${env}-<fn>` |
-| Secrets | `costhub/${env}/db-password` |
+| Secrets | `costhub/${env}/database-url` |
+| Terraform outputs | `superadmin_email` is exported so `restore` can find the seeded row |
 | Cognito pool | `costhub-${env}` |
 | Amplify branch | `${env}` |
-| Database name | `costhub_${env}` |
+| Database name | `costhub` (not per-environment) |
 | Tags | `Project=costhub`, `Environment=${env}`, `ManagedBy=terraform` |
 
 ### Per-environment values: one file each
@@ -89,7 +90,9 @@ data_source_accounts = [
 ]
 ```
 
-`main.tfvars` adds the stemline connection and longer log retention. Nothing
+`main.tfvars` differs in `log_retention_days` and sets
+`allow_local_frontend = false`; the stemline connection
+is present but commented out until the cross-account role exists. Nothing
 else differs.
 
 ### Usage
@@ -159,7 +162,7 @@ backup data" literally true.
 ### Step 2 — the guard that matters
 
 ```bash
-test "$(grep -c 'INSERT INTO users' "$DUMP")" -gt 0 || {
+grep -qE '^INSERT INTO (public\.)?users ' "$out" || {
   echo "ABORT: backup contains no users"; exit 1; }
 ```
 

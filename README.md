@@ -240,7 +240,7 @@ hosted path.
 | `azure_cm` adapter | written, unit-tested, **unverified live** |
 | anomaly detection (MAD, shape-classified) | written |
 | alerts (4 rule types, FR-34) | written |
-| Terraform (39 resources) + `do.sh` | written, plan clean |
+| Terraform (41 resources) + `do.sh` | written, plan clean |
 | Frontend + showcase fixtures | **pending** (teammate) |
 
 ### Build order

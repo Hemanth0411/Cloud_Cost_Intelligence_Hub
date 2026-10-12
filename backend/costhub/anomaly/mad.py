@@ -19,7 +19,6 @@ Three shapes, in the order that matters:
 from __future__ import annotations
 
 import statistics
-from datetime import date
 from decimal import Decimal
 from typing import Sequence
 
@@ -126,7 +125,18 @@ class MadDetector:
         if baseline > 0:
             rel = float((observed - baseline) / baseline)
             return self.z_threshold * (rel / self.min_rel_delta) if rel > 0 else 0.0
-        return self.z_threshold if observed >= self.min_abs_delta else 0.0
+
+        # baseline == 0 AND mad == 0: there is no baseline to be anomalous
+        # against. This used to return exactly `z_threshold`, which
+        # `_flag_days` accepts with `>=` -- a pass by default. Once series
+        # were zero-filled for the detector's day arithmetic, that made
+        # every ordinary charge on an intermittent series flag: AWS
+        # Support at $500/month was reported as a spike on every scan.
+        #
+        # A first-ever charge is a NEW SERVICE, not an anomaly, so score
+        # it zero. Detecting new services is a separate feature with a
+        # different message.
+        return 0.0
 
     def _group(
         self, points: Sequence[Point], flagged: dict[int, tuple[Decimal, float]]

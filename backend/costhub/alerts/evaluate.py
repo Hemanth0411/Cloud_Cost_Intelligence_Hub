@@ -63,18 +63,30 @@ def _metric_of(rule: Rule) -> str:
     return rule.metric if rule.metric in {"effective_cost", "billed_cost"}         else "effective_cost"
 
 
+def settled_through(today: date) -> date:
+    """The most recent day whose cost can actually be present.
+
+    Cost Explorer lags 8-24h, so today never has data. Anchoring a
+    window on `today` therefore made a window_days=1 rule sum a single
+    EMPTY day and never fire at all, and a 7-day rule understate by one
+    day in seven. `_forecast` already used this notion; `_window` did
+    not, so the two disagreed.
+    """
+    return today - timedelta(days=1)
+
+
 def _window(rule: Rule, today: date) -> Filters:
-    """The rule's window, as INCLUSIVE dates.
+    """The rule's window, as INCLUSIVE dates, ending on a settled day.
 
     `Filters.end` is inclusive in query/scoped (`usage_date <= end`), so
-    a window of N days spans [today - (N-1), today]. Subtracting N gave
-    N+1 days: a window_days=1 rule summed two days, and the default rule
-    therefore fired on twice the intended spend while its own subject
-    line said "over 1d".
+    a window of N days spans [end - (N-1), end]. Two bugs lived here in
+    turn: subtracting N gave N+1 days, and then ending on `today` gave N
+    days of which the last is always empty.
     """
+    end = settled_through(today)
     return Filters(
-        start=today - timedelta(days=rule.window_days - 1),
-        end=today,
+        start=end - timedelta(days=rule.window_days - 1),
+        end=end,
         provider=rule.scope_provider,
         account_id=rule.scope_account,
         service_name=rule.scope_service,
@@ -141,13 +153,13 @@ def _forecast(rule: Rule, today: date) -> Event | None:
     # Explorer lags 8-24h. On the 3rd of the month that made a $1,000/day
     # account project ~$10k instead of ~$31k -- a 3x under-read in
     # exactly the window where an early warning is worth having.
-    settled_through = today - timedelta(days=1)
-    elapsed = (settled_through - month_start).days + 1
+    settled = settled_through(today)
+    elapsed = (settled - month_start).days + 1
     if elapsed < 3:
         return None  # too early for a run-rate to mean anything
 
     f = Filters(
-        start=month_start, end=settled_through,
+        start=month_start, end=settled,
         provider=rule.scope_provider, account_id=rule.scope_account,
         service_name=rule.scope_service, metric=_metric_of(rule),
     )

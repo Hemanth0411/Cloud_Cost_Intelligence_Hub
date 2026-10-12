@@ -11,11 +11,10 @@ days, so figures are given monthly and for the window.
 |---|---|---|---|---|
 | **Amplify Hosting** | static frontend, CI/CD, HTTPS URL, branch password | personal | $0 (free tier) | $0 |
 | **Lambda** | api + 4 jobs, zip packages | personal | $0 (free tier) | $0 |
-| **EventBridge Scheduler** | triggers ingest / anomaly / alerts | personal | $0 | $0 |
+| **EventBridge** (rules, not the Scheduler service) | triggers ingest / anomaly / alerts | personal | $0 | $0 |
 | **RDS PostgreSQL** `db.t4g.micro` | app layer: rollup, grants, rules, audit | personal | ~$14 | ~$5 |
-| **Secrets Manager** | DB password, external id | personal | ~$0.80 (2 secrets) | ~$0.27 |
+| **Secrets Manager** | DB password | personal | ~$0.40 (1 secret) | ~$0.13 |
 | **Cognito** (Essentials) | auth, email OTP, invite | personal | $0 (≤10k MAU) | $0 |
-| **SNS** | alert fan-out | personal | $0 | $0 |
 | **SES** | alert email | personal | $0 (<62k) | $0 |
 | **CloudWatch Logs** | Lambda logs, 7-day retention | personal | ~$0.50 | ~$0.17 |
 | **IAM** | roles under path `/costhub/` | personal | $0 | $0 |
@@ -38,9 +37,9 @@ Comfortably inside the account's $100 credit.
 
 | Service | Would be for | Doc |
 |---|---|---|
-| S3 + Athena + Glue | FOCUS/CUR deep layer, resource drill-down | TODO-14 |
-| Bedrock | narration over computed results | TODO-16 |
-| AWS Cost Anomaly Detection | free managed detection, consumed via SNS | TODO-15 |
+| S3 + Athena + Glue | FOCUS/CUR deep layer, resource drill-down | TODO-15 |
+| Bedrock | narration over computed results | TODO-18 |
+| AWS Cost Anomaly Detection | free managed detection, consumed via SNS (which creates the topic — there is none today) | TODO-17 |
 | QuickSight | not used — per-seat licensing is why we built the UI | — |
 | VPC / NAT Gateway | private database | TODO-1 |
 | API Gateway | throttling, WAF | TODO-6 |
@@ -138,7 +137,7 @@ only a read-only role, which is a far smaller ask.
 
 ## Cost controls
 
-1. **Budget alert at $50 and $80** on the personal account. Also completes
+1. **Budget alert at 50% and 80%** of `budget_limit_usd` (default 80, so $40 and $64) on the personal account. Also completes
    one of the five credit-earning onboarding tasks.
 2. **CloudWatch Logs retention set to 7 days** in Terraform. Unbounded log
    retention is the usual surprise line item.

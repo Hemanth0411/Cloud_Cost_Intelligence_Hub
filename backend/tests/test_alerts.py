@@ -25,6 +25,7 @@ from costhub.db import fetch_all, fetch_one
 ACCT = "777777777777"
 OTHER = "888888888888"
 TODAY = date.today()
+YESTERDAY = TODAY - timedelta(days=1)
 NOW = datetime.now(timezone.utc)
 
 
@@ -219,15 +220,18 @@ def test_suppressed_event_is_recorded_not_dropped(make_series, make_user, exec_s
 # -------------------------------------------------------- rule types
 
 def test_threshold_fires_above_and_not_below(make_series, make_user, make_grant, exec_sql):
-    """A window_days=7 rule sums exactly 7 days.
+    """A window_days=7 rule sums exactly 7 SETTLED days.
 
-    This used to seed data ending two days ago and assert against a
-    threshold of 50, which only passed because the window was a day too
-    long and reached further back than it claimed. `end=TODAY` makes the
-    arithmetic explicit: 7 days x $10 = $70, so 50 fires and 10,000 does
-    not, and the numbers in the test mean what they say.
+    Two earlier versions of this test were wrong. The first seeded data
+    ending two days ago against a threshold of 50, and only passed
+    because the window was a day too long. The second seeded `end=TODAY`
+    -- data for today, which Cost Explorer never has -- which made the
+    test agree with a window anchored on an always-empty day.
+
+    `end=YESTERDAY` is what production actually looks like: 7 days x $10
+    = $70, so 50 fires and 10,000 does not.
     """
-    make_series(ACCT, "AWSGlue", [10.0] * 10, end=TODAY)
+    make_series(ACCT, "AWSGlue", [10.0] * 10, end=YESTERDAY)
     user = make_user("th@chryselys.com")
     make_grant(user, ACCT)
 
@@ -242,13 +246,15 @@ def test_threshold_fires_above_and_not_below(make_series, make_user, make_grant,
 def test_window_days_spans_exactly_that_many_days(
     make_series, make_user, make_grant, exec_sql
 ):
-    """The off-by-one, pinned.
+    """Both window bugs, pinned.
 
-    `Filters.end` is inclusive, so subtracting window_days gave N+1
-    days: a window_days=1 rule summed two and the default rule fired on
-    twice the intended spend while its subject line said "over 1d".
+    `Filters.end` is inclusive, so subtracting window_days gave N+1 days
+    -- a window_days=1 rule summed two. Fixing that by anchoring on
+    `today` then gave N days whose last is always empty, so the same
+    rule summed ZERO and never fired. The window now ends on the last
+    settled day.
     """
-    make_series(ACCT, "AWSGlue", [10.0] * 10, end=TODAY)
+    make_series(ACCT, "AWSGlue", [10.0] * 10, end=YESTERDAY)
     user = make_user("span@chryselys.com")
     make_grant(user, ACCT)
 

@@ -7,7 +7,7 @@ costhub.cli` keeps working.
 from __future__ import annotations
 
 import argparse
-from datetime import date, timedelta
+from datetime import timedelta
 
 from costhub.alerts import runner as alert_runner
 from costhub.anomaly import runner as anomaly_runner
@@ -89,15 +89,19 @@ def cmd_status(_: argparse.Namespace) -> int:
 
     agg: dict[tuple[str, str], dict] = {}
     for r in rows:
+        if not r["cost"]:
+            # Skip BEFORE creating the entry. Densified series are mostly
+            # zero rows, so creating the key first printed
+            # "None .. None  0 days $0.00" for an all-zero account.
+            continue
         key = (r["provider"], r["account_id"])
         a = agg.setdefault(
             key, {"days": set(), "total": 0, "first": None, "last": None}
         )
-        if r["cost"]:
-            a["days"].add(r["usage_date"])
-            a["total"] += float(r["cost"])
-            a["first"] = min(a["first"] or r["usage_date"], r["usage_date"])
-            a["last"] = max(a["last"] or r["usage_date"], r["usage_date"])
+        a["days"].add(r["usage_date"])
+        a["total"] += float(r["cost"])
+        a["first"] = min(a["first"] or r["usage_date"], r["usage_date"])
+        a["last"] = max(a["last"] or r["usage_date"], r["usage_date"])
 
     if not agg:
         print("no cost data — run ingest or backfill")

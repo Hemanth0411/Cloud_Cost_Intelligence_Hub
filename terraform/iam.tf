@@ -60,22 +60,23 @@ data "aws_iam_policy_document" "lambda" {
   }
 
   statement {
-    sid       = "PublishAlerts"
-    actions   = ["sns:Publish"]
-    resources = [aws_sns_topic.alerts.arn]
-  }
-
-  statement {
     sid       = "SendAlertEmail"
     actions   = ["ses:SendEmail", "ses:SendRawEmail"]
     resources = ["*"]
     condition {
-      # StringLike, not StringEquals: an exact match breaks the moment
+      # StringEquals. This was briefly StringLike on the theory that a
+      # display name ("CostHub <x@y>") would break an exact match -- but
+      # ses:FromAddress is the parsed ADDRESS, not the raw From header,
+      # so the exact match was never at risk and the wildcard only
+      # widened what this role could send as. Reverted, and recorded
+      # because loosening a control to fix a problem that does not exist
+      # is worse than the problem.
+      # (Original, incorrect, note: an exact match breaks the moment
       # anyone sends from a display name ("CostHub <a@b>"), and ses.py
       # swallows the resulting AccessDenied into a log.warning -- so
       # alerting would fail silently, which is the one failure mode this
       # system is built to avoid.
-      test     = "StringLike"
+      test     = "StringEquals"
       variable = "ses:FromAddress"
       values   = ["*${var.ses_sender_email}*"]
     }

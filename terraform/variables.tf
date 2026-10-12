@@ -139,3 +139,16 @@ variable "budget_limit_usd" {
   default     = 80
   description = "On the AWS Free plan, exhausted credits SUSPEND resources rather than bill."
 }
+
+# Whether the deployed API should accept a browser on localhost.
+#
+# This was unconditional, which meant a production Function URL
+# advertised http://localhost:5173 as an allowed origin with
+# allow_credentials = true -- useful while the frontend is being built,
+# and nothing anybody needs once it is deployed. Default true for dev,
+# set false in main.tfvars.
+variable "allow_local_frontend" {
+  type        = bool
+  default     = true
+  description = "Allow http://localhost:5173 as a CORS origin (local frontend dev)"
+}

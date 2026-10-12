@@ -283,6 +283,30 @@ GET /admin/audit?entity_type=&limit=
 Append-only. Columns: when, actor, action, entity, before → after diff.
 `before` and `after` are JSON; render as a readable diff, not raw JSON.
 
+### Money on the wire
+
+Amounts are `Decimal` in Python and arrive as **JSON numbers**, because
+FastAPI's encoder converts `Decimal` through `float`. So:
+
+```json
+{ "usage_date": "2026-03-01", "cost": 123.45 }
+```
+
+Read them as numbers — no parsing needed. Two consequences worth knowing:
+
+- **Do not re-sum a long series client-side and expect the total to match
+  a KPI tile.** Every total the API reports is summed in SQL over exact
+  numerics; adding hundreds of floats in JS accumulates a different
+  error. If you need a total, ask for it.
+- **Format for display, do not round for storage.** Use
+  `Intl.NumberFormat` with `style: "currency"`. All accounts are USD
+  (`currency` is on every row anyway — read it rather than hardcoding
+  `$`, so a non-USD account later shows up as wrong-looking rather than
+  silently mislabelled).
+
+`delta_pct` is `null`, not `0` or `Infinity`, when a baseline is zero.
+Render that as "new" or "—", never "0%".
+
 Actions seen so far: `user.invite`, `grant.create`, `grant.revoke`,
 `connection.create`, `connection.update`, `connection.enable`,
 `connection.disable`.

@@ -10,12 +10,16 @@ rows. test_scoped.py asserts that first.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Literal
 
-from costhub.db import fetch_all
+from costhub.audit import log as audit_log
+from costhub.db import connect, fetch_all
+
+log = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------
 # The security boundary. Read this carefully; everything else is plumbing.
@@ -117,9 +121,76 @@ class Filters:
         return f"f.{self.metric}"
 
 
+BYPASS_SEEN = """
+SELECT 1 FROM audit_log
+WHERE actor = %(actor)s
+  AND action = 'access.superadmin_bypass'
+  AND after->>'scope' = %(scope)s
+  AND at > now() - interval '1 hour'
+LIMIT 1
+"""
+
+
+def _scope_key(f: Filters) -> str:
+    """What was read, as a stable string for throttling and for the log."""
+    return "|".join(
+        [
+            f.provider or "*",
+            f.account_id or "*",
+            f.service_name or "*",
+            f"{f.start}..{f.end}",
+        ]
+    )
+
+
+def _note_bypass(principal: Principal, f: Filters) -> None:
+    """Record that a superadmin read outside every grant (FR-38).
+
+    This lives here, not in api/deps.py, for two reasons the first
+    version got wrong. It was logging at AUTHENTICATION time, so it
+    recorded "a superadmin signed in" -- true of a superadmin who only
+    ever opened the settings page -- and it recorded no scope at all, so
+    the audit trail could not answer the one question it exists for:
+    WHICH accounts did they look at. `_where` is the only place that
+    knows the bypass was actually used and what it was used on.
+
+    Throttled per (actor, scope) per hour, so a dashboard refresh does
+    not bury the log, but reading a DIFFERENT account still shows up.
+
+    The system principal is excluded: background jobs are supposed to see
+    everything, and they log once per run (see `system_principal`). One
+    row per detector query would be noise, not evidence.
+    """
+    if principal.email == SYSTEM_EMAIL:
+        return
+
+    scope = _scope_key(f)
+    try:
+        with connect() as conn, conn.cursor() as cur:
+            cur.execute(BYPASS_SEEN, {"actor": principal.email, "scope": scope})
+            if cur.fetchone():
+                return
+            audit_log(
+                cur,
+                actor=principal.email,
+                action="access.superadmin_bypass",
+                entity_type="fact_cost_daily",
+                entity_id=principal.user_id,
+                after={"role": principal.role, "scope": scope, "window": "1h"},
+            )
+    except Exception:
+        # Never fail a read because the audit write failed -- but say so
+        # loudly, because a silent gap here is the whole problem.
+        log.exception("could not record superadmin bypass for %s", principal.email)
+
+
 def _where(principal: Principal, f: Filters) -> tuple[str, dict[str, Any]]:
     """Assemble WHERE. The grant predicate is not optional here."""
-    scope = SUPERADMIN_BYPASS if principal.is_superadmin else GRANT_PREDICATE
+    if principal.is_superadmin:
+        scope = SUPERADMIN_BYPASS
+        _note_bypass(principal, f)
+    else:
+        scope = GRANT_PREDICATE
 
     clauses = [
         "f.deleted_at IS NULL",
@@ -308,13 +379,21 @@ def _densify(rows: list[dict], *, start: date, end: date) -> list[dict]:
     span = (end - start).days + 1
     out: list[dict] = []
     for (provider, account_id, service_name), days in sorted(by_key.items()):
-        # Only fill from the series' own first day: a service that
-        # started last week should not acquire months of fabricated
-        # zeroes, which would drag its baseline to nothing.
-        first = min(days)
+        # Fill only BETWEEN the series' own first and last day. The
+        # first-day guard stops a service that started last week
+        # acquiring months of fabricated zeroes; the last-day guard is
+        # the same argument at the other end, and it matters more.
+        #
+        # Without it, a service that was switched off reads as a long
+        # run of real $0 days. The detector then treats "deleted" as
+        # "dropped to zero", which is both a false anomaly and a way to
+        # drag a baseline down so the next genuine charge looks like a
+        # step change. A gap at the END of a window is missing data, not
+        # a measurement.
+        first, last = min(days), max(days)
         for i in range(span):
             day = start + timedelta(days=i)
-            if day < first:
+            if day < first or day > last:
                 continue
             out.append(
                 {

@@ -119,9 +119,24 @@ def revoke_grant(
 
 # ----------------------------------------------------------- connections
 
+# The ExternalId is one half of the cross-account trust; the role ARN,
+# which is returned beside it, is the other. Handing both to the browser
+# gives away the confused-deputy protection the ExternalId exists to
+# provide -- and it was going out in full to anything that could read the
+# admin page, including the JS console and any logging proxy in between.
+#
+# The connection store still selects it, because ingest needs it to call
+# AssumeRole. It just never leaves the process.
+def _redact(row: dict) -> dict:
+    out = dict(row)
+    if out.get("external_id"):
+        out["external_id"] = "set"
+    return out
+
+
 @router.get("/connections", summary="Registered cloud accounts")
 def list_connections(_: SuperAdmin) -> dict:
-    rows = store.list_connections()
+    rows = [_redact(r) for r in store.list_connections()]
     return {"data": rows, "row_count": len(rows)}
 
 

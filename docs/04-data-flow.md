@@ -24,8 +24,8 @@ sequenceDiagram
         alt assume_role
             R->>STS: AssumeRole(role_arn, external_id)
             STS-->>R: temporary credentials
-        else local_profile
-            R->>SM: get credentials
+        else profile
+            R->>R: local AWS CLI profile
         end
         R->>CE: GetCostAndUsage(DAILY, groupBy SERVICE)
         CE-->>R: rows
@@ -173,27 +173,33 @@ not just the flag.
 ```mermaid
 sequenceDiagram
     participant EB as EventBridge
+    participant RN as alerts/runner
+    participant RB as rbac/resolve
     participant EV as alerts/evaluate
     participant Q as query/scoped
-    participant RB as rbac/resolve
     participant PG as PostgreSQL
     participant SES as SES
 
-    EB->>EV: scheduled
-    EV->>PG: SELECT enabled alert_rules
+    EB->>RN: scheduled
+    RN->>PG: SELECT enabled alert_rules + last_fired_at
+    RN->>PG: SELECT now()
     loop per rule
-        EV->>Q: data for rule scope
-        Q-->>EV: rows
-        EV->>EV: threshold / forecast / digest / anomaly
-        alt condition met
-            EV->>PG: INSERT alert_events
-            EV->>RB: does owner STILL have a grant for this scope?
-            alt grant valid
-                EV->>SNS: publish
-                SNS->>SES: email
-                EV->>PG: UPDATE alert_events SET delivered_at
-            else grant revoked or expired
-                EV->>PG: UPDATE alert_events SET delivery_error='scope no longer permitted'
+        alt not due yet
+            RN->>RN: skip
+        else due
+            RN->>RB: can_see(owner, rule scope)?
+            alt grant lapsed
+                RN->>PG: INSERT alert_events (lapse notice, NO figures)
+                Note over RN: never evaluated, never delivered
+            else permitted
+                RN->>EV: evaluate(rule)
+                EV->>Q: data for rule scope, AS THE OWNER
+                Q-->>EV: rows (already grant-filtered)
+                EV-->>RN: Event or None
+                alt fired
+                    RN->>SES: send
+                    RN->>PG: INSERT alert_events (+ delivered_at or delivery_error)
+                end
             end
         end
     end
@@ -205,15 +211,22 @@ A rule can outlive the grant that justified it. Somebody is granted an
 account for two weeks, creates an alert, the grant expires — and the rule
 would keep emailing them about an account they can no longer open.
 
-So **grants are re-evaluated at send time** (FR-34), not trusted from the
-rule's stored scope. The event is still recorded, with a delivery error
-explaining why it was suppressed.
+So grants are re-evaluated **before the rule is even evaluated** (FR-34),
+not trusted from the rule's stored scope. Checking at *send* time was the
+original design and it was wrong in a subtle way: rules evaluate as their
+owner through `query/scoped`, so a lapsed grant already yields no data and
+therefore no alert — safe, but silent. The owner simply stops hearing
+anything and concludes spend is fine.
+
+The check therefore runs first, and records a notice carrying **no cost
+figures**: the signal survives without leaking amounts into a feed its
+owner is no longer entitled to read. Throttled to once a day.
 
 ### Rule types
 
 | Type | Condition |
 |---|---|
-| `threshold` | metric over window crosses a value |
+| `threshold` | metric over the window crosses a value. The window is N **settled** days ending yesterday — anchoring on today summed an always-empty day. |
 | `forecast` | linear run-rate projects to cross before period end |
 | `digest` | unconditional periodic summary |
 | `anomaly` | a new `anomaly_findings` row in scope |

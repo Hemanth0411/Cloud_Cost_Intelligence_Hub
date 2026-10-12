@@ -118,7 +118,7 @@ across two clouds look like. Fixtures fill that gap, in the frontend only.
 | NFR-1 | **Single enforcement point.** Exactly one module reads the fact table, and it always applies the grant predicate. Enforced by `tests/test_invariant.py` — it had already drifted twice while the docs asserted it. |
 | NFR-2 | Fail closed everywhere. Absence of permission denies. |
 | NFR-3 | No credentials in the frontend, in source, or in environment files committed to git. Secrets Manager only. |
-| NFR-4 | `audit_log` is append-only, enforced by database grants (`INSERT`/`SELECT` only for the app role), not by convention. |
+| NFR-4 | `audit_log` is append-only, enforced by **statement triggers** that RAISE on UPDATE/DELETE (`migrations/005`), not by convention. The accompanying `REVOKE ... FROM PUBLIC` is belt-and-braces only — Postgres grants nothing to PUBLIC by default and the app connects as the table owner. `TRUNCATE` is **not** blocked: the test suite truncates `audit_log` between tests, which is the proof. |
 | NFR-5 | Cross-account access is read-only, single-purpose and revocable by deleting one role. |
 | NFR-6 | TLS enforced on database connections (`rds.force_ssl = 1`); encryption at rest enabled. |
 

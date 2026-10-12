@@ -33,7 +33,6 @@ locals {
     AWS_REGION_NAME      = var.aws_region
     SES_SENDER_EMAIL     = var.ses_sender_email
     SUPERADMIN_EMAIL     = var.superadmin_email
-    ALERT_TOPIC_ARN      = aws_sns_topic.alerts.arn
   }
 }
 
@@ -72,10 +71,10 @@ resource "aws_lambda_function_url" "api" {
   authorization_type = "NONE" # the app verifies Cognito JWTs itself
 
   cors {
-    allow_origins = [
-      "https://${aws_amplify_branch.main.branch_name}.${aws_amplify_app.main.default_domain}",
-      "http://localhost:5173",
-    ]
+    allow_origins = concat(
+      ["https://${aws_amplify_branch.main.branch_name}.${aws_amplify_app.main.default_domain}"],
+      var.allow_local_frontend ? ["http://localhost:5173"] : [],
+    )
     allow_methods = ["*"]
     # x-dev-user is deliberately ABSENT. A public, unauthenticated
     # Function URL must not advertise the dev-auth bypass header --
@@ -86,6 +85,25 @@ resource "aws_lambda_function_url" "api" {
     max_age           = 3600
   }
 }
+
+# WITHOUT THIS THE API RETURNS 403 AND TERRAFORM REPORTS SUCCESS.
+#
+# authorization_type = "NONE" controls who Lambda *asks* about the call,
+# not whether the call is allowed: the function still needs a
+# resource-based policy permitting lambda:InvokeFunctionUrl. The console
+# adds one when you create a URL by hand, Terraform does not, so this is
+# a config that plans and applies cleanly and then serves nothing.
+#
+# function_url_auth_type = "NONE" is what scopes this to the URL rather
+# than granting the world lambda:InvokeFunction generally.
+resource "aws_lambda_permission" "api_url" {
+  statement_id           = "AllowFunctionUrlInvoke"
+  action                 = "lambda:InvokeFunctionUrl"
+  function_name          = aws_lambda_function.fn["api"].function_name
+  principal              = "*"
+  function_url_auth_type = "NONE"
+}
+
 
 # Standalone, and deliberately depends on the ROLE rather than the role
 # POLICY: the policy references the user pool, the pool references this

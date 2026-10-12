@@ -1,9 +1,14 @@
-# Copy to dev.tfvars and fill in. *.tfvars is gitignored; this template
-# is committed, so it must never contain a real secret.
+# Copy to dev.tfvars and fill in. *.tfvars is gitignored -- because
+# amplify_basic_auth_password belongs in it -- so this template is the
+# only version in the repo and must never contain a real secret.
 #
-# Only these five values are account-specific. aws_region and
-# name_prefix are set once, and name_prefix is suffixed with the
-# workspace automatically.
+# ONE FILE PER ENVIRONMENT, all three copies of this: dev.tfvars,
+# staging.tfvars, main.tfvars. `./do.sh <cmd> <env>` refuses to run if
+# the file for that environment is missing, so a fresh clone needs all
+# three before `up main` will work.
+#
+# aws_region and name_prefix are set once in variables.tf; name_prefix
+# is suffixed with the workspace automatically.
 
 superadmin_email            = "you@chryselys.com"
 ses_sender_email            = "you@chryselys.com"   # must be SES-verified
@@ -13,6 +18,12 @@ db_instance_class    = "db.t4g.micro"
 db_allocated_storage = 20
 log_retention_days   = 3
 budget_limit_usd     = 80
+
+# Whether http://localhost:5173 is an allowed CORS origin on the API.
+# Leave true while the frontend is being built; set FALSE in
+# main.tfvars, where a developer laptop has no business being an
+# allowed origin with allow_credentials = true.
+allow_local_frontend = true
 
 # account_id "self" = the deploy account, read with the Lambda's own role.
 data_source_accounts = [

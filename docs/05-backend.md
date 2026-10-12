@@ -6,11 +6,12 @@ Python 3.11, FastAPI on Lambda, `psycopg` 3 with plain SQL.
 
 ```
 costhub/
-├── config.py            settings from env -- the ONLY module reading os.environ
+├── config.py            settings from env (see note below on os.environ)
 ├── db.py                pooled connections, fetch_all/fetch_one/execute
 ├── migrate.py           applies migrations/*.sql once each
 ├── audit.py             append-only audit_log writer
-├── cli.py               operator commands (bootstrap/connections/ingest/detect/alerts)
+├── cli.py               operator commands: bootstrap, connections, grant, ingest, backfill
+├── cli_jobs.py          the job commands: detect, alerts, status (split for NFR-18)
 ├── lambda_handlers.py   the five Lambda entry points, one zip
 │
 ├── rbac/
@@ -28,7 +29,9 @@ costhub/
 │   ├── ports.py         CostRow, CostSource protocol
 │   ├── sources.py       provider -> adapter, the only dispatch point
 │   ├── errors.py        ExpectedIngestError: configuration, not a defect
+│   ├── azure_parse.py   pure response parsing, no I/O
 │   ├── cost_explorer.py AWS Cost Explorer adapter
+│   ├── report.py        (ingest) result formatting, no I/O
 │   ├── azure_cm.py      Azure Cost Management adapter
 │   ├── dev_seed.py      local seed data -- dev only, never the demo
 │   ├── focus_export.py  (future) Athena/FOCUS adapter
@@ -44,7 +47,6 @@ costhub/
 │   ├── evaluate.py      threshold / forecast / digest / anomaly
 │   ├── inapp.py         writes alert_events
 │   ├── ses.py           email (never raises; returns a failed Delivery)
-│   ├── azure_parse.py   (ingest) pure response parsing, no I/O
 │   └── runner.py        orchestration + the FR-34 access check
 │
 └── api/
@@ -60,7 +62,13 @@ costhub/
 ```
 
 Status: all of the above is written except `focus_export.py` (TODO-15).
-88 tests green. `azure_cm.py` is unit-tested against recorded response
+
+**One correction to the line above:** `config.py` is *almost* the only
+module reading `os.environ` — `lambda_handlers.py` also reads
+`INGEST_DAYS` and `ALLOWED_EMAIL_DOMAIN` directly, because a Lambda
+entry point runs before Settings is useful. The claim used to say
+"ONLY", which was false.
+132 tests green. `azure_cm.py` is unit-tested against recorded response
 shapes but has no subscription to verify against -- see TODO-16b.
 
 ---
@@ -100,12 +108,12 @@ Every value is a bound parameter.
 | `test_no_grants_sees_nothing` | **fail closed** — zero rows, not all rows |
 | `test_account_grant_scopes_rows` | only the granted account appears |
 | `test_null_service_means_all_services` | `service_name IS NULL` semantics |
-| `test_service_grant_excludes_others` | per-service narrowing works |
+| `test_service_grant_excludes_other_services` | per-service narrowing works |
 | `test_expired_grant_excluded` | `valid_until` in the past matches nothing |
 | `test_future_grant_excluded` | `valid_from` in the future matches nothing |
 | `test_revoked_grant_excluded` | `revoked_at` matches nothing |
-| `test_superadmin_sees_all` | bypass works **and** writes audit |
-| `test_dimension_allowlist_rejects_injection` | unknown dimension raises |
+| `test_superadmin_sees_all` | bypass works. **It does not assert the audit row** — `_audit_bypass` has no test at all (TODO-9). |
+| `test_unknown_dimension_rejected` | unknown dimension raises |
 | `test_tax_and_credits_excluded_by_default` | FR-23 |
 
 ---
@@ -190,7 +198,8 @@ Deliberately **not** Prophet: the dependency tree is painful in a Lambda zip,
 and a forecast band is harder to explain than "this is 6 MADs above the
 28-day median".
 
-`aws_cad.py` (future) consumes AWS Cost Anomaly Detection findings over SNS —
+`aws_cad.py` (future) would consume AWS Cost Anomaly Detection findings over
+SNS, creating the topic at that point —
 free, managed, already tuned for cost data.
 
 ---
@@ -200,10 +209,15 @@ free, managed, already tuned for cost data.
 ```python
 class Notifier(Protocol):
     channel: str
-    def send(self, *, recipients, subject, body, payload) -> None: ...
+    def send(self, event: Event, *, recipients: list[str]) -> Delivery: ...
 ```
 
-`inapp` (row in `alert_events`), `ses` (email), `sns` (fan-out).
+`inapp` (row in `alert_events`) and `ses` (email). **There is no SNS
+notifier, and no SNS topic.** One was deployed for a while as a landing
+point for TODO-17; nothing published to it, so it was two resources, a
+dead IAM action, a dead Lambda env var and a subscription-confirmation
+email in support of a feature that does not exist. TODO-17 creates it
+when something needs it.
 
 `evaluate.py` holds the four rule types. The non-obvious requirement is
 FR-34: call `rbac.resolve` before every send, because a rule can outlive the
@@ -256,7 +270,7 @@ Every response carries `as_of` and `metric` so no chart is ambiguous (FR-25).
 | [`psycopg`](https://www.psycopg.org/psycopg3/docs/) | 3.2 | Postgres driver (`[binary]` for wheels, no build step) |
 | [`fastapi`](https://fastapi.tiangolo.com/) | 0.115 | API |
 | [`pydantic`](https://docs.pydantic.dev/) / `pydantic-settings` | 2.9 / 2.6 | models, env config |
-| [`boto3`](https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ce.html) | 1.35 | `ce`, `sts`, `secretsmanager`, `sns`, `ses` |
+| [`boto3`](https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ce.html) | 1.35 | `ce`, `sts`, `secretsmanager`, `ses` |
 | [`python-dateutil`](https://dateutil.readthedocs.io/) | 2.9 | period arithmetic |
 | [`pytest`](https://docs.pytest.org/) | 8.3 | tests |
 | [ADTK](https://arundo-adtk.readthedocs.io/) | optional | level-shift detector, Apache-2.0 |

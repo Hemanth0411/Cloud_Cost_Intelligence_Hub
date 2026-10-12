@@ -22,6 +22,13 @@ terraform/env/<env>.tfvars   ──apply──▶  Lambda env vars      (generat
 cloud_connections table      ──────────▶ which accounts to read (runtime data)
 ```
 
+**The `.tfvars` files are gitignored, all three of them.** They hold
+`amplify_basic_auth_password`, so only `terraform/env/dev.tfvars.example`
+is committed. On a fresh clone, copy it three times — `dev.tfvars`,
+`staging.tfvars`, `main.tfvars` — before running anything; `./do.sh`
+refuses an environment whose file is missing rather than applying a
+half-configured stack.
+
 Consequences:
 
 - Moving accounts = edit `terraform.tfvars`, apply, restore data.
@@ -45,7 +52,8 @@ Consequences:
 
 | Variable | Portable? | Notes |
 |---|---|---|
-| `superadmin_email` | **no** | seeded as the first `superadmin` via `AdminCreateUser`. Must be in `allowed_email_domain`. |
+| `allow_local_frontend` | yes (`true`) | whether `http://localhost:5173` is an allowed CORS origin. `main.tfvars` sets it **false** — it was unconditional, so a shared URL advertised a developer laptop as an allowed origin with `allow_credentials = true`. |
+| `superadmin_email` | **no** | the first superadmin. Needs BOTH halves: `aws_cognito_user` (cognito.tf) creates the pool user, `migrations/006` creates the row. Also the budget-notification recipient. Must be in `allowed_email_domain`. |
 | `allowed_email_domain` | yes | `chryselys.com`. Enforced in the Cognito pre-signup Lambda **and** re-checked at the API boundary |
 
 ### Email — required, not optional
@@ -122,8 +130,11 @@ data_source_accounts = [
 role — no `AssumeRole` needed. Every other entry needs a role in that
 account (see below).
 
-Terraform seeds these into `cloud_connections`; afterwards they are editable
-in the UI, which is the authoritative source at runtime.
+**Terraform does NOT write these to the database.** `var.data_source_accounts`
+is consumed only by `iam.tf` to build the `sts:AssumeRole` grant;
+connections are created through the UI or `costhub add-connection`, and
+`cloud_connections` is the authoritative source at runtime. Assuming
+otherwise is what made the first UI-added cross-account connection fail.
 
 ### Operational
 
@@ -253,7 +264,7 @@ terraform output -json > ../frontend/tf-outputs.json
 #    update frontend/.env.production, push -> Amplify rebuilds
 
 # ---- 8. re-ingest and re-verify --------------------------------------
-aws lambda invoke --function-name costhub-ingest-backfill /dev/stdout
+cd backend && python -m costhub.cli backfill --months 14
 ```
 
 ### Step 2 is the one that bites

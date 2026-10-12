@@ -39,10 +39,6 @@ CURRENCY_COLUMNS = ("Currency", "BillingCurrency", "BillingCurrencyCode")
 
 
 
-class AzureQueryFailed(ExpectedIngestError):
-    pass
-
-
 def _retry_after(header: str | None, attempt: int) -> float:
     """Seconds to wait. Retry-After may be a delay OR an HTTP date.
 

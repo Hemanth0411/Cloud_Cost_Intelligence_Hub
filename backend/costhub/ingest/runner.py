@@ -143,20 +143,39 @@ def _ingest_one(
     except ExpectedIngestError as exc:
         # Missing permissions are configuration, not a defect. Report the
         # fix; a traceback here is noise that hides the actionable line.
+        finally_close(source)
         log.error("%s: %s", conn.display_name, exc)
         _finish_run(run_id, "failed", 0, str(exc)[:2000], triggered_by)
         store.record_ingest(connection_id=conn.id, status="failed")
         return RunResult(conn.display_name, conn.account_id, "failed", error=str(exc))
     except Exception as exc:  # one bad account must not stop the rest
+        finally_close(source)
         log.exception("%s: ingest failed", conn.display_name)
         _finish_run(run_id, "failed", 0, str(exc)[:2000], triggered_by)
         store.record_ingest(connection_id=conn.id, status="failed")
         return RunResult(conn.display_name, conn.account_id, "failed", error=str(exc))
 
+    finally_close(source)
     _finish_run(run_id, "success", written, None, triggered_by)
     store.record_ingest(connection_id=conn.id, status="success")
     log.info("%s: %d rows", conn.display_name, written)
     return RunResult(conn.display_name, conn.account_id, "success", rows=written)
+
+
+def finally_close(source: object) -> None:
+    """Release an adapter's transport if it has one.
+
+    `AzureCostManagementSource.close()` was added to stop a warm Lambda
+    container accumulating one httpx pool per connection per
+    invocation -- but nothing ever called it, so the leak it was written
+    for was still live.
+    """
+    close = getattr(source, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception:  # never fail an otherwise-good run on cleanup
+            log.warning("failed to close source transport", exc_info=True)
 
 
 def _start_run(
@@ -260,24 +279,3 @@ def _write(
             )
 
     return written
-
-
-def _trim(error: str | None, r: RunResult) -> str:
-    """Drop the adapter's own "name (account):" prefix; the line already has it."""
-    msg = error or ""
-    prefix = f"{r.connection} ({r.account_id}): "
-    return (msg[len(prefix):] if msg.startswith(prefix) else msg)[:140]
-
-
-def summarize(results: Sequence[RunResult]) -> str:
-    if not results:
-        return "no connections ingested"
-    lines = []
-    for r in results:
-        mark = "ok  " if r.ok else "FAIL"
-        detail = f"{r.rows} rows" if r.ok else _trim(r.error, r)
-        lines.append(f"  {mark} {r.connection} ({r.account_id}): {detail}")
-    total = sum(r.rows for r in results)
-    failed = sum(1 for r in results if not r.ok)
-    lines.append(f"  -- {total} rows, {failed} failed of {len(results)}")
-    return "\n".join(lines)

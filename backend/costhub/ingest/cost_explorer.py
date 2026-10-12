@@ -15,7 +15,7 @@ the hard way:
 from __future__ import annotations
 
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Iterator
 
 from botocore.exceptions import ClientError
@@ -109,7 +109,7 @@ class CostExplorerSource:
                 # which then surfaced as a 'spike' finding.
                 effective = (
                     _amount(metrics, "AmortizedCost")
-                    if "AmortizedCost" in metrics
+                    if _has_amount(metrics, "AmortizedCost")
                     else billed
                 )
 
@@ -134,16 +134,23 @@ class CostExplorerSource:
 # "Usage" therefore made the downstream NOT IN ('Tax','Credit') filter
 # match nothing, so breakdowns showed a Tax row while claiming to exclude
 # it and the detector scanned Tax as if it were a service (FR-23).
+# Only values that can actually appear in a SERVICE grouping. An earlier
+# version also listed EDP/SPP/bundled/private-rate discounts and
+# savings-plan negation -- those are RECORD_TYPE values, so they were
+# dead entries that made this look more complete than it was.
+#
+# LIMITATION, stated rather than implied: discounts and credits mostly
+# arrive as NEGATIVE amounts attached to the real service name, not as a
+# separate service, so they are still labelled 'Usage' and still net
+# against that service's spend. Separating them needs a second CE call
+# grouped by RECORD_TYPE -- the GroupBy ceiling of 2 is why it cannot
+# come from this one. FR-23 is therefore only partly satisfied: Tax and
+# explicit Refund rows are excluded, inline credits are not. TODO-27.
 NON_USAGE_SERVICES: dict[str, str] = {
     "tax": "Tax",
     "refund": "Credit",
     "credit": "Credit",
     "credits": "Credit",
-    "enterprise discount program discount": "Credit",
-    "solution provider program discount": "Credit",
-    "bundled discount": "Credit",
-    "private rate discount": "Credit",
-    "savings plan negation": "Credit",
 }
 
 
@@ -152,10 +159,27 @@ def _charge_category(service_name: str) -> str:
     return NON_USAGE_SERVICES.get(service_name.strip().lower(), "Usage")
 
 
+def _has_amount(metrics: dict, key: str) -> bool:
+    """Is this metric present WITH a value?
+
+    `key in metrics` alone accepted {"AmortizedCost": {}} and yielded
+    effective_cost = 0 against a non-zero billed_cost -- so the DEFAULT
+    metric would read $0 for that service/day in every dashboard. The
+    old `or billed` masked this; presence-checking Amount closes it.
+    """
+    try:
+        return metrics[key]["Amount"] is not None
+    except (KeyError, TypeError):
+        return False
+
+
 def _amount(metrics: dict, key: str) -> Decimal:
+    # InvalidOperation is caught too: a non-numeric Amount (e.g. "")
+    # otherwise raises out of the generator INSIDE the write transaction
+    # and fails the entire connection's ingest.
     try:
         return Decimal(metrics[key]["Amount"])
-    except (KeyError, TypeError):
+    except (KeyError, TypeError, InvalidOperation):
         return Decimal("0")
 
 

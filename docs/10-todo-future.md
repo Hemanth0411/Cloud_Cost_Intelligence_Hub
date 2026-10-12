@@ -13,13 +13,13 @@ survives review; silence does not.
 | TODO-1 | **Move the database off the public internet.** Either Lambda-in-VPC with a free S3 gateway endpoint for the ingest split, or switch to Aurora Serverless v2 + RDS Data API to remove the VPC entirely. | A NAT Gateway costs ~$32/month — more than the rest of the stack combined — for a 10-day demo. TLS is enforced and the password is strong. | M |
 | TODO-2 | Restrict the database security group from open ingress to known CIDRs | Lambda outside a VPC has no fixed IP, so there is nothing to allowlist until TODO-1 lands | S |
 | TODO-3 | Secrets Manager **rotation**, not just storage | rotation needs a Lambda and a tested rollback | S |
-| TODO-4 | **Verify JWT signatures against Cognito JWKS** | *not actually deferred — this must ship.* Listed because it is an open finding in the DFIQ RBAC audit and must not be inherited. | **S — do it** |
+| TODO-4 | ~~Verify JWT signatures against Cognito JWKS~~ | **Done** (`api/deps.py:_verify` — signature before claims, `require: [exp, iss, aud]`). | S |
 | TODO-5 | Least-privilege IAM for cost reads, with key rotation on the fallback path | the `AssumeRole` path already avoids long-lived keys | S |
 | TODO-6 | Rate limiting / WAF on the API | Lambda Function URL has none; would mean API Gateway | M |
 | TODO-7 | CloudTrail and GuardDuty on the deploy account | cost and noise for a short-lived account | S |
 | TODO-8 | Cognito MFA and token-expiry tuning | email OTP is already a second factor in practice | S |
-| TODO-9 | Confirm every superadmin predicate bypass writes to `audit_log` | designed; needs a test asserting it | **S — do it** |
-| TODO-10 | Enforce `audit_log` append-only via database grants | `GRANT INSERT, SELECT` only — one migration | **S — do it** |
+| TODO-9 | Superadmin bypass audit | **Partly done**: `api/deps.py:_audit_bypass` records it, throttled to one row per actor per hour. Two gaps remain — it fires in `principal()` so it records *activity* rather than *what was read*, and `alerts/evaluate.py` builds a superadmin principal from the database with no audit at all. **No test asserts any of it.** | M |
+| TODO-10 | ~~Enforce `audit_log` append-only~~ | **Done** as `migrations/005_audit_append_only.sql`, via statement triggers rather than the GRANT originally imagined. Still open: `TRUNCATE` is not blocked. | S |
 
 TODO-4, TODO-9 and TODO-10 are marked **do it**: they are each under an hour
 and they are what make the security claims in
@@ -45,7 +45,7 @@ and they are what make the security claims in
 | TODO-15 | **FOCUS export deep layer** (S3 + Athena + Glue) for resource-level drill-down and multi-cloud | 48h to first delivery plus bucket policies and Glue; Cost Explorer needs one permission and returns data now |
 | TODO-16 | **GCP ingestion** | architecture and schema are ready (`CostSource` port, FOCUS column names); no project available. AWS maintains an official connector. |
 | TODO-16b | **Azure credentials** — the adapter is **written and unit-tested**, not deferred | needs a subscription plus an Entra app registration with **Cost Management Reader**. Built first deliberately, so the access request is concrete: "the connector exists, we need a subscription" is an easier ask than "can we explore Azure". Unverifiable until credentials land — say so rather than implying it is live. |
-| TODO-17 | **Consume AWS Cost Anomaly Detection via SNS** | free, managed, already tuned for cost data; would let us aggregate real detections across accounts and drop our own detector |
+| TODO-17 | **Consume AWS Cost Anomaly Detection via SNS** | free, managed, already tuned for cost data; would let us aggregate real detections across accounts and drop our own detector. Creates the topic too — an earlier version shipped an unused one, which is why there is none now |
 | TODO-18 | **Bedrock narration** over computed results | the model must narrate a result set it is handed, never compute the numbers — see the DFIQ chat truthfulness audit, where pages scored 13/18 by improvising metric definitions |
 | TODO-19 | **Untagged / unallocatable spend panel** | one `GROUP BY` on tags; the most actionable number for the business and the precondition for any chargeback. Strongest candidate for the next thing built. |
 | TODO-20 | **Unit economics** — cost per pipeline run, project, client | the real differentiator. Needs Glue `get_job_runs` DPU-hours and Athena per-query `bytes_scanned` joined to our own run metadata. No vendor can do this. |

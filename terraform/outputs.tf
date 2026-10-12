@@ -38,10 +38,6 @@ output "database_url" {
   sensitive   = true
 }
 
-output "alert_topic_arn" {
-  value = aws_sns_topic.alerts.arn
-}
-
 output "amplify_app_id" {
   description = "For manual deploys: aws amplify create-deployment --app-id ..."
   value       = aws_amplify_app.main.id
@@ -53,4 +49,10 @@ output "resource_tags" {
     Project     = var.name_prefix
     Environment = local.env
   }
+}
+
+# Read by `./do.sh restore`, which has to delete the row migration 006
+# seeds before replaying a backup that contains the same email.
+output "superadmin_email" {
+  value = var.superadmin_email
 }

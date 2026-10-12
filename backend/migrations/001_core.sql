@@ -72,7 +72,15 @@ CREATE INDEX idx_grants_lookup
   WHERE revoked_at IS NULL AND deleted_at IS NULL;
 
 -- ----------------------------------------------------------- audit log
--- Append-only. The app role is granted INSERT/SELECT only (see 004).
+-- Append-only, enforced by statement-level triggers in 005.
+--
+-- NOT by GRANT. Revoking UPDATE/DELETE from the app role is the textbook
+-- answer and it is not available here: the app connects as the Neon
+-- owner role, which cannot have its own privileges revoked, and a
+-- hackathon deployment has no second role to switch to. This comment
+-- claimed the GRANT for a while, which was the worst of both -- anyone
+-- reading it would have believed the table was protected by something
+-- that had never been applied.
 CREATE TABLE audit_log (
   id          bigserial PRIMARY KEY,
   actor       text NOT NULL,

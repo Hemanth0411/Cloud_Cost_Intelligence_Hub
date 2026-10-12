@@ -104,10 +104,20 @@ flowchart LR
 ### There is no password, at any point
 
 Not set at creation, not after first sign-in. `AdminCreateUser` is called
-with **no** `TemporaryPassword`, which — because the pool has passwordless
-active — puts the user straight into `CONFIRMED` state rather than
-`FORCE_CHANGE_PASSWORD`, and sends no temporary-password email. Every
-required pool attribute must be supplied in that call or it fails.
+with **no** `TemporaryPassword`, which — because the pool offers
+**`EMAIL_OTP` only** — puts the user straight into `CONFIRMED` state
+rather than `FORCE_CHANGE_PASSWORD`, and sends no temporary-password
+email. Every required pool attribute must be supplied in that call or it
+fails.
+
+That "only" is load-bearing, and it was wrong until review caught it.
+`sign_in_policy.allowed_first_auth_factors` was `["EMAIL_OTP",
+"PASSWORD"]` — which makes the pool password-*capable*, so
+`AdminCreateUser` with no password generates one and the user lands in
+`FORCE_CHANGE_PASSWORD`: a state an OTP-only client has no screen to
+clear. The seeded superadmin would have been locked out of a deployment
+that reported success. Listing `PASSWORD` "just in case" is what breaks
+passwordless.
 
 Every sign-in is then: email → fresh single-use code → tokens. The OTP is
 **per session, not per request**; the refresh token lifetime governs how
@@ -143,6 +153,35 @@ account already has a working example of the Lambda pattern
 
 For Microsoft OAuth later, restrict by **tenant ID, not email domain string**
 — domain matching is the weaker check — and verify `email_verified`.
+
+One source, not four. The domain lives in `config.Settings`
+(`allowed_email_domain`) and every check reads it from there. It was
+hardcoded in `rbac/admin.py` as well, so changing the environment moved
+three checks and silently left that one behind — which in a different
+tenant means invitations rejected with a message naming somebody else's
+domain.
+
+### `email_verified` is checked strictly
+
+Cognito's `email` attribute is mutable, and a token carries
+`aws.cognito.signin.user.admin` under `ALLOW_USER_AUTH` — so a user who
+can change their own email can set it to a known superadmin's address,
+re-authenticate and inherit the role. Changing it flips `email_verified`
+to false, which is the signal to reject on.
+
+**Absence is rejected, not accepted.** The first version only enforced
+the claim where it was present, reasoning that an access token does not
+carry it and that absence is not falsity. The second half is true and
+the conclusion was still wrong: the attack is carried out with whatever
+token the attacker can obtain, and one lacking the claim went straight
+through the lenient branch. A missing claim means *unproven*, and
+unproven is what this has to refuse.
+
+There is also no fallback to `username` or `cognito:username`. The pool
+is `username_attributes = ["email"]`, so for a real user those claims
+hold the email — which is exactly what made the fallback look free.
+They carry no verification status at all, so accepting one sourced the
+identity from a field `email_verified` says nothing about.
 
 ### Identity linking
 
@@ -223,7 +262,8 @@ superadmin bypasses.
 entry commits or rolls back with the change it describes. An audit log that
 can disagree with the data is worse than none.
 
-**Append-only by database grant**, not convention:
+**Append-only by statement trigger**, not convention. Not by grant — that
+was asserted here for a long time and never existed:
 
 ```sql
 -- migration 005: BEFORE UPDATE/DELETE statement triggers that RAISE.
@@ -249,12 +289,12 @@ Revoked and expired grants are retained and flagged, never deleted, because
 |---|---|---|
 | Unauthorized cost visibility | single SQL predicate, fails closed | done |
 | Stale permission after revocation | evaluated per query, no cache | done |
-| Alert leaking a revoked scope | grants re-checked at send time (FR-34) | designed |
+| Alert leaking a revoked scope | grants re-checked **before** evaluation (FR-34) | **built** (`alerts/runner.py`) |
 | Credential theft from the UI | no credential ever enters the UI | done |
-| Long-lived cross-account keys | `AssumeRole` + External ID | designed |
-| Forged/unverified JWT | signature verification against JWKS | **must build** |
+| Long-lived cross-account keys | `AssumeRole` + External ID | **built** (`connections/credentials.py`) |
+| Forged/unverified JWT | signature verified against JWKS before any claim; `require: [exp, iss, aud]` | **built** (`api/deps.py:_verify`) |
 | SQL injection via grouping | `DIMENSIONS`/`GRAINS` allowlists | done |
-| Audit tampering | DB-level append-only grant | designed |
+| Audit tampering | statement triggers on `audit_log` (migration 005) | **built**; `TRUNCATE` still uncovered |
 | Public database endpoint | TLS enforced, strong password | **deferred**, see TODO-1 |
 | No API rate limiting | Function URL has none | **deferred**, see TODO-6 |
 

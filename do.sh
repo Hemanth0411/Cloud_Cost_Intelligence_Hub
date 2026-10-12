@@ -44,6 +44,34 @@ APP_TABLES=(users identities access_grants cloud_connections
 die()  { echo "ERROR: $*" >&2; exit 1; }
 step() { echo; echo "==> $*"; }
 
+# The backup-before-destroy guard is only as good as the tools it calls.
+# Neither pg_dump nor psql ships with the AWS CLI or with Git for
+# Windows, and on this machine neither was on PATH -- so `teardown`
+# would have reached the destroy with an empty dump file, and the "is
+# there a users row?" check would have been the thing that caught it,
+# by accident, with a confusing message. Fail early and say what to
+# install instead.
+#
+# Version note: pg_dump refuses to dump a server newer than itself, so
+# the client needs to be >= the Postgres major version in use (Neon is
+# 17 at the time of writing).
+need_pg() {
+  local missing=()
+  command -v pg_dump >/dev/null 2>&1 || missing+=(pg_dump)
+  command -v psql    >/dev/null 2>&1 || missing+=(psql)
+  [ ${#missing[@]} -eq 0 ] && return 0
+  die "missing: ${missing[*]}
+
+       These come with the PostgreSQL client tools, which are NOT part of
+       the AWS CLI or Git for Windows. Install them and reopen the shell:
+
+         winget install PostgreSQL.PostgreSQL.17
+         # then add C:\\Program Files\\PostgreSQL\\17\\bin to PATH
+
+       Nothing has been changed. Without these, a teardown cannot take
+       the backup it promises and a restore cannot replay one."
+}
+
 need_env() {
   [ -n "${1:-}" ] || die "environment required: ./do.sh $CMD dev|staging|main"
   case "$1" in
@@ -62,6 +90,7 @@ select_workspace() {
 # Uses the absolute $TF: this is called from inside `cd backend`
 # subshells, where a relative -chdir would resolve to backend/terraform.
 db_url() { $TF output -raw database_url; }
+superadmin_email() { $TF output -raw superadmin_email; }
 
 # -------------------------------------------------------------- build
 
@@ -136,11 +165,16 @@ ensure_login_branding() {
        --use-cognito-provided-values --region "$REGION" >/dev/null; then
     echo "login branding: created"
   else
-    echo "WARNING: could not create managed login branding." >&2
-    echo "  The hosted login page will not render until it exists. Run:" >&2
+    # Not a warning. Without branding the Managed Login page does not
+    # render, so a successful-looking `up` would hand over a deployment
+    # nobody can sign in to. cognito-idp:CreateManagedLoginBranding is
+    # the permission to check first.
+    echo "could not create managed login branding -- nobody can sign in." >&2
+    echo "  Grant cognito-idp:CreateManagedLoginBranding, then run:" >&2
     echo "  aws cognito-idp create-managed-login-branding \\" >&2
     echo "    --user-pool-id $pool --client-id $client \\" >&2
     echo "    --use-cognito-provided-values --region $REGION" >&2
+    die "login branding missing"
   fi
 }
 
@@ -192,6 +226,7 @@ dump_to() {
 }
 
 cmd_export_data() {
+  need_pg
   need_env "${1:-}"
   select_workspace
   mkdir -p "$BACKUPS"
@@ -202,6 +237,7 @@ cmd_export_data() {
 }
 
 cmd_teardown() {
+  need_pg
   need_env "${1:-}"
   select_workspace
   mkdir -p "$BACKUPS"
@@ -230,14 +266,11 @@ cmd_teardown() {
     echo "    backup contains user rows: ok"
   fi
 
-  # terraform plan -destroy evaluates filebase64sha256(dist/lambda.zip)
-  # and hard-errors if it is missing. dist/ is gitignored, so on a fresh
-  # clone teardown would abort here -- after the backup, after printing
-  # "verify ok".
-  if [ ! -f "$BUNDLE" ]; then
-    step "3/4 bundle missing -- building it so destroy can plan"
-    cmd_build
-  fi
+  # No bundle rebuild here on purpose. lambda.tf guards the hash with
+  # fileexists(), so a missing dist/lambda.zip no longer breaks
+  # `plan -destroy` -- and calling cmd_build at this point could fail on
+  # its own (pip, network) and abort a teardown AFTER the backup was
+  # taken and the confirmation given.
 
   step "3/4 destroy ($ENV only -- this workspace cannot reach the others)"
   $TF destroy -var-file="env/$ENV.tfvars" -auto-approve
@@ -280,7 +313,13 @@ cmd_sweep() {
   acct="$(aws sts get-caller-identity --query Account --output text)" \
     || die "cannot identify the account; sweep is unproven"
 
-  roles="$(aws iam list-roles --path-prefix "/$PROJECT/" \
+  # MSYS_NO_PATHCONV is load-bearing on Git Bash: it rewrites any
+  # argument that looks like a POSIX path, so "/costhub/" reached aws.exe
+  # as "C:/Program Files/Git/costhub/" and the call failed. Because this
+  # probe dies on failure, that one substitution made `sweep` impossible
+  # to pass and made `teardown` always exit non-zero at step 4/4 -- after
+  # the destroy had already succeeded.
+  roles="$(MSYS_NO_PATHCONV=1 aws iam list-roles --path-prefix "/$PROJECT/" \
     --query "Roles[?starts_with(RoleName,'$PROJECT-$ENV')].RoleName" \
     --output text)" || die "iam list-roles failed; sweep is unproven"
 
@@ -288,8 +327,12 @@ cmd_sweep() {
     --query "Budgets[?starts_with(BudgetName,'$PROJECT-$ENV')].BudgetName" \
     --output text 2>/dev/null)" || budgets="(query failed)"
 
+  # Must match cognito.tf exactly: the domain is prefix + account id
+  # (Cognito domains are globally unique, so the account id is what makes
+  # a redeploy in another account possible). Probing "$PROJECT-$ENV" could
+  # never match what Terraform creates, so this always reported "none".
   domain="$(aws cognito-idp describe-user-pool-domain \
-    --domain "$PROJECT-$ENV" --query 'DomainDescription.Domain' \
+    --domain "$PROJECT-$ENV-$acct" --query 'DomainDescription.Domain' \
     --output text 2>/dev/null)" || domain=""
   [ "$domain" = "None" ] && domain=""
 
@@ -304,12 +347,32 @@ cmd_sweep() {
 }
 
 cmd_restore() {
+  need_pg
   need_env "${1:-}"
   local file="${2:-}"
   [ -n "$file" ] || die "usage: ./do.sh restore $ENV backups/$ENV-....sql"
   [ -f "$file" ] || die "no such backup: $file"
 
   cmd_up "$ENV"
+
+  # DELETE the seeded superadmin before replaying the dump.
+  #
+  # cmd_up runs the migrations, and 006 seeds a superadmin row with a
+  # FRESH uuid. The backup then replays an INSERT for the same email ->
+  # UNIQUE violation -> --single-transaction rolls the whole restore
+  # back. Every restore failed, which made the backup-before-destroy
+  # guard decorative.
+  #
+  # ON CONFLICT DO NOTHING would not fix it either: the backup's grants
+  # and audit rows carry the OLD user uuid, so keeping the newly seeded
+  # row would orphan them on the foreign key. The backup's own users
+  # table is the authority, so the seed is what has to go.
+  step "clearing the seeded superadmin so the backup is the authority"
+  psql "$(db_url)" -v ON_ERROR_STOP=1 \
+    -v email="$(superadmin_email)" \
+    -c "DELETE FROM users WHERE email = :'email';" \
+    || die "could not clear the seeded superadmin"
+
   step "restoring $file"
   psql "$(db_url)" -v ON_ERROR_STOP=1 --single-transaction -f "$file"
   echo

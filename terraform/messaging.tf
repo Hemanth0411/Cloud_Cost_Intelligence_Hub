@@ -1,16 +1,12 @@
-# Alert email goes through SES directly (alerts/ses.py), so this topic
-# exists only as the landing point for AWS Cost Anomaly Detection
-# findings (TODO-17). It therefore gets a real subscriber -- an
-# unsubscribed topic publishes into nothing and reports success.
-resource "aws_sns_topic" "alerts" {
-  name = "${local.prefix}-alerts"
-}
-
-resource "aws_sns_topic_subscription" "alerts_email" {
-  topic_arn = aws_sns_topic.alerts.arn
-  protocol  = "email"
-  endpoint  = var.superadmin_email
-}
+# There is no SNS topic here, deliberately.
+#
+# One existed for a while as a "landing point for AWS Cost Anomaly
+# Detection findings (TODO-17)". Nothing published to it: alert email
+# goes through SES directly (alerts/ses.py), and the budget below
+# notifies an email address rather than a topic. It was two resources, a
+# dead IAM action, a dead Lambda env var, an output, and a subscription
+# confirmation email -- all to support a feature that does not exist yet.
+# TODO-17 can create it when something actually needs it.
 
 # SES identities are deliberately NOT managed here: verification is a
 # manual round trip, and destroying the identity on every teardown would

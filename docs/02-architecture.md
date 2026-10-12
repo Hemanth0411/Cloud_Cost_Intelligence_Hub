@@ -46,7 +46,7 @@ graph TB
         API["api<br/>Function URL"]
         ING["ingest<br/>scheduled"]
         ANO["anomaly<br/>scheduled"]
-        ALR["alerts<br/>scheduled + SNS"]
+        ALR["alerts<br/>scheduled"]
         PRE["cognito pre-signup<br/>domain gate"]
     end
 
@@ -60,7 +60,6 @@ graph TB
     end
 
     EB["EventBridge<br/>Scheduler"]
-    SNS["SNS topic"]
     SES["SES"]
 
     AMP -->|HTTPS| API
@@ -157,7 +156,6 @@ graph TB
         SM["Secrets Manager"]
         COG["Cognito user pool"]
         EB["EventBridge rules"]
-        SNS["SNS topic"]
         CWL["CloudWatch Logs"]
         ROLE["IAM roles<br/>path /costhub/"]
     end
@@ -172,7 +170,6 @@ graph TB
     AMP --> LAM
     EB --> LAM
     LAM --> CWL
-    LAM --> SNS
 ```
 
 All of the left box is one Terraform root module, created and destroyed as a
@@ -224,7 +221,7 @@ Full design in [13-environments-and-teardown.md](13-environments-and-teardown.md
 | Migrations | numbered `.sql` + 30-line runner | no Alembic; schema is small |
 | Tests | pytest | |
 | Frontend | React + Recharts | see [06-frontend.md](06-frontend.md) |
-| IaC | Terraform 1.15, single root module, local state | |
+| IaC | Terraform (`required_version >= 1.5`), single root module, local state | |
 | Auth | Cognito, Essentials tier, Managed Login | Essentials required for passwordless; classic Hosted UI does not support it |
 
 ---
