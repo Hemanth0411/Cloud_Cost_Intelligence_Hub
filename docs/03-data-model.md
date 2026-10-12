@@ -243,13 +243,28 @@ Backs the UI "Connect account" form (FR-11).
 | `display_name` | shown in the UI |
 | `role_arn` | role to assume in the target account |
 | `external_id` | confused-deputy protection |
-| `credential_mode` | `assume_role` \| `profile` |
+| `credential_mode` | `self` \| `assume_role` \| `profile` \| `secret` — see below |
 | `enabled` | disable without losing history |
 | `last_ingest_at`, `last_ingest_status` | surfaced on the connections screen |
 
-**No secret is stored here** (FR-12). For `assume_role` there is nothing to
-store; for the fallback key mode the column holds a Secrets Manager ARN, not
-a value.
+The four modes, as enforced by the `CHECK` in `004_connections.sql`:
+
+| Mode | Used for | How credentials are obtained |
+|---|---|---|
+| `self` | the deploy account itself | the Lambda's own execution role — nothing to configure |
+| `assume_role` | another AWS account | `sts:AssumeRole` with `role_arn` + `external_id`; a second `CHECK` enforces that `role_arn` is present |
+| `profile` | local development only | a named AWS CLI profile on the developer's machine |
+| `secret` | **Azure** | a service principal read from Secrets Manager via `secret_arn` |
+
+`secret` exists because Azure has no cross-cloud equivalent of
+`AssumeRole`, so a long-lived client secret is unavoidable. Note that
+`credentials.py` dispatches on **provider** first: an AWS connection set
+to `secret` is rejected as an unsupported mode rather than silently
+trying the Azure path.
+
+**No secret is stored here** (FR-12). For `self` and `assume_role` there is
+nothing to store; for `secret` the column holds a Secrets Manager ARN,
+read at call time, never a value.
 
 ---
 

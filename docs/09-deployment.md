@@ -179,32 +179,54 @@ our own `users` table.
 
 ## Deploy sequence
 
+**One command.** `do.sh up` is the deploy; the steps below are what it does,
+not things to run by hand.
+
 ```bash
-# 1. database first — Lambda needs its endpoint
-cd terraform
-terraform init
-terraform apply -target=aws_db_instance.main
+# 0. once per clone: the three gitignored tfvars
+cp terraform/env/dev.tfvars.example terraform/env/dev.tfvars
+cp terraform/env/dev.tfvars.example terraform/env/staging.tfvars
+cp terraform/env/dev.tfvars.example terraform/env/main.tfvars
+$EDITOR terraform/env/dev.tfvars        # superadmin_email, ses_sender_email
+terraform -chdir=terraform init
 
-# 2. migrations (from the laptop, DB is publicly reachable)
-cd ..
-DATABASE_URL=... python -m costhub.migrate
+# 1. deploy
+./do.sh up dev
+```
 
-# 3. everything else
-cd terraform && terraform apply
+`up` runs, in order: `build` (Linux wheels for the Lambda runtime) →
+`terraform apply` → `ensure_login_branding` → `migrate` → `outputs`.
 
-# 4. seed the superadmin and connections
-python -m costhub.cli bootstrap-admin --email you@chryselys.com
-python -m costhub.cli add-connection --account-id ... --role-arn ...
+```bash
+# 2. point it at an account to read
+cd backend && python -m costhub.cli add-connection \
+  --provider aws --account-id self --name personal
 
-# 5. frontend
-#    Amplify builds on push to the connected branch
-
-# 6. first ingest
+# 3. first ingest
 aws lambda invoke --function-name costhub-dev-ingest /dev/stdout
 ```
 
-Step 1 is targeted because Lambda's environment needs the DB endpoint, which
-does not exist until the instance does.
+### What this does NOT need
+
+- **No targeted apply.** An earlier version of this page said to run
+  `terraform apply -target=aws_db_instance.main` first, "because Lambda's
+  environment needs the DB endpoint". It does, and Terraform works that
+  out on its own: `local.database_url` references
+  `aws_db_instance.main.address`, so the graph already orders them. One
+  apply is enough.
+- **No `bootstrap-admin`.** `migrations/006` seeds the superadmin row and
+  `aws_cognito_user.superadmin` creates the pool user, both from
+  `superadmin_email`. The CLI command still exists for promoting someone
+  later.
+
+### The database is RDS, not Neon
+
+`backend/.env` points at Neon, and that is **local development only**. The
+deployed stack creates `aws_db_instance.main` and composes
+`DATABASE_URL` from it with a Terraform-generated password
+(`secrets.tf`); nothing deployed ever reads the Neon URL. On a
+`db.t4g.micro` with 20 GB that is roughly $0.5/day — the one line item
+in this stack that is not free, and it stops when you tear down.
 
 ### If the API returns 403 and Terraform says everything applied
 
