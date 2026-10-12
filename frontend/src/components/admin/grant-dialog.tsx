@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAdmin } from '@/components/admin/admin-context';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { fieldA11y, FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
-import { getFilterOptions } from '@/lib/services/cost-service';
+import { readServices } from '@/lib/services/admin-service';
 import type { ManagedUser } from '@/types/domain';
 
 /** Sentinel for the select only. It becomes `null` on the way out, because
@@ -15,37 +15,66 @@ import type { ManagedUser } from '@/types/domain';
 const ALL_SERVICES = '__all__';
 
 export function GrantDialog({ user, onClose }: { user: ManagedUser | null; onClose: () => void }) {
-  const { grant, grantsFor } = useAdmin();
-  const options = useMemo(() => getFilterOptions(), []);
+  const { grant, grantsFor, accounts } = useAdmin();
 
-  const [accountId, setAccountId] = useState('');
+  const [accountKey, setAccountKey] = useState('');
   const [serviceName, setServiceName] = useState<string>(ALL_SERVICES);
   const [validUntil, setValidUntil] = useState('');
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string>();
+  const [services, setServices] = useState<string[]>([]);
+  const [servicesError, setServicesError] = useState<string>();
+
+  // (provider, accountId) is the key: an account id is only unique
+  // within a provider, and the grant needs both.
+  const keyOf = (providerId: string, accountId: string): string => `${providerId}|${accountId}`;
+  const account = accounts.find((a) => keyOf(a.providerId, a.accountId) === accountKey);
 
   const userId = user?.id ?? null;
   useEffect(() => {
-    setAccountId(options.accounts[0]?.id ?? '');
+    const first = accounts[0];
+    setAccountKey(first ? keyOf(first.providerId, first.accountId) : '');
     setServiceName(ALL_SERVICES);
     setValidUntil('');
     setReason('');
     setError(undefined);
-  }, [userId, options.accounts]);
+  }, [userId, accounts]);
+
+  /**
+   * Services come from the API per account, not from a catalogue.
+   *
+   * Scoped to the account rather than the provider on purpose: offering
+   * every service in the estate lets you grant one the account does not
+   * run, which is a grant that silently matches nothing. An empty list
+   * is a legitimate answer (an account with no spend yet), so it is not
+   * treated as a failure -- `servicesError` is only set when the request
+   * itself failed, and the dialog still works, because "all services"
+   * needs no list.
+   */
+  useEffect(() => {
+    if (!account) {
+      setServices([]);
+      return;
+    }
+    let cancelled = false;
+    setServicesError(undefined);
+    readServices(account.providerId, account.accountId)
+      .then((names) => {
+        if (!cancelled) setServices(names);
+      })
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        setServices([]);
+        setServicesError(
+          cause instanceof Error ? cause.message : 'Could not list the services in this account.',
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [account]);
 
   const existing = user ? grantsFor(user.id) : [];
-  const account = options.accounts.find((a) => a.id === accountId);
-
-  // Services actually present in the chosen account, from
-  // serviceIdsByAccount rather than filtering by provider. Filtering by
-  // provider would offer every AWS service in the estate, letting you
-  // grant a service that account does not run -- a grant that silently
-  // matches nothing.
-  const services = useMemo(() => {
-    if (!account) return [];
-    const ids = new Set(options.serviceIdsByAccount[account.id] ?? []);
-    return options.services.filter((s) => ids.has(s.id));
-  }, [options.services, options.serviceIdsByAccount, account]);
 
   if (!user) {
     return (
@@ -65,9 +94,7 @@ export function GrantDialog({ user, onClose }: { user: ManagedUser | null; onClo
       return;
     }
     const duplicate = existing.some(
-      (g) =>
-        g.accountId === account.id &&
-        (g.serviceName ?? ALL_SERVICES) === serviceName,
+      (g) => g.accountId === account.accountId && (g.serviceName ?? ALL_SERVICES) === serviceName,
     );
     if (duplicate) {
       setError('This user already has that exact access.');
@@ -75,8 +102,10 @@ export function GrantDialog({ user, onClose }: { user: ManagedUser | null; onClo
     }
     grant({
       userId: target.id,
+      // The API keys a grant by email, not by id.
+      userEmail: target.email,
       providerId: account.providerId,
-      accountId: account.id,
+      accountId: account.accountId,
       accountName: account.name,
       serviceName: serviceName === ALL_SERVICES ? null : serviceName,
       validUntil: validUntil ? new Date(`${validUntil}T23:59:59Z`).toISOString() : null,
@@ -96,34 +125,46 @@ export function GrantDialog({ user, onClose }: { user: ManagedUser | null; onClo
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={submit}>Grant access</Button>
+          <Button onClick={submit} disabled={accounts.length === 0}>
+            Grant access
+          </Button>
         </>
       }
     >
       <div className="space-y-4">
-        <FormField id="grant-account" label="Account" error={error}>
-          <Select
-            id="grant-account"
-            value={accountId}
-            onChange={(e) => {
-              setAccountId(e.target.value);
-              setServiceName(ALL_SERVICES);
-              setError(undefined);
-            }}
-            {...fieldA11y('grant-account', error)}
-          >
-            {options.accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </Select>
-        </FormField>
+        {accounts.length === 0 ? (
+          <p className="rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+            There are no accounts to grant yet. Register a cloud account first — a grant has to name
+            one that exists.
+          </p>
+        ) : (
+          <FormField id="grant-account" label="Account" error={error}>
+            <Select
+              id="grant-account"
+              value={accountKey}
+              onChange={(e) => {
+                setAccountKey(e.target.value);
+                setServiceName(ALL_SERVICES);
+                setError(undefined);
+              }}
+              {...fieldA11y('grant-account', error)}
+            >
+              {accounts.map((a) => (
+                <option key={keyOf(a.providerId, a.accountId)} value={keyOf(a.providerId, a.accountId)}>
+                  {a.name}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+        )}
 
         <FormField
           id="grant-service"
           label="Service"
-          hint="Leave as all services unless they only need one."
+          hint={
+            servicesError ??
+            'Leave as all services unless they only need one.'
+          }
         >
           <Select
             id="grant-service"
@@ -132,9 +173,9 @@ export function GrantDialog({ user, onClose }: { user: ManagedUser | null; onClo
             {...fieldA11y('grant-service', undefined, true)}
           >
             <option value={ALL_SERVICES}>All services in this account</option>
-            {services.map((s) => (
-              <option key={s.id} value={s.name}>
-                {s.name}
+            {services.map((name) => (
+              <option key={name} value={name}>
+                {name}
               </option>
             ))}
           </Select>

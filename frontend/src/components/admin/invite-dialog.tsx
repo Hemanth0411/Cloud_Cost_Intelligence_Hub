@@ -19,7 +19,7 @@ import type { Role } from '@/types/domain';
 const ALLOWED_DOMAIN = 'chryselys.com';
 
 export function InviteDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { invite } = useAdmin();
+  const { invite, can } = useAdmin();
   const [email, setEmail] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [role, setRole] = useState<Role>('user');
@@ -44,7 +44,11 @@ export function InviteDialog({ open, onClose }: { open: boolean; onClose: () => 
       setError(`Only @${ALLOWED_DOMAIN} addresses can be invited.`);
       return;
     }
-    invite({ email: value, displayName, role });
+    // `role` is only sent in mock mode. POST /admin/users takes email
+    // and display_name; every invited user lands as 'user' and a role
+    // change needs a database update, so offering the choice here would
+    // be a control that silently does nothing.
+    invite(can.canSetUserRole ? { email: value, displayName, role } : { email: value, displayName });
     onClose();
   }
 
@@ -92,21 +96,23 @@ export function InviteDialog({ open, onClose }: { open: boolean; onClose: () => 
           />
         </FormField>
 
-        <FormField
-          id="invite-role"
-          label="Role"
-          hint="Superadmins see every account and bypass grants — every bypass is written to the audit log."
-        >
-          <Select
+        {can.canSetUserRole && (
+          <FormField
             id="invite-role"
-            value={role}
-            onChange={(e) => setRole(e.target.value as Role)}
-            {...fieldA11y('invite-role', undefined, true)}
+            label="Role"
+            hint="Superadmins see every account and bypass grants — every bypass is written to the audit log."
           >
-            <option value="user">User — sees only what you grant</option>
-            <option value="superadmin">Superadmin — sees everything</option>
-          </Select>
-        </FormField>
+            <Select
+              id="invite-role"
+              value={role}
+              onChange={(e) => setRole(e.target.value as Role)}
+              {...fieldA11y('invite-role', undefined, true)}
+            >
+              <option value="user">User — sees only what you grant</option>
+              <option value="superadmin">Superadmin — sees everything</option>
+            </Select>
+          </FormField>
+        )}
 
         <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
           An invite grants no access by itself. Until you give them an account, they can sign in and

@@ -13,6 +13,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useDemoNow } from '@/hooks/use-demo-now';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import type { AuditAction, AuditEntry } from '@/types/domain';
+import { AdminState } from './admin-state';
+
+type Variant = 'success' | 'warning' | 'destructive' | 'outline';
 
 const ACTION_LABEL: Record<AuditAction, string> = {
   'user.invite': 'User invited',
@@ -20,24 +23,39 @@ const ACTION_LABEL: Record<AuditAction, string> = {
   'grant.create': 'Access granted',
   'grant.revoke': 'Access revoked',
   'connection.create': 'Account connected',
+  'connection.update': 'Account updated',
+  'connection.enable': 'Account enabled',
   'connection.disable': 'Account disabled',
+  'anomaly.scan': 'Anomaly scan',
   'access.superadmin_bypass': 'Superadmin bypass',
 };
 
-const ACTION_VARIANT: Record<AuditAction, 'success' | 'warning' | 'destructive' | 'outline'> = {
+const ACTION_VARIANT: Record<AuditAction, Variant> = {
   'user.invite': 'outline',
   'user.disable': 'warning',
   'grant.create': 'success',
   'grant.revoke': 'warning',
   'connection.create': 'success',
+  'connection.update': 'outline',
+  'connection.enable': 'success',
   'connection.disable': 'warning',
+  'anomaly.scan': 'outline',
   'access.superadmin_bypass': 'destructive',
 };
+
+/**
+ * `audit_log.action` is free-form text, so an action with no label here
+ * is a real possibility rather than a type error. Showing the raw
+ * action is strictly better than an empty badge, which reads as a
+ * broken row instead of a missing translation.
+ */
+const labelFor = (action: string): string => ACTION_LABEL[action as AuditAction] ?? action;
+const variantFor = (action: string): Variant => ACTION_VARIANT[action as AuditAction] ?? 'outline';
 
 type Scope = 'all' | 'access' | 'bypass';
 
 export function AuditView() {
-  const { audit } = useAdmin();
+  const { audit, loading, error } = useAdmin();
   const now = useDemoNow();
   const [scope, setScope] = useState<Scope>('all');
   const [query, setQuery] = useState('');
@@ -65,6 +83,8 @@ export function AuditView() {
         title="Audit log"
         description="Append-only. Every grant, revocation and superadmin bypass, with who did it and when."
       />
+
+      <AdminState loading={loading} error={error} subject="the audit log" />
 
       <Card>
         <CardHeader>
@@ -154,7 +174,7 @@ function AuditRow({
         </TableCell>
         <TableCell className="text-sm">{entry.actor}</TableCell>
         <TableCell>
-          <Badge variant={ACTION_VARIANT[entry.action]}>{ACTION_LABEL[entry.action]}</Badge>
+          <Badge variant={variantFor(entry.action)}>{labelFor(entry.action)}</Badge>
         </TableCell>
         <TableCell>
           <button

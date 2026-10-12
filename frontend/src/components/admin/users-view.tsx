@@ -1,7 +1,7 @@
 'use client';
 
 import { KeyRound, ShieldCheck, UserPlus, Users } from 'lucide-react';
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useAdmin } from '@/components/admin/admin-context';
 import { GrantDialog } from '@/components/admin/grant-dialog';
 import { GrantList } from '@/components/admin/grant-list';
@@ -14,9 +14,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useDemoNow } from '@/hooks/use-demo-now';
 import { formatRelative } from '@/lib/format';
-import { getFilterOptions } from '@/lib/services/cost-service';
 import { visibleAccountCount } from '@/lib/services/admin-service';
 import type { Grant, ManagedUser, UserStatus } from '@/types/domain';
+import { AdminState } from './admin-state';
 
 const STATUS_VARIANT: Record<UserStatus, 'success' | 'warning' | 'secondary'> = {
   active: 'success',
@@ -25,14 +25,18 @@ const STATUS_VARIANT: Record<UserStatus, 'success' | 'warning' | 'secondary'> = 
 };
 
 export function UsersView() {
-  const { users, grantsFor, revoke, disable, enable } = useAdmin();
+  const { users, grants, accounts, grantsFor, revoke, disable, enable, loading, error, can } =
+    useAdmin();
   const now = useDemoNow();
 
   const [inviting, setInviting] = useState(false);
   const [granting, setGranting] = useState<ManagedUser | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  const totalAccounts = useMemo(() => getFilterOptions().accounts.length, []);
+  // The accounts the API says exist, not the mock catalogue. In live
+  // mode a grant has to name a real account id, so "visible / total"
+  // has to be counted against the same list the grant dialog offers.
+  const totalAccounts = accounts.length;
 
   const superadmins = users.filter((u) => u.role === 'superadmin').length;
   const withoutAccess = users.filter(
@@ -49,12 +53,14 @@ export function UsersView() {
         title="Users & grants"
         description="Who can sign in, and exactly which accounts each of them can see."
         actions={
-          <Button onClick={() => setInviting(true)}>
+          <Button onClick={() => setInviting(true)} disabled={Boolean(error)}>
             <UserPlus className="mr-2 h-4 w-4" aria-hidden />
             Invite user
           </Button>
         }
       />
+
+      <AdminState loading={loading} error={error} subject="users and grants" />
 
       <div className="grid gap-4 sm:grid-cols-3">
         <KpiCard title="Users" value={String(users.length)} icon={Users} />
@@ -90,8 +96,13 @@ export function UsersView() {
             </TableHeader>
             <TableBody>
               {users.map((user) => {
-                const grants = grantsFor(user.id);
-                const visible = visibleAccountCount(user, totalAccounts);
+                // `userGrants` is this user's live grants, for the
+                // expanded panel. `grants` is every grant, which is what
+                // visibleAccountCount needs -- it does its own filtering,
+                // and shadowing the name here hid that it was being
+                // handed a pre-filtered list.
+                const userGrants = grantsFor(user.id);
+                const visible = visibleAccountCount(user, grants, totalAccounts);
                 const open = expanded === user.id;
                 return (
                   <Fragment key={user.id}>
@@ -138,15 +149,19 @@ export function UsersView() {
                           <Button variant="outline" size="sm" onClick={() => setGranting(user)}>
                             Grant
                           </Button>
-                          {user.status === 'disabled' ? (
-                            <Button variant="ghost" size="sm" onClick={() => enable(user.id)}>
-                              Enable
-                            </Button>
-                          ) : (
-                            <Button variant="ghost" size="sm" onClick={() => disable(user.id)}>
-                              Disable
-                            </Button>
-                          )}
+                          {/* No endpoint enables or disables a user, so in
+                              live mode the control is absent rather than
+                              present and broken. See CAPABILITIES. */}
+                          {can.canSetUserStatus &&
+                            (user.status === 'disabled' ? (
+                              <Button variant="ghost" size="sm" onClick={() => enable(user.id)}>
+                                Enable
+                              </Button>
+                            ) : (
+                              <Button variant="ghost" size="sm" onClick={() => disable(user.id)}>
+                                Disable
+                              </Button>
+                            ))}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -158,7 +173,7 @@ export function UsersView() {
                               ? 'Superadmin — sees every account regardless of grants'
                               : 'Grants'}
                           </p>
-                          <GrantList grants={grants} now={now} onRevoke={onRevoke} />
+                          <GrantList grants={userGrants} now={now} onRevoke={onRevoke} />
                         </TableCell>
                       </TableRow>
                     )}

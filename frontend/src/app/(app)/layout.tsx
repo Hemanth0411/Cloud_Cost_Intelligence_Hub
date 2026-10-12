@@ -1,5 +1,4 @@
 import { Suspense, type ReactNode } from 'react';
-import { AdminProvider } from '@/components/admin/admin-context';
 import { AlertsProvider } from '@/components/alerts/alerts-context';
 import { DetectionConfigProvider } from '@/components/anomalies/detection-config-context';
 import { ConnectionsProvider } from '@/components/connections/connections-context';
@@ -11,6 +10,10 @@ import { ToastProvider } from '@/components/ui/toast';
 /**
  * Provider order matters: toasts first (used by everything), then URL filters, detection thresholds and the
  * anomaly workflow, then connections, and finally alerts, which derive from all of the above.
+ *
+ * AdminProvider is NOT here. It reads four endpoints on mount and only
+ * the /admin/* screens consume it, so it lives in admin/layout.tsx --
+ * see the note there.
  */
 export default function AppLayout({ children }: { children: ReactNode }) {
   return (
@@ -22,11 +25,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <AnomalyStatusProvider>
               <ConnectionsProvider>
                 <AlertsProvider>
-                  {/* Last: needs toasts, and the sidebar reads its users
-                      to decide whether to show the admin group. */}
-                  <AdminProvider>
-                    <AppShell>{children}</AppShell>
-                  </AdminProvider>
+                  <AppShell>{children}</AppShell>
                 </AlertsProvider>
               </ConnectionsProvider>
             </AnomalyStatusProvider>

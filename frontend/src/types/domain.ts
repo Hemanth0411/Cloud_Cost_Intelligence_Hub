@@ -246,20 +246,34 @@ export interface Grant {
   reason: string | null;
 }
 
+/**
+ * Every action the backend actually writes, plus 'user.disable' which
+ * only the mock does.
+ *
+ * `audit_log.action` is a free-form text column, so this union is a
+ * convenience for labelling and NOT a guarantee. The audit screen must
+ * render an action it has never heard of -- a new backend action would
+ * otherwise appear as an empty badge, which looks like a missing row
+ * rather than a missing label.
+ */
 export type AuditAction =
   | 'user.invite'
   | 'user.disable'
   | 'grant.create'
   | 'grant.revoke'
   | 'connection.create'
+  | 'connection.update'
+  | 'connection.enable'
   | 'connection.disable'
+  | 'anomaly.scan'
   | 'access.superadmin_bypass';
 
 export interface AuditEntry {
   id: string;
   at: string;
   actor: string;
-  action: AuditAction;
+  /** Widened on purpose: see the note on AuditAction. */
+  action: AuditAction | string;
   entityType: string;
   entityId: string;
   /** Free-form before/after snapshots, rendered as a diff, not raw JSON. */
