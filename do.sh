@@ -55,6 +55,25 @@ step() { echo; echo "==> $*"; }
 # Version note: pg_dump refuses to dump a server newer than itself, so
 # the client needs to be >= the Postgres major version in use (Neon is
 # 17 at the time of writing).
+# Same class of bug as need_pg, found the same way -- by `up` reaching
+# the migration step and dying on an import. `do.sh` calls bare `python`,
+# so it inherits whatever is on PATH, and an activated virtualenv
+# belonging to a DIFFERENT project shadows the interpreter that actually
+# has the dependencies. The apply had already succeeded by then, so the
+# deploy was left half-done: infrastructure up, schema absent.
+need_python_deps() {
+  python -c "import psycopg" 2>/dev/null && return 0
+  die "the active python cannot import psycopg.
+
+       Using: $(python -c "import sys; print(sys.executable)" 2>/dev/null || echo "python not found")
+
+       This is usually an activated virtualenv from another project
+       shadowing the interpreter that has the dependencies. Either:
+         deactivate
+       or install them where you are:
+         python -m pip install -r backend/requirements.txt"
+}
+
 need_pg() {
   local missing=()
   command -v pg_dump >/dev/null 2>&1 || missing+=(pg_dump)
@@ -153,6 +172,7 @@ cmd_test() { ( cd "$BACKEND" && python -m pytest tests/ -q ); }
 # ----------------------------------------------------------------- up
 
 cmd_up() {
+  need_python_deps
   need_env "${1:-}"
   cmd_build
   select_workspace
@@ -204,6 +224,7 @@ ensure_login_branding() {
 }
 
 cmd_migrate() {
+  need_python_deps
   need_env "${1:-}"
   select_workspace
   step "migrations ($ENV)"
