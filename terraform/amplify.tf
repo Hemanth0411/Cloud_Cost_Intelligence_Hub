@@ -56,6 +56,24 @@ resource "aws_amplify_app" "main" {
   }
 }
 
+# ORDERING CONSTRAINT Terraform cannot infer.
+#
+# An app with no `repository` creates its branches in MANUAL-DEPLOY mode,
+# and Amplify then refuses to attach a repository while such a branch
+# exists:
+#
+#   BadRequestException: Cannot connect your app to repository while
+#   manually deployed branch still exists. Please delete all branches and
+#   try again.
+#
+# Terraform sees only "update the app" and has no reason to destroy the
+# branch first, so switching an already-deployed app from manual to
+# build-on-push needs the branch removed by hand first:
+#
+#   terraform destroy -target=aws_amplify_branch.main -var-file=env/dev.tfvars
+#   ./do.sh up dev
+#
+# Setting amplify_repository BEFORE the first apply avoids this entirely.
 resource "aws_amplify_branch" "main" {
   app_id      = aws_amplify_app.main.id
   branch_name = local.env
