@@ -1,0 +1,40 @@
+# Amplify Hosting build spec, committed rather than configured in the
+# console.
+#
+# WHY A FILE: console build settings are invisible to Terraform and to
+# code review, and they are lost if the app is replaced -- which it is,
+# whenever `platform` changes. A file in the repo survives that and is
+# the only version of the truth.
+#
+# `applications[].appRoot` is the monorepo form. It does the same job as
+# ticking "My app is a monorepo" and typing `frontend` in the console,
+# so do neither: with this file present, Amplify picks the path up from
+# here. The AMPLIFY_MONOREPO_APP_ROOT environment variable set in
+# terraform/amplify.tf agrees with it.
+version: 1
+applications:
+  - appRoot: frontend
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            # `npm ci`, not `npm install`: the lockfile is committed and
+            # a build that quietly resolves different versions than the
+            # ones tested is not a build worth shipping.
+            - npm ci --cache .npm --prefer-offline
+        build:
+          commands:
+            - npm run build
+      artifacts:
+        # `.next`, not `out`. The app has no `output: 'export'`, so it
+        # builds as a server app and Amplify serves it on the
+        # WEB_COMPUTE platform. Pointing at `out` would produce an empty
+        # deploy that looks like it worked.
+        baseDirectory: .next
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - .next/cache/**/*
+          - node_modules/**/*
+          - .npm/**/*
