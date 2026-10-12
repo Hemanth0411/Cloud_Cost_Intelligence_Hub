@@ -40,8 +40,26 @@ export function LoginView() {
 function ManagedLoginHandoff() {
   const params = useSearchParams();
   const nextPath = safeNext(params.get('next'));
-  /** Cognito reports a refused authorize request back here. */
-  const cognitoError = params.get('error_description') ?? params.get('error');
+  /**
+   * Cognito reports a refused authorize request back here.
+   *
+   * The CODE is kept; `error_description` is NOT rendered. It is
+   * attacker-controllable text arriving in a query parameter, and
+   * printing it on our own sign-in page turns that page into free
+   * phishing copy ("Your account needs verification, call ..."). React
+   * escapes it, so this is not XSS -- it is the social half of the same
+   * problem. The code is a short fixed vocabulary and is enough to act
+   * on; the description goes to the console for whoever is debugging.
+   */
+  const cognitoErrorCode = params.get('error');
+  const cognitoError = cognitoErrorCode
+    ? `Cognito refused the sign-in request (${cognitoErrorCode}). This usually means the app's redirect URL or client id does not match the user pool.`
+    : null;
+
+  useEffect(() => {
+    const description = params.get('error_description');
+    if (description) console.warn('[costhub] Cognito error_description:', description);
+  }, [params]);
 
   const [error, setError] = useState<string | null>(cognitoError);
   const [redirecting, setRedirecting] = useState(false);
@@ -71,12 +89,12 @@ function ManagedLoginHandoff() {
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    if (takeSignedOut() || cognitoError) return;
+    if (takeSignedOut() || cognitoErrorCode) return;
     go();
     // `go` is stable for the life of this component and intentionally
     // not a dependency: re-running this effect would restart sign-in.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cognitoError]);
+  }, [cognitoErrorCode]);
 
   return (
     <AuthShell>

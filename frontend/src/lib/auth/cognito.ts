@@ -29,7 +29,7 @@ const NEXT_KEY = 'costhub:post-login-path';
 const SIGNED_OUT_KEY = 'costhub:signed-out';
 
 /** Must exactly match one of `callback_urls` in terraform/cognito.tf. */
-export function redirectUri(): string {
+function redirectUri(): string {
   return `${window.location.origin}/auth/callback`;
 }
 
@@ -139,7 +139,6 @@ export class AuthError extends Error {}
 
 interface TokenResponse {
   id_token?: string;
-  access_token?: string;
   refresh_token?: string;
   expires_in?: number;
   error?: string;
@@ -185,7 +184,13 @@ export async function exchangeCode(code: string, state: string | null): Promise<
       'This sign-in link has already been used, or was opened in a different tab. Start again.',
     );
   }
-  if (expectedState && state !== expectedState) {
+  // FAIL CLOSED, not open. `expectedState && ...` skipped the check
+  // entirely when the stored value was missing -- including the case
+  // where Cognito returned no `state` at all. A guard that disappears
+  // when its input is absent is not a guard. (PKCE is the real defence
+  // here, since an attacker's code is bound to their own challenge, but
+  // a check worth writing is worth failing closed.)
+  if (!expectedState || state !== expectedState) {
     throw new AuthError('Sign-in state did not match. Start again.');
   }
 
@@ -200,12 +205,7 @@ export async function exchangeCode(code: string, state: string | null): Promise<
   );
 
   if (!result.id_token) throw new AuthError('Cognito returned no ID token.');
-  return toTokenSet(
-    result.id_token,
-    result.access_token ?? '',
-    result.refresh_token ?? null,
-    result.expires_in ?? 3600,
-  );
+  return toTokenSet(result.id_token, result.refresh_token ?? null, result.expires_in ?? 3600);
 }
 
 /**
@@ -224,12 +224,7 @@ export async function refreshTokens(refreshToken: string): Promise<TokenSet> {
     }),
   );
   if (!result.id_token) throw new AuthError('Refresh returned no ID token.');
-  return toTokenSet(
-    result.id_token,
-    result.access_token ?? '',
-    refreshToken,
-    result.expires_in ?? 3600,
-  );
+  return toTokenSet(result.id_token, refreshToken, result.expires_in ?? 3600);
 }
 
 /**

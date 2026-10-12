@@ -33,20 +33,16 @@ const SKEW_MS = 120_000;
 
 export interface TokenSet {
   idToken: string;
-  accessToken: string;
   /** Absent after a refresh: Cognito does not reissue it. */
   refreshToken: string | null;
-  /** Epoch ms, from the ID token's `exp` claim. */
+  /** Epoch ms on the LOCAL clock. See `toTokenSet`. */
   expiresAt: number;
 }
 
-export interface IdClaims {
-  email: string;
-  emailVerified: boolean;
-  /** Cognito's `cognito:username`, used only as a display fallback. */
-  username: string | null;
-  exp: number;
-}
+// The access token is deliberately NOT stored. It cannot be used
+// against this API (see the header), nothing else reads it, and an
+// unused bearer credential sitting in web storage is a liability that
+// costs nothing to drop.
 
 function store(): Storage | null {
   try {
@@ -57,14 +53,13 @@ function store(): Storage | null {
 }
 
 /**
- * Decode a JWT payload WITHOUT verifying it.
+ * How long the token is good for, in seconds, from its own claims.
  *
- * Only ever used for two things the client is allowed to guess at: when
- * to refresh, and what name to show. Every authorization decision is
- * made by the API against the signature. Treat anything this returns as
- * a display hint, never as proof of anything.
+ * Read WITHOUT verifying the signature, which is fine because the only
+ * thing this decides is when to refresh. Every authorization decision
+ * is made by the API against the signature.
  */
-export function decodeClaims(token: string): IdClaims | null {
+function lifetimeOf(token: string): number | null {
   const part = token.split('.')[1];
   if (!part) return null;
   try {
@@ -72,35 +67,36 @@ export function decodeClaims(token: string): IdClaims | null {
     const raw: unknown = JSON.parse(json);
     if (typeof raw !== 'object' || raw === null) return null;
     const claims = raw as Record<string, unknown>;
-    const email = typeof claims.email === 'string' ? claims.email : null;
-    if (!email) return null;
-    const verified = claims.email_verified;
-    const username = claims['cognito:username'];
-    return {
-      email: email.toLowerCase(),
-      emailVerified: verified === true || String(verified).toLowerCase() === 'true',
-      username: typeof username === 'string' ? username : null,
-      exp: typeof claims.exp === 'number' ? claims.exp : 0,
-    };
+    const { exp, iat } = claims;
+    if (typeof exp !== 'number' || typeof iat !== 'number' || exp <= iat) return null;
+    return exp - iat;
   } catch {
     return null;
   }
 }
 
-/** Builds a TokenSet from a Cognito token response. */
+/**
+ * Builds a TokenSet from a Cognito token response.
+ *
+ * `expiresAt` is LOCAL time plus the token's own lifetime -- deliberately
+ * not the `exp` claim converted to ms.
+ *
+ * Using `exp` directly compares an issuer timestamp against
+ * `Date.now()`, which makes the two-minute refresh skew the entire
+ * tolerance for client clock error. A browser five minutes slow would
+ * consider a just-expired token fresh, send it, and take a hard 401
+ * roughly once an hour. Anchoring to `exp - iat` uses the server for the
+ * only thing it is authoritative about -- the duration -- and the local
+ * clock for the only thing it is reliable about: elapsed time since a
+ * moment this code witnessed.
+ */
 export function toTokenSet(
   idToken: string,
-  accessToken: string,
   refreshToken: string | null,
   expiresInSeconds: number,
 ): TokenSet {
-  // Prefer the token's own `exp` over the response's `expires_in`: the
-  // former is what the API checks, and the two disagree by the request
-  // latency.
-  const claims = decodeClaims(idToken);
-  const expiresAt =
-    claims && claims.exp > 0 ? claims.exp * 1000 : Date.now() + expiresInSeconds * 1000;
-  return { idToken, accessToken, refreshToken, expiresAt };
+  const lifetime = lifetimeOf(idToken) ?? expiresInSeconds;
+  return { idToken, refreshToken, expiresAt: Date.now() + lifetime * 1000 };
 }
 
 export function readTokens(): TokenSet | null {
@@ -113,7 +109,6 @@ export function readTokens(): TokenSet | null {
     if (typeof t.idToken !== 'string' || typeof t.expiresAt !== 'number') return null;
     return {
       idToken: t.idToken,
-      accessToken: typeof t.accessToken === 'string' ? t.accessToken : '',
       refreshToken: typeof t.refreshToken === 'string' ? t.refreshToken : null,
       expiresAt: t.expiresAt,
     };

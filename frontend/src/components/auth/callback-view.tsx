@@ -37,6 +37,18 @@ export function CallbackView() {
     if (exchanged.current) return;
     exchanged.current = true;
 
+    // Take the code out of the address bar FIRST, not on success.
+    //
+    // It used to come out only via `router.replace(next)` on the happy
+    // path, so every failure left `?code=...&state=...` sitting in the
+    // URL indefinitely, where browser history and the Referer header on
+    // same-origin requests (including Next's prefetch of the "Back to
+    // sign in" link) can pick it up and put it in an access log. On
+    // success it was still exposed for both round trips. The code is
+    // single-use and the verifier is already consumed, so a leaked one
+    // is not redeemable -- but it costs one line not to leak it.
+    window.history.replaceState(null, '', '/auth/callback');
+
     if (cognitoError) {
       setError(cognitoError);
       return;
