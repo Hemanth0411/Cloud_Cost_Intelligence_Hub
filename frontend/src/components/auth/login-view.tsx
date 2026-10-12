@@ -12,7 +12,7 @@ import { DEMO_CREDENTIALS } from '@/lib/auth/constants';
 import { startSession } from '@/lib/auth/session';
 import { browserStore, emptyStore, signIn } from '@/lib/auth/store';
 import { validateLogin, type FieldErrors } from '@/lib/auth/validation';
-import { USE_MOCK } from '@/lib/config';
+import { useMode } from '@/hooks/use-mode';
 import { AuthShell, DemoNotice } from './auth-shell';
 import { PasswordField } from './password-field';
 
@@ -32,7 +32,26 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
  * replace it. So the live path is a hand-off.
  */
 export function LoginView() {
-  return USE_MOCK ? <MockLogin /> : <ManagedLoginHandoff />;
+  // RUNTIME, not build-time. If this stayed on the compiled-in
+  // default, flipping to mock on /settings would give you mock data
+  // behind a Cognito sign-in you cannot complete offline -- the
+  // toggle would be half-wired and fail in exactly the situation it
+  // exists for (no connectivity, demo about to start).
+  const { mock, resolved } = useMode();
+  // Keep the shell on screen while the override is read. Returning
+  // null would mean the sign-in page server-renders to nothing and
+  // flashes blank before hydrating -- on the one page a first-time
+  // visitor always lands on.
+  if (!resolved) {
+    return (
+      <AuthShell>
+        <div className="flex h-40 items-center justify-center" role="status" aria-label="Loading sign-in">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-primary" />
+        </div>
+      </AuthShell>
+    );
+  }
+  return mock ? <MockLogin /> : <ManagedLoginHandoff />;
 }
 
 // --------------------------------------------------------------- live

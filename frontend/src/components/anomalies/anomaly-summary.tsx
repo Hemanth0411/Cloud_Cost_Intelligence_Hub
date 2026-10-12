@@ -4,10 +4,27 @@ import { formatCompactCurrency } from '@/lib/format';
 import { ABSENT } from '@/lib/theme';
 import type { AnomalySummary } from '@/lib/selectors/anomaly-views';
 
-export function AnomalySummaryCards({ summary, totalAllTime }: { summary: AnomalySummary; totalAllTime: number }) {
+interface Props {
+  summary: AnomalySummary;
+  totalAllTime: number;
+  /**
+   * Can the running detector emit a drop at all?
+   *
+   * The server's MadDetector skips `delta <= 0`, so a live
+   * "Unexpected decreases: 0" is not a finding of no decreases -- it
+   * is a count of something that was never looked for. The card comes
+   * off rather than reporting a zero nobody measured.
+   */
+  decreasesPossible: boolean;
+}
+
+export function AnomalySummaryCards({ summary, totalAllTime, decreasesPossible }: Props) {
   const highCritical = summary.bySeverity.critical + summary.bySeverity.high;
   return (
-    <section aria-label="Anomaly summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+    <section
+      aria-label="Anomaly summary"
+      className={`grid gap-3 sm:grid-cols-2 ${decreasesPossible ? 'xl:grid-cols-5' : 'xl:grid-cols-4'}`}
+    >
       <KpiCard title="Detected" icon={Radar} value={String(summary.total)} hint={`in this period · ${totalAllTime} across all history`} />
       <KpiCard
         title="Active"
@@ -31,6 +48,7 @@ export function AnomalySummaryCards({ summary, totalAllTime }: { summary: Anomal
             : 'in active increases (inside detection windows)'
         }
       />
+      {decreasesPossible && (
       <KpiCard
         title="Unexpected decreases"
         icon={ArrowDownRight}
@@ -41,6 +59,7 @@ export function AnomalySummaryCards({ summary, totalAllTime }: { summary: Anomal
             : `${formatCompactCurrency(summary.activeDecreaseImpact)} below expected in active ones`
         }
       />
+      )}
     </section>
   );
 }

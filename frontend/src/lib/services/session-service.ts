@@ -18,7 +18,8 @@ import { get } from '@/lib/api/client';
 import { exchangeCode, markSignedOut, signOutUrl, takePostLoginPath } from '@/lib/auth/cognito';
 import { endSession, startSession } from '@/lib/auth/session';
 import { clearTokens, writeTokens } from '@/lib/auth/tokens';
-import { USE_MOCK } from '@/lib/config';
+import { isMock } from '@/lib/mode';
+import { readTokens } from '@/lib/auth/tokens';
 import type { User } from '@/types/domain';
 
 interface MeResponse {
@@ -97,5 +98,11 @@ export function signOut(): void {
   clearTokens();
   endSession();
   markSignedOut();
-  window.location.assign(USE_MOCK ? '/login' : signOutUrl());
+  // THE TOKENS DECIDE, NOT THE MODE. Flipping to mock while holding
+  // live tokens used to send sign-out to /login, leaving Cognito's own
+  // IdP session alive -- so flipping back to live signed you straight
+  // in with no prompt, which is exactly the failure the note above is
+  // about. If there was ever a live session, end it at Cognito.
+  const hadLiveSession = readTokens() !== null;
+  window.location.assign(isMock() && !hadLiveSession ? '/login' : signOutUrl());
 }

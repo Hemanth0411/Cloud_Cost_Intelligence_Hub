@@ -1,5 +1,8 @@
+'use client';
+
 import { Activity, Cloud, ShieldCheck, Sparkles } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useMode } from '@/hooks/use-mode';
 
 const HIGHLIGHTS = [
   { icon: Activity, title: 'Anomaly detection', text: 'Catch runaway spend the day it happens.' },
@@ -43,7 +46,9 @@ export function AuthShell({ children }: { children: ReactNode }) {
           </ul>
         </div>
 
-        <p className="relative text-xs text-cream/50">Hackathon prototype · mock data only · simulated authentication</p>
+        {/* Rendered behind the Cognito hand-off too, where every
+            word of the old version was wrong. */}
+        <AuthFooterNote />
       </aside>
 
       <main className="flex items-center justify-center bg-background p-3">
@@ -57,5 +62,24 @@ export function AuthShell({ children }: { children: ReactNode }) {
 export function DemoNotice({ children }: { children: ReactNode }) {
   return (
     <div className="rounded-md border border-dashed bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">{children}</div>
+  );
+}
+
+/**
+ * What this sign-in actually is.
+ *
+ * Mock mode checks a password against `localStorage`; live mode hands
+ * off to Cognito Managed Login and comes back with a real OIDC token.
+ * The footer said "mock data only · simulated authentication" in both.
+ */
+function AuthFooterNote() {
+  const { mock, resolved } = useMode();
+  if (!resolved) return <p className="relative text-xs text-cream/50">&nbsp;</p>;
+  return (
+    <p className="relative text-xs text-cream/50">
+      {mock
+        ? 'Mock mode · generated data · sign-in simulated in your browser'
+        : 'Live mode · sign-in handled by Amazon Cognito'}
+    </p>
   );
 }

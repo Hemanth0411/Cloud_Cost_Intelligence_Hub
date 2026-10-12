@@ -107,9 +107,11 @@ export function AlertsView() {
           value={String(unread)}
           hint={unread > 0 ? 'need your attention' : derived ? 'all caught up' : rules.length === 0 ? 'no rules defined' : 'nothing has fired'}
         />
-        <KpiCard title="Active" icon={TriangleAlert} tone={counts.active > 0 ? 'warning' : 'default'} value={String(counts.active)} hint="not yet acknowledged" />
-        <KpiCard title="Acknowledged" icon={Eye} value={String(counts.acknowledged)} hint="being looked at" />
-        <KpiCard title="Resolved" icon={CheckCircle2} tone="success" value={String(counts.resolved)} hint="closed out" />
+        {/* The three hints describe a workflow the stored model does
+            not have: a feed row is new, read or dismissed, full stop. */}
+        <KpiCard title="Active" icon={TriangleAlert} tone={counts.active > 0 ? 'warning' : 'default'} value={String(counts.active)} hint={derived ? 'not yet acknowledged' : 'not yet read'} />
+        <KpiCard title="Acknowledged" icon={Eye} value={String(counts.acknowledged)} hint={derived ? 'being looked at' : 'marked read'} />
+        <KpiCard title="Resolved" icon={CheckCircle2} tone="success" value={String(counts.resolved)} hint={derived ? 'closed out' : 'dismissed on the server'} />
       </section>
 
       <div className="grid gap-3 xl:grid-cols-3">
@@ -117,7 +119,11 @@ export function AlertsView() {
           <CardHeader className="gap-3">
             <div>
               <CardTitle>Alerts</CardTitle>
-              <CardDescription>Acknowledging or resolving an anomaly alert updates the anomaly everywhere (shared workflow).</CardDescription>
+              <CardDescription>
+                {derived
+                  ? 'Acknowledging or resolving an anomaly alert updates the anomaly everywhere (shared workflow).'
+                  : 'Marking an event read is the only change the API records. There is no acknowledge or resolve state on a stored event.'}
+              </CardDescription>
             </div>
             <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
               <SegmentedControl ariaLabel="Alert status" options={options} value={status} onChange={setStatus} />

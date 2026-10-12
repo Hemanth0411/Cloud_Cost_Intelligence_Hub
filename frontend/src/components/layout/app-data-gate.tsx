@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
+import { ApiError } from '@/lib/api/client';
 import { ErrorState } from '@/components/shared/error-state';
 import { ensureFilterOptions } from '@/lib/services/cost-service';
 
@@ -40,6 +41,14 @@ export function AppDataGate({ children }: { children: ReactNode }) {
       .then(() => !cancelled && setState('ready'))
       .catch((cause: unknown) => {
         if (cancelled) return;
+        // A 401 HAS ALREADY STARTED A NAVIGATION. `lib/api/client.ts`
+        // hands the browser to sign-in before it throws, so showing
+        // "Could not load your accounts / your session has expired"
+        // puts an error screen on top of a page that is leaving --
+        // which is what flipping to live mode without a Cognito
+        // session looked like. Stay on the spinner and let the
+        // redirect land.
+        if (cause instanceof ApiError && cause.status === 401) return;
         setMessage(cause instanceof Error ? cause.message : String(cause));
         setState('failed');
       });

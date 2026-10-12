@@ -86,6 +86,11 @@ export function AnomaliesView() {
   const summary = useMemo(() => summarizeAnomalies(all ?? []), [all]);
   const timeline = useMemo(() => (ready ? anomalyTimeline(all ?? [], ready.data.range) : []), [ready, all]);
 
+  // Nothing found in this window AND nothing found in any window.
+  // The second half matters: zero in a narrow range with findings
+  // elsewhere is a real result and keeps the full summary.
+  const nothingDetected = (ready?.data.anomalies.length ?? 0) === 0 && (ready?.data.totalDetectedAllTime ?? 0) === 0;
+
   const presetId = matchPreset(config);
   const presetLabel = presetId === 'custom' ? 'Custom' : PRESET_LABELS[presetId];
   const selected = all?.find((a) => a.id === selectedId) ?? null;
@@ -148,16 +153,24 @@ export function AnomaliesView() {
         <div className={cn('animate-fade-in space-y-3 transition-opacity duration-150', state.isRefreshing && 'opacity-60')} aria-busy={state.isRefreshing}>
           {/* "0 detected" is a real and good finding ONCE there is
               spend to detect over. Before that it is an absence of
-              input, not an absence of anomalies -- the notice tells
-              those two apart from the data status. */}
-          {state.data.anomalies.length === 0 && state.data.totalDetectedAllTime === 0 && (
+              input, not an absence of anomalies -- and the five
+              summary cards plus a timeline chart of empty buckets
+              would assert the search happened. The notice replaces
+              them; NoDataNotice decides which of the two it is from
+              the data status. */}
+          {nothingDetected ? (
             <NoDataNotice
               range={formatDateRange(state.data.range.from, state.data.range.to)}
               emptyTitle="No anomalies detected"
               emptyMessage="The detector found nothing unusual in this selection. That is the good outcome, not a gap."
             />
-          )}
-          <AnomalySummaryCards summary={summary} totalAllTime={state.data.totalDetectedAllTime} />
+          ) : (
+          <>
+          <AnomalySummaryCards
+            summary={summary}
+            totalAllTime={state.data.totalDetectedAllTime}
+            decreasesPossible={configurable}
+          />
 
           <div className="grid gap-3 xl:grid-cols-3">
             <div className="xl:col-span-2"><AnomalyTimelineChart buckets={timeline} /></div>
@@ -202,6 +215,8 @@ export function AnomaliesView() {
               <AnomalyTable anomalies={filtered} onOpen={openAnomaly} onSetStatus={setAnomalyStatus} />
             </CardContent>
           </Card>
+          </>
+          )}
         </div>
       )}
 

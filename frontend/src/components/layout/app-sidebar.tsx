@@ -1,12 +1,13 @@
 'use client';
 
-import { ChevronsLeft, ChevronsRight, Cloud, Database } from 'lucide-react';
+import { ChevronsLeft, ChevronsRight, Cloud } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAlerts } from '@/components/alerts/alerts-context';
 import { useSession } from '@/hooks/use-session';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { DataSourceBadge } from './data-source-badge';
 import { navGroupsFor } from './nav-config';
 
 interface SidebarContentProps {
@@ -101,10 +102,7 @@ export function SidebarContent({ collapsed, onNavigate, onToggleCollapse }: Side
 
       {!collapsed && (
         <div className="border-t border-sidebar-border p-2 pb-12">
-          <div className="flex items-center gap-2 rounded-md bg-white/10 px-2.5 py-2 text-xs text-sidebar-muted">
-            <Database className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            <span>Mock dataset · no live cloud APIs</span>
-          </div>
+          <DataSourceBadge variant="sidebar" />
         </div>
       )}
     </div>

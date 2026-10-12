@@ -3,7 +3,8 @@
  *
  * Same contract as cost-service: UI code only talks to this module,
  * never to the mock data or to `fetch` directly. Which mode it runs in
- * is decided once, by `USE_MOCK`, and nothing above this line can tell.
+ * is decided once per page load, by `isMock()`, and nothing above
+ * this line can tell.
  *
  * The endpoints, live:
  *
@@ -38,7 +39,7 @@
  *    control that changes nothing, which is worse than its absence.
  */
 import { del, get, getRows, post } from '@/lib/api/client';
-import { USE_MOCK } from '@/lib/config';
+import { isMock } from '@/lib/mode';
 import { mockAuditLog, mockGrants, mockUsers } from '@/lib/mock/admin';
 import { getFilterOptions } from '@/lib/services/cost-service';
 import type { AuditEntry, Grant, ManagedUser, Role, UserStatus } from '@/types/domain';
@@ -60,8 +61,8 @@ export interface AdminSnapshot {
 
 /** What this mode can actually do, so the UI offers only that. */
 export const CAPABILITIES = {
-  canSetUserStatus: USE_MOCK,
-  canSetUserRole: USE_MOCK,
+  canSetUserStatus: isMock(),
+  canSetUserRole: isMock(),
 } as const;
 
 // ----------------------------------------------------- pure selectors
@@ -256,7 +257,7 @@ function record(entry: Omit<AuditEntry, 'id' | 'at'>): void {
 
 /** Everything the admin screens show, stitched and ready to render. */
 export async function loadAdmin(): Promise<AdminSnapshot> {
-  if (!USE_MOCK) return fetchSnapshot();
+  if (!isMock()) return fetchSnapshot();
   const state = mock();
   return {
     users: [...state.users],
@@ -275,7 +276,7 @@ export async function loadAdmin(): Promise<AdminSnapshot> {
  * matches nothing.
  */
 export async function readServices(providerId: string, accountId: string): Promise<string[]> {
-  if (!USE_MOCK) {
+  if (!isMock()) {
     // Note the shape: /meta/services returns a list of plain STRINGS,
     // not objects, so there is nothing to camelise.
     const response = await get<{ data: string[] }>('/meta/services', {
@@ -303,7 +304,7 @@ export async function inviteUser(input: InviteInput, actor: string): Promise<voi
   const email = input.email.trim().toLowerCase();
   const displayName = input.displayName?.trim() || null;
 
-  if (!USE_MOCK) {
+  if (!isMock()) {
     await post('/admin/users', { email, display_name: displayName });
     return;
   }
@@ -344,7 +345,7 @@ export interface GrantInput {
 }
 
 export async function grantAccess(input: GrantInput, actor: string): Promise<void> {
-  if (!USE_MOCK) {
+  if (!isMock()) {
     await post('/admin/grants', {
       email: input.userEmail,
       provider: input.providerId,
@@ -395,7 +396,7 @@ export async function grantAccess(input: GrantInput, actor: string): Promise<voi
  * no-op, matching the backend.
  */
 export async function revokeGrant(grantId: string, actor: string, reason?: string): Promise<void> {
-  if (!USE_MOCK) {
+  if (!isMock()) {
     await del(`/admin/grants/${encodeURIComponent(grantId)}`, {
       query: { reason: reason ?? null },
     });
@@ -432,7 +433,7 @@ export async function setUserStatus(
   status: UserStatus,
   actor: string,
 ): Promise<void> {
-  if (!USE_MOCK) {
+  if (!isMock()) {
     throw new Error('The API has no endpoint for enabling or disabling a user.');
   }
   const state = mock();

@@ -14,7 +14,15 @@ interface ErrorStateProps {
 }
 
 /** Friendly, honest error screen. Shows no stack traces to the user. */
-export function ErrorState({ title = 'Something went wrong', message = 'An unexpected error stopped this page from loading. Your demo data is safe: it is stored only in this browser.', onRetry, fullPage }: ErrorStateProps) {
+/**
+ * The default message says nothing about where the data lives.
+ *
+ * It used to end "Your demo data is safe: it is stored only in this
+ * browser" -- reassuring and false on any screen reading the API,
+ * and the one screen most likely to be showing this is the one whose
+ * API call just failed.
+ */
+export function ErrorState({ title = 'Something went wrong', message = 'An unexpected error stopped this page from loading. Nothing was changed.', onRetry, fullPage }: ErrorStateProps) {
   return (
     <div role="alert" className={cn('flex flex-col items-center justify-center gap-4 p-3 text-center', fullPage ? 'min-h-screen bg-background' : 'min-h-[50vh]')}>
       <span className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/15 text-destructive">
