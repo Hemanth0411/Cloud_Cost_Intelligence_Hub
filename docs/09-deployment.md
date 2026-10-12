@@ -179,6 +179,23 @@ our own `users` table.
 
 ## Deploy sequence
 
+### First: make sure you are pointed at the right account
+
+`aws_account_id` in each `.tfvars` is the account that environment is
+allowed to deploy into. Terraform's `allowed_account_ids` enforces it and
+`do.sh check_account` says the same thing one step earlier, in one line.
+
+This is not hypothetical. The machine this was built on has its **default
+profile pointed at a work account**, so without the guard `./do.sh up dev`
+would have begun creating 41 resources there and failed partway through on
+a permission denial. Use a named profile for the deploy account:
+
+```bash
+aws configure --profile costhub          # once
+export AWS_PROFILE=costhub               # every shell
+aws sts get-caller-identity              # confirm before anything else
+```
+
 **One command.** `do.sh up` is the deploy; the steps below are what it does,
 not things to run by hand.
 

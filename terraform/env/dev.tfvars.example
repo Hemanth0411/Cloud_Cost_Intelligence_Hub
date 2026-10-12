@@ -10,6 +10,11 @@
 # aws_region and name_prefix are set once in variables.tf; name_prefix
 # is suffixed with the workspace automatically.
 
+# The account this environment deploys into. Terraform refuses to run if
+# the active credentials resolve to anything else -- run
+# `aws sts get-caller-identity` and paste the Account value here.
+aws_account_id = "000000000000"
+
 superadmin_email            = "you@chryselys.com"
 ses_sender_email            = "you@chryselys.com"   # must be SES-verified
 amplify_basic_auth_password = "CHANGE-ME"

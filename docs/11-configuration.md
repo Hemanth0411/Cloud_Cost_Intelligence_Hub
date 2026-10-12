@@ -52,6 +52,7 @@ Consequences:
 
 | Variable | Portable? | Notes |
 |---|---|---|
+| `aws_account_id` | **no** | the 12-digit account this environment may deploy into. Terraform refuses to run against any other (`allowed_account_ids`), which is what stops a misdirected profile building the stack in the wrong account. Validated as 12 digits. |
 | `allow_local_frontend` | yes (`true`) | whether `http://localhost:5173` is an allowed CORS origin. `main.tfvars` sets it **false** — it was unconditional, so a shared URL advertised a developer laptop as an allowed origin with `allow_credentials = true`. |
 | `superadmin_email` | **no** | the first superadmin. Needs BOTH halves: `aws_cognito_user` (cognito.tf) creates the pool user, `migrations/006` creates the row. Also the budget-notification recipient. Must be in `allowed_email_domain`. |
 | `allowed_email_domain` | yes | `chryselys.com`. Enforced in the Cognito pre-signup Lambda **and** re-checked at the API boundary |

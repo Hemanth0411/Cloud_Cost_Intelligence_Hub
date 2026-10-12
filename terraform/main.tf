@@ -32,6 +32,21 @@ resource "terraform_data" "workspace_guard" {
 provider "aws" {
   region = var.aws_region
 
+  # THE WRONG-ACCOUNT GUARD. Terraform refuses to do anything if the
+  # credentials in the environment belong to a different account.
+  #
+  # This is not hypothetical: the machine this was written on has its
+  # default profile pointed at a work account, and without this line
+  # `./do.sh up dev` would have started building 41 resources there.
+  # A plan is harmless; an apply is not, and the failure would have come
+  # partway through on a permission denial rather than before anything
+  # was created.
+  #
+  # Credentials still come from the environment as usual
+  # (AWS_PROFILE=costhub, or whatever the default is). This only asserts
+  # which account they must resolve to.
+  allowed_account_ids = [var.aws_account_id]
+
   # Tagging everything is what makes `make sweep` able to PROVE a teardown
   # removed everything, rather than assuming it did.
   default_tags {

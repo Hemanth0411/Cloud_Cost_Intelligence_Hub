@@ -82,7 +82,32 @@ need_env() {
   [ -f "terraform/env/$ENV.tfvars" ] || die "missing terraform/env/$ENV.tfvars"
 }
 
+# Terraform has allowed_account_ids, which is the real guard. This is the
+# same check a step earlier, because do.sh also calls `aws` directly
+# (branding, the sweep probes) and because "you are pointed at the wrong
+# account" is worth saying in one line rather than as a provider error.
+check_account() {
+  local want have
+  want="$(grep -E '^[[:space:]]*aws_account_id' "terraform/env/$ENV.tfvars" \
+          | head -1 | cut -d'"' -f2)"
+  [ -n "$want" ] || die "aws_account_id is not set in terraform/env/$ENV.tfvars
+       Run: aws sts get-caller-identity --query Account --output text"
+
+  have="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)" \
+    || die "no usable AWS credentials. Set AWS_PROFILE, or run aws configure."
+
+  [ "$want" = "$have" ] || die "wrong AWS account.
+       $ENV.tfvars expects : $want
+       your credentials are: $have
+
+       Nothing has been changed. Point AWS_PROFILE at the right account:
+         AWS_PROFILE=costhub ./do.sh $CMD $ENV"
+
+  echo "account:   $have"
+}
+
 select_workspace() {
+  check_account
   $TF workspace select -or-create "$ENV" >/dev/null
   echo "workspace: $ENV"
 }

@@ -1,3 +1,16 @@
+# The account this environment is allowed to deploy into. Required, with
+# no default on purpose: a default would be a guess, and the whole point
+# is to fail before touching the wrong account.
+variable "aws_account_id" {
+  type        = string
+  description = "The 12-digit AWS account id this environment deploys into"
+
+  validation {
+    condition     = can(regex("^[0-9]{12}$", var.aws_account_id))
+    error_message = "aws_account_id must be exactly 12 digits."
+  }
+}
+
 # Per-environment values live in env/<env>.tfvars -- one file each, and
 # nowhere else. The environment itself comes from the Terraform workspace
 # (see main.tf), so state and environment cannot disagree.
