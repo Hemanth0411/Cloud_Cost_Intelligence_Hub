@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from costhub.api import deps
 from costhub.api.routes import admin, alerts, anomalies, cost, meta
@@ -68,11 +70,50 @@ app = FastAPI(
 # required. Dev allows localhost; deployed origins come from settings.
 origins = [o for o in settings().cors_origins.split(",") if o.strip()]
 if settings().app_env == "dev":
-    # 3000 is `next dev`, which is what the frontend uses. 5173 was the
-    # previous (Vite) frontend's port and is kept only so an old local
-    # checkout still works; the Function URL's own CORS config is the
-    # gate that actually matters in a deployed environment.
-    origins += ["http://localhost:3000", "http://localhost:5173"]
+    # 3000 only: `next dev`. 5173 was the previous (Vite) frontend's
+    # port and there is no Vite app in this repo any more -- `git ls-files`
+    # finds no vite.config, and the only VITE_ strings left were in prose.
+    origins += ["http://localhost:3000"]
+
+# AN UNHANDLED 500 MUST STILL CARRY CORS HEADERS, and the ORDER below is
+# the whole fix.
+#
+# Starlette's ServerErrorMiddleware sits outside user middleware, so the
+# response it synthesises for an uncaught exception never passes through
+# CORSMiddleware. The browser rejects it for a missing
+# Access-Control-Allow-Origin and `fetch` rejects -- indistinguishable,
+# client-side, from the API being unreachable. Genuine server faults were
+# being reported to the operator as a CORS misconfiguration.
+#
+# `@app.exception_handler(Exception)` does NOT fix this, which is worth
+# recording because it looks like it should: Starlette routes a handler
+# registered for `Exception` (or 500) to ServerErrorMiddleware itself,
+# i.e. the outermost layer, so its response is outside CORS too.
+# Measured, with CORSMiddleware installed and an Origin on the request:
+#
+#   no handler         500  ACAO=None
+#   exception_handler  500  ACAO=None
+#   this middleware    500  ACAO='http://localhost:3000'
+#
+# `add_middleware` PREPENDS, so the last one added is the outermost. This
+# must therefore be registered BEFORE CORSMiddleware to end up inside it.
+# Swapping these two lines silently reverts the fix.
+class _UnhandledErrors(BaseHTTPMiddleware):
+    """Turn an uncaught exception into a 500 from inside the CORS layer."""
+
+    async def dispatch(self, request: Request, call_next):
+        try:
+            return await call_next(request)
+        except Exception:
+            # The detail belongs in CloudWatch, not in a browser.
+            log.exception("unhandled error on %s %s", request.method, request.url.path)
+            return JSONResponse(
+                status_code=500,
+                content={"detail": "Internal server error. The failure has been logged."},
+            )
+
+
+app.add_middleware(_UnhandledErrors)
 
 # Never `origins or ["*"]`: an unset CORS_ORIGINS used to serve a
 # wildcard WITH credentials enabled. No origins configured means no

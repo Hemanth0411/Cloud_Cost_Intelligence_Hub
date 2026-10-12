@@ -139,26 +139,29 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
   const invite = useCallback(
     (input: InviteInput) => {
-      const before = data.users.length;
       run(
         () => inviteUser(input, actor),
-        () => {
-          // Worth saying out loud: an invite grants nothing. This is the
-          // single most misread part of the model. Whether the user was
-          // new is decided by the reload, so the count is compared
-          // against what was on screen.
+        () =>
+          // One message, unconditionally, because an invite grants
+          // nothing either way and that is the single most misread part
+          // of the model.
+          //
+          // This used to try to say "already invited" by comparing a
+          // count captured before the write against `data.users.length`
+          // after it -- but both came from the same render's closure, so
+          // they were always equal and the branch was dead. The API
+          // could not answer the question anyway: POST /admin/users is
+          // an upsert (ON CONFLICT DO UPDATE) and returns 201 with the
+          // same body whether the row was new or not.
           toast({
             tone: 'success',
             title: `Invited ${input.email}`,
             description:
-              before === data.users.length
-                ? 'They can sign in, but will see no cost data until you grant them an account.'
-                : 'Invite sent.',
-          });
-        },
+              'They can sign in, but will see no cost data until you grant them an account.',
+          }),
       );
     },
-    [actor, data.users.length, run, toast],
+    [actor, run, toast],
   );
 
   const grant = useCallback(

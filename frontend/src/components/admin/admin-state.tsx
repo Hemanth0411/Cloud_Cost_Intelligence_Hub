@@ -1,6 +1,7 @@
 'use client';
 
-import { Loader2, ShieldAlert, TriangleAlert } from 'lucide-react';
+import { Loader2, RotateCcw, ShieldAlert, TriangleAlert } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 
 /**
@@ -20,11 +21,14 @@ export function AdminState({
   loading,
   error,
   subject,
+  onRetry,
 }: {
   loading: boolean;
   error: { message: string; forbidden: boolean } | null;
   /** What was being read, e.g. "users and grants". */
   subject: string;
+  /** Re-runs the read. Offered for a failure, never for a 403. */
+  onRetry?: () => void;
 }) {
   if (error) {
     const Icon = error.forbidden ? ShieldAlert : TriangleAlert;
@@ -43,6 +47,17 @@ export function AdminState({
               {error.forbidden ? 'Not available for this account' : `Could not load ${subject}`}
             </p>
             <p className="text-sm text-muted-foreground">{error.message}</p>
+            {/* No retry on a 403. The answer will not change, and a
+                button that re-asks a settled question reads as a fault
+                the user can fix. A transport failure is the opposite:
+                retrying is exactly the right move, and without this the
+                card was a dead end. */}
+            {!error.forbidden && onRetry && (
+              <Button variant="outline" size="sm" className="mt-2" onClick={onRetry}>
+                <RotateCcw className="mr-2 h-3.5 w-3.5" aria-hidden />
+                Try again
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>

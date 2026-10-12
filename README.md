@@ -181,23 +181,41 @@ COGNITO_USER_POOL_ID=us-east-1_xxxxx     # from terraform output
 COGNITO_CLIENT_ID=xxxxx                  # from terraform output
 ```
 
-### 3. `frontend/.env.production` — from Terraform outputs
+### 3. `frontend/.env.local` — from Terraform outputs
+
+NEXT_PUBLIC_, not VITE_, and `.env.local`, not `.env.production`. The
+frontend is Next.js; Next only exposes a variable to browser code when
+its name starts with `NEXT_PUBLIC_`, and it loads `.env.local`
+automatically. The old `VITE_*` names were inert on both counts, so the
+app silently stayed on mock data with nothing reporting it.
 
 ```ini
-VITE_API_BASE_URL=https://xxxx.lambda-url.us-east-1.on.aws
-VITE_COGNITO_USER_POOL_ID=us-east-1_xxxxx
-VITE_COGNITO_CLIENT_ID=xxxxx
-VITE_COGNITO_DOMAIN=costhub.auth.us-east-1.amazoncognito.com
-VITE_AWS_REGION=us-east-1
-VITE_USE_MOCK=false                      # showcase fixtures; OFF by default
+NEXT_PUBLIC_API_BASE_URL=https://xxxx.lambda-url.us-east-1.on.aws
+NEXT_PUBLIC_COGNITO_USER_POOL_ID=us-east-1_xxxxx
+NEXT_PUBLIC_COGNITO_CLIENT_ID=xxxxx
+NEXT_PUBLIC_COGNITO_DOMAIN=costhub-dev-<account>.auth.us-east-1.amazoncognito.com
+NEXT_PUBLIC_AWS_REGION=us-east-1
+NEXT_PUBLIC_USE_MOCK=false               # mock data is the DEFAULT; only the
+                                         # literal "false" turns it off
 ```
 
-All five of the first values come from `terraform output`. Generate rather
-than type them:
+Do not type these. `./do.sh outputs <env>` writes the file from the
+Terraform outputs:
 
 ```bash
-cd terraform && terraform output -json > ../frontend/tf-outputs.json
+./do.sh outputs dev          # writes frontend/.env.local
 ```
+
+None of them are secrets — Next inlines every `NEXT_PUBLIC_` value into
+the client bundle, so they are public by construction.
+
+**For an Amplify build, set the same five in the Amplify console.** They
+cannot be declared in Terraform: Amplify's domain is already an input to
+the Cognito callback URLs and the Lambda CORS origins, so making the
+Amplify app depend on their outputs is a cycle and terraform refuses the
+plan. `terraform/amplify.tf` carries a `lifecycle.ignore_changes` for
+exactly those keys, because without it an apply deletes whatever the
+console holds and the next build quietly falls back to mock data.
 
 ### Set outside Terraform (per account, cannot be automated)
 

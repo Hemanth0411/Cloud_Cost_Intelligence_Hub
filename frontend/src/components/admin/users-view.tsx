@@ -25,7 +25,7 @@ const STATUS_VARIANT: Record<UserStatus, 'success' | 'warning' | 'secondary'> = 
 };
 
 export function UsersView() {
-  const { users, grants, accounts, grantsFor, revoke, disable, enable, loading, error, can } =
+  const { users, grants, accounts, grantsFor, revoke, disable, enable, loading, error, reload, can } =
     useAdmin();
   const now = useDemoNow();
 
@@ -60,7 +60,7 @@ export function UsersView() {
         }
       />
 
-      <AdminState loading={loading} error={error} subject="users and grants" />
+      <AdminState loading={loading} error={error} subject="users and grants" onRetry={reload} />
 
       <div className="grid gap-4 sm:grid-cols-3">
         <KpiCard title="Users" value={String(users.length)} icon={Users} />

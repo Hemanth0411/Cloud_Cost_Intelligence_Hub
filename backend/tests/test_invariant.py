@@ -95,16 +95,42 @@ def test_the_check_would_actually_catch_a_violation():
     assert not SELECT_RE.search("SELECT 1 FROM anomaly_findings")
 
 
+# `_where(principal, f)` or `_where(principal, f, <kwargs>)`.
+#
+# This was the exact literal "_where(principal, f)", which counted zero
+# for a call that passed anything else -- so adding the `audit_bypass`
+# keyword to one call site made the test report a MISSING grant
+# predicate on a query that still had one. A guard that fires on an
+# argument list is reporting on syntax, not on the invariant.
+#
+# The `[,)]` is deliberate and keeps this as strict as the literal was:
+# it still requires the call to be `_where` applied to exactly
+# `principal, f`, so `_where(principal, other)` or a renamed first
+# argument does not count.
+WHERE_CALL_RE = re.compile(r"_where\(principal, f[,)]")
+
+
 def test_scoped_itself_still_applies_the_predicate():
     """Every fact query inside scoped.py must go through _where."""
     src = (PACKAGE / "query" / "scoped.py").read_text(encoding="utf-8")
     fact_queries = src.count(f"FROM {FACT_TABLE} f")
-    where_calls = src.count("_where(principal, f)")
+    where_calls = len(WHERE_CALL_RE.findall(src))
     assert fact_queries > 0, "expected scoped.py to query the fact table"
     assert where_calls >= fact_queries, (
         f"{fact_queries} fact queries but only {where_calls} _where() calls -- "
         "a query may be missing the grant predicate"
     )
+
+
+def test_the_where_call_check_would_catch_a_violation():
+    """Guard the guard, for the matcher above."""
+    assert WHERE_CALL_RE.search("where, params = _where(principal, f)")
+    assert WHERE_CALL_RE.search("_where(principal, f, audit_bypass=False)")
+    # A query that skipped the predicate entirely must NOT count.
+    assert not WHERE_CALL_RE.search("where = build_clauses(principal, f)")
+    # Nor must a call on something other than the filters in hand.
+    assert not WHERE_CALL_RE.search("_where(principal, other)")
+    assert not WHERE_CALL_RE.search("_where(someone, f)")
 
 
 @pytest.mark.parametrize("name", ["GRANT_PREDICATE", "system_principal", "all_series"])

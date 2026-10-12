@@ -55,7 +55,7 @@ const variantFor = (action: string): Variant => ACTION_VARIANT[action as AuditAc
 type Scope = 'all' | 'access' | 'bypass';
 
 export function AuditView() {
-  const { audit, loading, error } = useAdmin();
+  const { audit, loading, error, reload } = useAdmin();
   const now = useDemoNow();
   const [scope, setScope] = useState<Scope>('all');
   const [query, setQuery] = useState('');
@@ -84,7 +84,7 @@ export function AuditView() {
         description="Append-only. Every grant, revocation and superadmin bypass, with who did it and when."
       />
 
-      <AdminState loading={loading} error={error} subject="the audit log" />
+      <AdminState loading={loading} error={error} subject="the audit log" onRetry={reload} />
 
       <Card>
         <CardHeader>

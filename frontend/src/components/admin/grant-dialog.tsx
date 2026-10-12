@@ -14,6 +14,9 @@ import type { ManagedUser } from '@/types/domain';
  *  the grant predicate treats a NULL service_name as "every service". */
 const ALL_SERVICES = '__all__';
 
+/** Today as yyyy-MM-dd, the floor for an expiry date. */
+const todayIso = (): string => new Date().toISOString().slice(0, 10);
+
 export function GrantDialog({ user, onClose }: { user: ManagedUser | null; onClose: () => void }) {
   const { grant, grantsFor, accounts } = useAdmin();
 
@@ -186,9 +189,16 @@ export function GrantDialog({ user, onClose }: { user: ManagedUser | null; onClo
           label="Expires"
           hint="Leave empty for indefinite access. An expiring grant stops working silently, so prefer a date for temporary access."
         >
+          {/* `min` is not cosmetic. access_grants carries
+              CHECK (valid_until IS NULL OR valid_until > valid_from),
+              valid_from defaults to now(), and POST /admin/grants
+              catches only InvalidEmail -- so a past date reaches
+              Postgres, violates the constraint and comes back as an
+              unhandled 500. */}
           <Input
             id="grant-until"
             type="date"
+            min={todayIso()}
             value={validUntil}
             onChange={(e) => setValidUntil(e.target.value)}
             {...fieldA11y('grant-until', undefined, true)}
