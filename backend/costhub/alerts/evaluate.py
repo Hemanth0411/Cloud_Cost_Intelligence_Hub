@@ -53,15 +53,32 @@ def _principal(rule: Rule) -> Principal:
     )
 
 
+def _metric_of(rule: Rule) -> str:
+    """The rule's metric, coerced to something `Filters` accepts.
+
+    _window coerced an unknown metric while _forecast passed it raw, so
+    the two paths disagreed: the resulting ValueError was swallowed by
+    runner's broad except and the forecast rule silently never fired.
+    """
+    return rule.metric if rule.metric in {"effective_cost", "billed_cost"}         else "effective_cost"
+
+
 def _window(rule: Rule, today: date) -> Filters:
+    """The rule's window, as INCLUSIVE dates.
+
+    `Filters.end` is inclusive in query/scoped (`usage_date <= end`), so
+    a window of N days spans [today - (N-1), today]. Subtracting N gave
+    N+1 days: a window_days=1 rule summed two days, and the default rule
+    therefore fired on twice the intended spend while its own subject
+    line said "over 1d".
+    """
     return Filters(
-        start=today - timedelta(days=rule.window_days),
+        start=today - timedelta(days=rule.window_days - 1),
         end=today,
         provider=rule.scope_provider,
         account_id=rule.scope_account,
         service_name=rule.scope_service,
-        metric=rule.metric if rule.metric in {"effective_cost", "billed_cost"}
-        else "effective_cost",
+        metric=_metric_of(rule),
     )
 
 
@@ -119,14 +136,20 @@ def _forecast(rule: Rule, today: date) -> Event | None:
     month_start = today.replace(day=1)
     nxt = (month_start + timedelta(days=32)).replace(day=1)
     days_in_month = (nxt - month_start).days
-    elapsed = (today - month_start).days + 1
+    # NOT (today - month_start) + 1: that counts today as fully elapsed
+    # while the numerator cannot contain today's cost, since Cost
+    # Explorer lags 8-24h. On the 3rd of the month that made a $1,000/day
+    # account project ~$10k instead of ~$31k -- a 3x under-read in
+    # exactly the window where an early warning is worth having.
+    settled_through = today - timedelta(days=1)
+    elapsed = (settled_through - month_start).days + 1
     if elapsed < 3:
         return None  # too early for a run-rate to mean anything
 
     f = Filters(
-        start=month_start, end=today,
+        start=month_start, end=settled_through,
         provider=rule.scope_provider, account_id=rule.scope_account,
-        service_name=rule.scope_service, metric=rule.metric,
+        service_name=rule.scope_service, metric=_metric_of(rule),
     )
     rows = scoped.series(_principal(rule), f, grain="day")
     so_far = Decimal(str(sum(Decimal(str(r["cost"])) for r in rows))) if rows else Decimal("0")

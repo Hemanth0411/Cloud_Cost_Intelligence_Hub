@@ -177,7 +177,6 @@ sequenceDiagram
     participant Q as query/scoped
     participant RB as rbac/resolve
     participant PG as PostgreSQL
-    participant SNS as SNS
     participant SES as SES
 
     EB->>EV: scheduled

@@ -81,7 +81,7 @@ terraform/env/
 db_instance_class    = "db.t4g.micro"
 db_allocated_storage = 20
 log_retention_days   = 3
-amplify_basic_auth_pass = "<set>"
+amplify_basic_auth_password = "<set>"
 ses_sender_email     = "noreply@yourdomain.com"
 superadmin_email     = "you@chryselys.com"
 data_source_accounts = [

@@ -1,6 +1,31 @@
+# Taking EVERY default subnet includes AZs that do not offer every
+# instance-class/storage combination (us-east-1e is the usual culprit),
+# so RDS can fail with an unsupported-AZ error non-deterministically
+# between environments.
+#
+# Excluded by NAME rather than by querying aws_rds_orderable_db_instance:
+# that data source needs rds:DescribeOrderableDBInstanceOptions, so it
+# adds a permission to request and a fresh way for `plan` to fail --
+# exactly the trap already removed from the SES lookup in messaging.tf.
+# I reintroduced it here and the plan failed the same way; a variable
+# keeps this overridable without needing a new grant.
+data "aws_subnet" "default" {
+  for_each = toset(data.aws_subnets.default.ids)
+  id       = each.value
+}
+
+locals {
+  usable_subnet_ids = [
+    for id, s in data.aws_subnet.default : id
+    if !contains(var.excluded_availability_zones, s.availability_zone)
+  ]
+}
+
 resource "aws_db_subnet_group" "main" {
-  name       = "${local.prefix}-db"
-  subnet_ids = data.aws_subnets.default.ids
+  name = "${local.prefix}-db"
+  # RDS needs at least two AZs; fall back to all of them rather than
+  # failing the plan if the exclusion list is somehow too aggressive.
+  subnet_ids = length(local.usable_subnet_ids) >= 2 ? local.usable_subnet_ids : data.aws_subnets.default.ids
 }
 
 # A custom parameter group only to force TLS; the default group cannot be

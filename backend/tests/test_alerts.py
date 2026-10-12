@@ -219,16 +219,44 @@ def test_suppressed_event_is_recorded_not_dropped(make_series, make_user, exec_s
 # -------------------------------------------------------- rule types
 
 def test_threshold_fires_above_and_not_below(make_series, make_user, make_grant, exec_sql):
-    make_series(ACCT, "AWSGlue", [10.0] * 10)   # 7-day window ~= 70
+    """A window_days=7 rule sums exactly 7 days.
+
+    This used to seed data ending two days ago and assert against a
+    threshold of 50, which only passed because the window was a day too
+    long and reached further back than it claimed. `end=TODAY` makes the
+    arithmetic explicit: 7 days x $10 = $70, so 50 fires and 10,000 does
+    not, and the numbers in the test mean what they say.
+    """
+    make_series(ACCT, "AWSGlue", [10.0] * 10, end=TODAY)
     user = make_user("th@chryselys.com")
     make_grant(user, ACCT)
 
-    _rule(exec_sql, user, threshold_value=Decimal("50"))
+    _rule(exec_sql, user, window_days=7, threshold_value=Decimal("50"))
     assert runner.run(today=TODAY, notifiers={"inapp": Recorder()}).fired == 1
 
     exec_sql("DELETE FROM alert_events")
     exec_sql("UPDATE alert_rules SET threshold_value = 10000")
     assert runner.run(today=TODAY, notifiers={"inapp": Recorder()}).fired == 0
+
+
+def test_window_days_spans_exactly_that_many_days(
+    make_series, make_user, make_grant, exec_sql
+):
+    """The off-by-one, pinned.
+
+    `Filters.end` is inclusive, so subtracting window_days gave N+1
+    days: a window_days=1 rule summed two and the default rule fired on
+    twice the intended spend while its subject line said "over 1d".
+    """
+    make_series(ACCT, "AWSGlue", [10.0] * 10, end=TODAY)
+    user = make_user("span@chryselys.com")
+    make_grant(user, ACCT)
+
+    rec = Recorder()
+    _rule(exec_sql, user, window_days=1, threshold_value=Decimal("5"))
+    assert runner.run(today=TODAY, notifiers={"inapp": rec}).fired == 1
+    # One day at $10 -- not two.
+    assert rec.sent[0].observed_value == Decimal("10.000000")
 
 
 def test_digest_fires_unconditionally(make_series, make_user, make_grant, exec_sql):

@@ -70,12 +70,16 @@ origins = [o for o in settings().cors_origins.split(",") if o.strip()]
 if settings().app_env == "dev":
     origins += ["http://localhost:5173", "http://localhost:3000"]
 
+# Never `origins or ["*"]`: an unset CORS_ORIGINS used to serve a
+# wildcard WITH credentials enabled. No origins configured means no
+# cross-origin access, which is the safe reading of "unconfigured".
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins or ["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["authorization", "content-type"]
+    + (["x-dev-user"] if deps.dev_mode() else []),
 )
 
 app.include_router(cost.router)

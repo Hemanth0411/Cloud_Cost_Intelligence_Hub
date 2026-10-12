@@ -18,7 +18,7 @@ resource-level drill-down, unit economics, AI narration. All recorded in
 
 | ID | Requirement |
 |---|---|
-| FR-1 | Invite-only. No self-registration. A superadmin creates the user; Cognito emails a one-time code. |
+| FR-1 | Invite-only. No self-registration. The first superadmin is created by Terraform (`aws_cognito_user`) plus migration 006; both halves are required, since a Postgres row with no pool user can never receive a code. |
 | FR-2 | Only `@chryselys.com` addresses may authenticate. Enforced by a Cognito pre-signup Lambda **and** re-checked at the API boundary. |
 | FR-3 | Passwordless (email OTP). **No password exists at all** — not set at creation, not after first sign-in. Every sign-in is email → fresh code → tokens. Consequences: no register screen, no forgot-password screen, and nothing to migrate between accounts. |
 | FR-4 | One user = one email. Multiple login methods (Cognito, later Microsoft) map to one internal user id via an `identities` table. |
@@ -90,7 +90,7 @@ resource-level drill-down, unit economics, AI narration. All recorded in
 |---|---|
 | FR-36 | Every access change writes an append-only `audit_log` row with actor, action, before and after. |
 | FR-37 | The audit entry commits in the **same transaction** as the change it describes. |
-| FR-38 | Superadmin bypasses of the grant predicate are logged. An unlogged bypass is indistinguishable from a leak. |
+| FR-38 | Superadmin bypasses are recorded in `audit_log` by `api/deps.py:_audit_bypass`, throttled to one row per actor per hour — a dashboard issues several requests per page load. This was asserted in a code comment and implemented nowhere. |
 | FR-39 | Superadmin can view audit history and full grant history including expired rows. |
 
 ### Showcase fixtures
@@ -115,7 +115,7 @@ across two clouds look like. Fixtures fill that gap, in the frontend only.
 
 | ID | Requirement |
 |---|---|
-| NFR-1 | **Single enforcement point.** Exactly one module reads the fact table, and it always applies the grant predicate. |
+| NFR-1 | **Single enforcement point.** Exactly one module reads the fact table, and it always applies the grant predicate. Enforced by `tests/test_invariant.py` — it had already drifted twice while the docs asserted it. |
 | NFR-2 | Fail closed everywhere. Absence of permission denies. |
 | NFR-3 | No credentials in the frontend, in source, or in environment files committed to git. Secrets Manager only. |
 | NFR-4 | `audit_log` is append-only, enforced by database grants (`INSERT`/`SELECT` only for the app role), not by convention. |
@@ -126,7 +126,7 @@ across two clouds look like. Fixtures fill that gap, in the frontend only.
 
 | ID | Requirement |
 |---|---|
-| NFR-7 | Money is `numeric(18,6)`. Never floating point. |
+| NFR-7 | Money is `numeric(18,6)` in SQL and `Decimal` in Python, end to end — including `compare()`'s deltas, which briefly cast to float. Percent deltas stay float: a display ratio, not money. |
 | NFR-7b | **All accounts in scope bill in USD.** `currency` is still stored per row, but no FX conversion is implemented. A non-USD account must not be added without an explicit FX policy first. |
 | NFR-8 | All timestamps are `timestamptz`, stored UTC, displayed local. |
 | NFR-9 | Fact table has a natural-key unique constraint so upserts are idempotent. |
@@ -153,8 +153,8 @@ across two clouds look like. Fixtures fill that gap, in the frontend only.
 | ID | Requirement |
 |---|---|
 | NFR-17 | Three swap points behind protocols: `CostSource`, `Detector`, `Notifier`. Adding a provider or channel touches one file. |
-| NFR-18 | Source files ≤300 lines. |
-| NFR-19 | Audit columns on every table, without exception. |
+| NFR-18 | Source files ≤300 lines, enforced by `tests/test_invariant.py`. `query/scoped.py` is a reasoned exemption: splitting it to satisfy a line count would trade the NFR-1 security property for a style one. |
+| NFR-19 | Audit columns on every table that records a human action. `schema_migrations` and `audit_log` carry none by design (one is bookkeeping, the other *is* the trail); `ingest_runs`, the two dimensions, `alert_events` and `anomaly_findings` omit `deleted_at` because nothing soft-deletes them. The original "no exceptions" was false for 7 of 13 tables. |
 | NFR-20 | Fact column names follow FOCUS so the FOCUS adapter needs no translation layer. |
 | NFR-21 | Local development and deployment run identical code — plain Postgres over TCP, no second access path. |
 

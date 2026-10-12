@@ -73,8 +73,7 @@ graph TB
     ING --> PG
     ANO --> PG
     ALR --> PG
-    ALR --> SNS
-    SNS --> SES
+    ALR --> SES
     ING --> SM
     API --> SM
 ```
@@ -129,7 +128,6 @@ graph TD
     ALR["alerts/evaluate"] --> NOT
     NOT -.-> IN["inapp"]
     NOT -.-> SE["ses"]
-    NOT -.-> SN["sns"]
 
     ING --> STORE[("store")]
     QRY["query/scoped ★"] --> STORE

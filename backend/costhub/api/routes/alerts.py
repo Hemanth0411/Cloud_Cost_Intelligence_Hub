@@ -8,6 +8,8 @@ from __future__ import annotations
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
+from decimal import Decimal
+
 from pydantic import BaseModel, Field
 
 from costhub.api.deps import CurrentUser
@@ -19,6 +21,10 @@ router = APIRouter(prefix="/alerts", tags=["alerts"])
 RuleType = Literal["threshold", "forecast", "digest", "anomaly"]
 Comparator = Literal["gt", "gte", "lt", "lte"]
 Frequency = Literal["immediate", "daily", "weekly", "monthly"]
+# A Literal like every sibling field. As a bare str, POST /alerts/rules
+# accepted "amortized_cost" and produced a threshold rule measuring the
+# wrong thing plus a forecast rule that was permanently dead.
+Metric = Literal["effective_cost", "billed_cost"]
 
 
 class RuleIn(BaseModel):
@@ -27,12 +33,18 @@ class RuleIn(BaseModel):
     scope_provider: str | None = Field(None, description="Null = all providers")
     scope_account: str | None = Field(None, description="Null = all accounts")
     scope_service: str | None = Field(None, description="Null = all services")
-    metric: str = "effective_cost"
+    metric: Metric = "effective_cost"
     comparator: Comparator | None = "gt"
-    threshold_value: float | None = None
+    # Decimal, not float: this is a currency threshold that lands in a
+    # numeric(18,6) column.
+    threshold_value: Decimal | None = None
     window_days: int = Field(1, ge=1, le=365)
     frequency: Frequency = "daily"
-    channels: list[str] = Field(default_factory=lambda: ["inapp"])
+    channels: list[Literal["inapp", "email"]] = Field(
+        default_factory=lambda: ["inapp"],
+        description="Unknown channels used to be accepted and then "
+                    "silently never delivered.",
+    )
     enabled: bool = True
 
 

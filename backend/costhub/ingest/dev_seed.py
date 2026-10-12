@@ -14,6 +14,7 @@ detector has something real to find:
 from __future__ import annotations
 
 import random
+import zlib
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Iterator
@@ -48,9 +49,14 @@ class DevSeedSource:
 
     def __init__(self, conn: Connection, *, seed: int | None = None) -> None:
         self.conn = conn
-        # Deterministic per account, so re-running produces the same series
-        # and the upsert path is genuinely exercised.
-        self.rng = random.Random(seed if seed is not None else hash(conn.account_id) & 0xFFFF)
+        # crc32, not hash(): hash() on a str is salted per interpreter
+        # process (PYTHONHASHSEED is random by default), so every run
+        # produced different numbers and the determinism claimed here was
+        # false -- re-running rewrote every row with new values and moved
+        # the planted anomalies.
+        self.rng = random.Random(
+            seed if seed is not None else zlib.crc32(conn.account_id.encode())
+        )
 
     def fetch(self, *, account_id: str, start: date, end: date) -> Iterator[CostRow]:
         today = date.today()
@@ -58,7 +64,7 @@ class DevSeedSource:
         while day < end:
             days_ago = (today - day).days
             for service, base, region in SERVICES:
-                amount = self._amount(service, base, days_ago)
+                amount = self._amount(service, base, days_ago, on=day)
                 if amount <= 0:
                     continue
                 yield CostRow(
@@ -74,10 +80,15 @@ class DevSeedSource:
                 )
             day += timedelta(days=1)
 
-    def _amount(self, service: str, base: float, days_ago: int) -> Decimal:
-        # Weekday/weekend rhythm plus noise -- a flat line would make the
-        # anomaly detector look better than it is.
+    def _amount(
+        self, service: str, base: float, days_ago: int, on: date | None = None
+    ) -> Decimal:
+        # Weekday/weekend rhythm plus noise. This comment used to promise
+        # a rhythm while only applying noise, which left the series
+        # flatter than the detector was supposedly being tested against.
         value = base * self.rng.uniform(0.85, 1.15)
+        if on is not None and on.weekday() >= 5:
+            value *= 0.45          # weekends are genuinely quieter
 
         planted = PLANTED.get(service)
         if planted:

@@ -11,7 +11,8 @@ rows. test_scoped.py asserts that first.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
+from decimal import Decimal
 from typing import Any, Literal
 
 from costhub.db import fetch_all
@@ -39,8 +40,10 @@ EXISTS (
 )
 """
 
-# Superadmins bypass the predicate. Callers record the bypass in the audit
-# log -- an unlogged bypass is indistinguishable from a leak.
+# Superadmins bypass the predicate. The API records the bypass in
+# audit_log (see api/deps.py:_audit_bypass) -- an unlogged bypass is
+# indistinguishable from a leak. That used to be asserted here and
+# implemented nowhere.
 SUPERADMIN_BYPASS = "TRUE"
 
 # GROUP BY targets are interpolated into SQL, so they come from an
@@ -204,15 +207,22 @@ def compare(
 
     out = []
     for key in sorted(set(now_rows) | set(was_rows)):
-        c = float(now_rows.get(key) or 0)
-        p = float(was_rows.get(key) or 0)
+        # Decimal throughout: float64 is coarser than the 6 decimal
+        # places numeric(18,6) carries, so delta_abs could be wrong in
+        # the sub-cent digits it claims to report (NFR-7).
+        c = Decimal(str(now_rows.get(key) or 0))
+        p = Decimal(str(was_rows.get(key) or 0))
+        delta = c - p
         out.append(
             {
                 "key": key,
                 "current": c,
                 "previous": p,
-                "delta_abs": round(c - p, 6),
-                "delta_pct": round((c - p) / p * 100, 2) if p else None,
+                "delta_abs": delta,
+                # Percent stays a float: it is a ratio for display, not
+                # money, and None rather than infinity when there is
+                # nothing to compare against.
+                "delta_pct": round(float(delta / p * 100), 2) if p else None,
             }
         )
     out.sort(key=lambda r: abs(r["delta_abs"]), reverse=True)
@@ -240,7 +250,8 @@ def visible_accounts(principal: Principal) -> list[dict]:
         FROM dim_account d
         JOIN access_grants g
           ON g.provider = d.provider AND g.account_id = d.account_id
-        WHERE g.user_id     = %(user_id)s
+        WHERE d.is_active
+          AND g.user_id     = %(user_id)s
           AND g.revoked_at IS NULL
           AND g.deleted_at IS NULL
           AND now() >= g.valid_from
@@ -249,6 +260,72 @@ def visible_accounts(principal: Principal) -> list[dict]:
         """,
         {"user_id": principal.user_id},
     )
+
+
+def all_series(
+    principal: Principal, *, start: date, end: date
+) -> list[dict]:
+    """Every (provider, account, service, day) series in the window.
+
+    For background jobs that must consider all accounts -- detection,
+    primarily. Still goes through `_where`, so it is scoped like anything
+    else; the system principal is what widens it, not a bypass of this
+    module.
+
+    Zero-cost days are **densified** to 0 here. Both ingest adapters drop
+    zero rows, so the stored series is non-contiguous -- and the detector
+    does index arithmetic that assumes one index is one day. A
+    weekday-only service produced a "28-day window" spanning 38 calendar
+    days, and `exclude_recent_days` dropped the last two POINTS (possibly
+    a week old) instead of the last two days. Filling the gaps makes the
+    detector's assumption true instead of merely intended.
+    """
+    f = Filters(start=start, end=end)
+    where, params = _where(principal, f)
+    rows = fetch_all(
+        f"""
+        SELECT f.provider, f.account_id, f.service_name, f.usage_date,
+               SUM(f.effective_cost) AS cost
+        FROM fact_cost_daily f
+        WHERE {where}
+        GROUP BY 1, 2, 3, 4
+        ORDER BY 1, 2, 3, 4
+        """,
+        params,
+    )
+    return _densify(rows, start=start, end=end)
+
+
+def _densify(rows: list[dict], *, start: date, end: date) -> list[dict]:
+    """Insert explicit zero rows for days a series has no data."""
+    from collections import defaultdict
+
+    by_key: dict[tuple[str, str, str], dict[date, Decimal]] = defaultdict(dict)
+    for r in rows:
+        key = (r["provider"], r["account_id"], r["service_name"])
+        by_key[key][r["usage_date"]] = r["cost"]
+
+    span = (end - start).days + 1
+    out: list[dict] = []
+    for (provider, account_id, service_name), days in sorted(by_key.items()):
+        # Only fill from the series' own first day: a service that
+        # started last week should not acquire months of fabricated
+        # zeroes, which would drag its baseline to nothing.
+        first = min(days)
+        for i in range(span):
+            day = start + timedelta(days=i)
+            if day < first:
+                continue
+            out.append(
+                {
+                    "provider": provider,
+                    "account_id": account_id,
+                    "service_name": service_name,
+                    "usage_date": day,
+                    "cost": days.get(day, Decimal("0")),
+                }
+            )
+    return out
 
 
 def visible_services(principal: Principal, provider: str, account_id: str) -> list[str]:

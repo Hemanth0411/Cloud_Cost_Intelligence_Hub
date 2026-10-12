@@ -25,15 +25,23 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import date, datetime
-from decimal import Decimal, InvalidOperation
-from typing import Any, Iterator
+from datetime import date
+from typing import Iterator
 
 import httpx
 
 from costhub.connections.credentials import Connection, azure_credentials
-from costhub.ingest.errors import AccessNotGranted, ExpectedIngestError
+from costhub.ingest.errors import AccessNotGranted
 from costhub.ingest.ports import CostRow
+
+# Re-exported so the adapter stays the single public face of this
+# provider: callers and tests import from costhub.ingest.azure_cm.
+from costhub.ingest.azure_parse import (  # noqa: F401
+    AzureQueryFailed,
+    build_query,
+    parse_response,
+    _retry_after,
+)
 
 log = logging.getLogger(__name__)
 
@@ -42,153 +50,9 @@ MANAGEMENT = "https://management.azure.com"
 API_VERSION = "2023-03-01"
 SCOPE = f"{MANAGEMENT}/.default"
 
-# Candidate column names, most preferred first. Azure varies these by
-# scope type and agreement: EA gives PreTaxCost, MCA gives Cost.
-COST_COLUMNS = ("Cost", "PreTaxCost", "CostUSD", "PreTaxCostUSD")
-DATE_COLUMNS = ("UsageDate", "Date", "BillingMonth")
-SERVICE_COLUMNS = ("ServiceName", "MeterCategory", "ServiceTier")
-REGION_COLUMNS = ("ResourceLocation", "Location", "ResourceLocationNormalized")
-CURRENCY_COLUMNS = ("Currency", "BillingCurrency", "BillingCurrencyCode")
-
+# Transport limits (the parsing half has no I/O and needs neither).
 MAX_PAGES = 50
 RETRY_STATUSES = {429, 500, 502, 503, 504}
-
-
-class AzureQueryFailed(ExpectedIngestError):
-    pass
-
-
-def _index_of(columns: list[dict], candidates: tuple[str, ...]) -> int | None:
-    """Find a column by name, case-insensitively.
-
-    By name and never by position: the order changes with the grouping
-    requested, so an index literal is a latent bug.
-    """
-    lookup = {str(c.get("name", "")).lower(): i for i, c in enumerate(columns)}
-    for want in candidates:
-        if want.lower() in lookup:
-            return lookup[want.lower()]
-    return None
-
-
-def _as_date(value: Any) -> date | None:
-    """Daily granularity returns 20261010; monthly returns an ISO string."""
-    if value is None:
-        return None
-    if isinstance(value, int) or (isinstance(value, str) and value.isdigit()):
-        text = str(value)
-        if len(text) == 8:
-            try:
-                return date(int(text[:4]), int(text[4:6]), int(text[6:]))
-            except ValueError:
-                return None
-        return None
-    if isinstance(value, str):
-        try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
-        except ValueError:
-            return None
-    return None
-
-
-def _as_decimal(value: Any) -> Decimal:
-    try:
-        return Decimal(str(value if value is not None else 0))
-    except (InvalidOperation, ValueError):
-        return Decimal("0")
-
-
-def parse_response(
-    payload: dict, *, provider: str, account_id: str, fallback_currency: str = "USD"
-) -> list[CostRow]:
-    """Turn one Query API page into CostRows.
-
-    Pure, so it can be tested against recorded payloads without any Azure
-    access -- which is the only way this adapter can be tested at all
-    right now.
-    """
-    props = payload.get("properties") or payload
-    columns = props.get("columns") or []
-    rows = props.get("rows") or []
-
-    i_cost = _index_of(columns, COST_COLUMNS)
-    i_date = _index_of(columns, DATE_COLUMNS)
-    i_service = _index_of(columns, SERVICE_COLUMNS)
-    i_region = _index_of(columns, REGION_COLUMNS)
-    i_currency = _index_of(columns, CURRENCY_COLUMNS)
-
-    if i_cost is None or i_date is None:
-        names = [c.get("name") for c in columns]
-        raise AzureQueryFailed(
-            f"response has no recognisable cost/date column; got {names}"
-        )
-
-    out: list[CostRow] = []
-    for row in rows:
-        usage_date = _as_date(row[i_date]) if i_date < len(row) else None
-        if usage_date is None:
-            continue
-
-        amount = _as_decimal(row[i_cost]) if i_cost < len(row) else Decimal("0")
-        if amount == 0:
-            continue  # Azure emits a row per grouping per day regardless
-
-        service = (
-            str(row[i_service]) if i_service is not None and i_service < len(row)
-            else "Unknown"
-        )
-        region = (
-            str(row[i_region]) if i_region is not None and i_region < len(row)
-            else ""
-        )
-        currency = (
-            str(row[i_currency]) if i_currency is not None and i_currency < len(row)
-            else fallback_currency
-        )
-
-        out.append(
-            CostRow(
-                provider=provider,
-                account_id=account_id,
-                service_name=service or "Unknown",
-                region=region,
-                charge_category="Usage",
-                usage_date=usage_date,
-                billed_cost=amount,
-                # The Query API's ActualCost has no amortised counterpart,
-                # so the two measures are equal here. A FOCUS export would
-                # distinguish them; noted rather than faked.
-                effective_cost=amount,
-                currency=(currency or fallback_currency)[:3].upper(),
-            )
-        )
-    return out
-
-
-def build_query(start: date, end: date) -> dict:
-    """Daily cost grouped by service and location.
-
-    `end` is exclusive upstream (matching Cost Explorer), but Azure's
-    timePeriod is inclusive, so a day is subtracted.
-    """
-    last = end.toordinal() - 1
-    return {
-        "type": "ActualCost",
-        "timeframe": "Custom",
-        "timePeriod": {
-            "from": start.isoformat(),
-            "to": date.fromordinal(max(last, start.toordinal())).isoformat(),
-        },
-        "dataset": {
-            "granularity": "Daily",
-            "aggregation": {"totalCost": {"name": "Cost", "function": "Sum"}},
-            "grouping": [
-                {"type": "Dimension", "name": "ServiceName"},
-                {"type": "Dimension", "name": "ResourceLocation"},
-            ],
-        },
-    }
-
 
 class AzureCostManagementSource:
     name = "azure_cm"
@@ -283,7 +147,7 @@ class AzureCostManagementSource:
             if resp.status_code in RETRY_STATUSES:
                 # Cost Management is aggressively rate-limited and tells
                 # you how long to wait; honour it rather than hammering.
-                wait = float(resp.headers.get("Retry-After", 2 ** attempt))
+                wait = _retry_after(resp.headers.get("Retry-After"), attempt)
                 log.warning(
                     "azure %s on %s, retrying in %.0fs",
                     resp.status_code, self.conn.display_name, wait,
@@ -325,6 +189,23 @@ class AzureCostManagementSource:
             url, body = nxt, None
 
         log.warning("azure: stopped after %d pages", MAX_PAGES)
+
+    def close(self) -> None:
+        """Release the HTTP transport.
+
+        A warm Lambda container builds one source per connection per
+        invocation, so an unclosed client accumulates a transport pool
+        on every run.
+        """
+        if self._client is not None:
+            self._client.close()
+            self._client = None
+
+    def __enter__(self) -> "AzureCostManagementSource":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
 
 
 def source_factory(conn: Connection) -> AzureCostManagementSource:

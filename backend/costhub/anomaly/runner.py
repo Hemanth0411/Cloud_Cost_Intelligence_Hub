@@ -8,6 +8,13 @@ feels productive.
 
 **One query, grouped in Python.** Fetching each series separately would be
 thousands of round-trips. The whole window comes back once.
+
+**Reads through query/scoped**, as the system principal. This module used
+to SELECT from fact_cost_daily directly, which quietly falsified the
+project's central claim that exactly one module does -- the claim is what
+makes the security review cheap, and a second reader with no principal
+parameter left a reviewer nowhere to notice one was missing.
+`test_invariant.py` now fails the build on any new direct reader.
 """
 from __future__ import annotations
 
@@ -19,7 +26,8 @@ from decimal import Decimal
 from costhub.anomaly.mad import MadDetector
 from costhub.anomaly.ports import Detector, Finding
 from costhub.audit import log as audit_log
-from costhub.db import connect, fetch_all
+from costhub.db import connect
+from costhub.query import scoped
 from costhub.query.scoped import SYSTEM_EMAIL
 
 log = logging.getLogger(__name__)
@@ -52,17 +60,7 @@ DO UPDATE SET
 RETURNING (xmax = 0) AS inserted
 """
 
-SERIES = """
-SELECT provider, account_id, service_name, usage_date,
-       sum(effective_cost) AS cost
-FROM fact_cost_daily
-WHERE deleted_at IS NULL
-  AND charge_category NOT IN ('Tax', 'Credit')
-  AND usage_date >= %(start)s
-  AND usage_date <= %(end)s
-GROUP BY 1, 2, 3, 4
-ORDER BY 1, 2, 3, 4
-"""
+
 
 
 @dataclass
@@ -85,7 +83,14 @@ class ScanResult:
 
 
 def _load(start: date, end: date) -> dict[Key, list[tuple[date, Decimal]]]:
-    rows = fetch_all(SERIES, {"start": start, "end": end})
+    """Every daily series in the window, via the scoped reader.
+
+    Detection has to see every account by design -- an anomaly in an
+    account nobody has been granted is still an anomaly -- so it reads as
+    the system principal. That is a named, greppable function rather than
+    a bare role literal, and `scan()` records one audit row per run.
+    """
+    rows = scoped.all_series(scoped.system_principal(), start=start, end=end)
     grouped: dict[Key, list[tuple[date, Decimal]]] = {}
     for r in rows:
         key: Key = (r["provider"], r["account_id"], r["service_name"])

@@ -1,0 +1,27 @@
+# Copy to dev.tfvars and fill in. *.tfvars is gitignored; this template
+# is committed, so it must never contain a real secret.
+#
+# Only these five values are account-specific. aws_region and
+# name_prefix are set once, and name_prefix is suffixed with the
+# workspace automatically.
+
+superadmin_email            = "you@chryselys.com"
+ses_sender_email            = "you@chryselys.com"   # must be SES-verified
+amplify_basic_auth_password = "CHANGE-ME"
+
+db_instance_class    = "db.t4g.micro"
+db_allocated_storage = 20
+log_retention_days   = 3
+budget_limit_usd     = 80
+
+# account_id "self" = the deploy account, read with the Lambda's own role.
+data_source_accounts = [
+  { account_id = "self", name = "personal" },
+
+  # Another account needs a CostHubCostReader role created there first;
+  # see docs/11-configuration.md.
+  # { account_id  = "111111111111"
+  #   name        = "other"
+  #   role_arn    = "arn:aws:iam::111111111111:role/CostHubCostReader"
+  #   external_id = "costhub-CHANGE-ME" },
+]

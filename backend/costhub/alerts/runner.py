@@ -21,6 +21,7 @@ from costhub.alerts.inapp import InAppNotifier
 from costhub.alerts.ports import Delivery, Event, Notifier, Rule, due
 from costhub.alerts.ses import SesNotifier
 from costhub.db import connect, fetch_all, fetch_one
+from costhub.query.scoped import SYSTEM_EMAIL
 from costhub.rbac import resolve
 
 log = logging.getLogger(__name__)
@@ -119,7 +120,7 @@ def run(
     today: date | None = None,
     now: datetime | None = None,
     notifiers: dict[str, Notifier] | None = None,
-    actor: str = "system@costhub.internal",
+    actor: str = SYSTEM_EMAIL,
 ) -> AlertResult:
     today = today or date.today()
     # The DATABASE clock, not this process's. fired_at is written by
@@ -235,11 +236,21 @@ def _deliver(
     actor: str,
 ) -> None:
     rule = event.rule
+    known = [c for c in rule.channels if c in channels]
+    unknown = [c for c in rule.channels if c not in channels]
+
     deliveries = [
-        channels[c].send(event, recipients=[rule.owner_email])
-        for c in rule.channels
-        if c in channels
+        channels[c].send(event, recipients=[rule.owner_email]) for c in known
     ]
+    # An unmatched channel is an explicit failure. Silently dropping it
+    # left ok and bad both empty, so the event was recorded with neither
+    # delivered_at nor delivery_error, no counter moved, and the feed
+    # showed HELD with a blank reason -- forever.
+    deliveries += [
+        Delivery(c, False, f"no notifier registered for channel {c!r}")
+        for c in unknown
+    ]
+
     ok = [d for d in deliveries if d.sent]
     bad = [d for d in deliveries if not d.sent]
 

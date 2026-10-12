@@ -132,9 +132,17 @@ disagree with the data is worse than none.
 Enforced append-only by database grants, not convention:
 
 ```sql
-GRANT INSERT, SELECT ON audit_log TO costhub_app;
--- deliberately no UPDATE, no DELETE
+-- migration 005: BEFORE UPDATE/DELETE statement triggers that RAISE.
+-- The accompanying REVOKE is belt-and-braces only: Postgres grants
+-- nothing to PUBLIC by default, and the app connects as the table owner,
+-- which keeps implicit rights regardless. The triggers are the control.
+CREATE TRIGGER audit_log_no_update BEFORE UPDATE ON audit_log
+  FOR EACH STATEMENT EXECUTE FUNCTION audit_log_is_append_only();
 ```
+
+TRUNCATE is **not** covered — the test suite truncates `audit_log`
+between tests, which is the proof. A production role should not hold
+TRUNCATE on it.
 
 ---
 

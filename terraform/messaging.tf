@@ -1,5 +1,15 @@
+# Alert email goes through SES directly (alerts/ses.py), so this topic
+# exists only as the landing point for AWS Cost Anomaly Detection
+# findings (TODO-17). It therefore gets a real subscriber -- an
+# unsubscribed topic publishes into nothing and reports success.
 resource "aws_sns_topic" "alerts" {
   name = "${local.prefix}-alerts"
+}
+
+resource "aws_sns_topic_subscription" "alerts_email" {
+  topic_arn = aws_sns_topic.alerts.arn
+  protocol  = "email"
+  endpoint  = var.superadmin_email
 }
 
 # SES identities are deliberately NOT managed here: verification is a

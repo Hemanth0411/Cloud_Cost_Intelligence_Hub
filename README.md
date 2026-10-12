@@ -86,6 +86,10 @@ See [`docs/01-requirements.md`](docs/01-requirements.md) for scope and
 `query/scoped.py`, and that module always applies the grant predicate.
 Get that right and the RBAC holds regardless of what the UI later does.
 
+This is enforced by `tests/test_invariant.py`, not by convention: it
+had already silently become false twice (`anomaly/runner.py` and
+`cli.py` both grew direct reads) while five documents asserted it.
+
 ---
 
 ## Configuration — everything you need to edit
@@ -135,13 +139,11 @@ allowed_email_domain = "chryselys.com"
 
 # ---- email (REQUIRED: email OTP does not work without SES) -----------
 ses_sender_email  = "noreply@yourdomain.com"
-ses_sender_region = "us-east-1"
 
 # ---- stakeholder gate on the frontend --------------------------------
-amplify_repo_url         = "https://bitbucket.org/<org>/costhub-frontend"
-amplify_branch           = "main"
+amplify_repository       = "https://bitbucket.org/<org>/costhub-frontend"
 amplify_basic_auth_user  = "demo"
-amplify_basic_auth_pass  = "<set this>"
+amplify_basic_auth_password = "<set this>"
 
 # ---- database --------------------------------------------------------
 db_instance_class    = "db.t4g.micro"
@@ -160,7 +162,8 @@ log_retention_days = 7
 ```
 
 Account-specific values are **only** `superadmin_email`, `ses_sender_email`,
-`amplify_repo_url`, `amplify_basic_auth_pass` and `data_source_accounts`.
+`amplify_repository`, `amplify_basic_auth_password` and
+`data_source_accounts`.
 `aws_region` and `name_prefix` are set once; `name_prefix` is suffixed with
 `ENV` automatically, so it is not per-environment.
 The rest are portable as-is.
@@ -227,13 +230,13 @@ hosted path.
 
 | Area | State |
 |---|---|
-| Documentation (11 files) | complete |
+| Documentation (15 files) | complete |
 | Schema (migrations 001–003) | written |
 | `query/scoped.py` | written |
 | `rbac/admin.py`, `audit.py`, `db.py`, `config.py` | written |
 | `cloud_connections` (004), audit append-only (005) | written |
 | ingest (`cost_explorer`, `dev_seed`, runner, CLI) | written |
-| API — 20 endpoints, Swagger at `/docs` | written |
+| API — 24 operations across 20 paths, Swagger at `/docs` | written |
 | `azure_cm` adapter | written, unit-tested, **unverified live** |
 | anomaly detection (MAD, shape-classified) | written |
 | alerts (4 rule types, FR-34) | written |

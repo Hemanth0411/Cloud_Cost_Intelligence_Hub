@@ -23,8 +23,7 @@ from costhub.ingest import runner
 from costhub.ingest.cost_explorer import default_window
 from costhub.ingest.sources import dev_seed_for, source_for
 from costhub.ingest.dev_seed import planted_summary
-from costhub.alerts import runner as alert_runner
-from costhub.anomaly import runner as anomaly_runner
+from costhub.cli_jobs import cmd_alerts, cmd_detect, cmd_status
 from costhub.rbac import admin
 
 
@@ -119,101 +118,42 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     return _run_ingest(start, end, args.dev_seed)
 
 
+# Cost Explorer keeps ~14 months of daily data. Asking for more does not
+# return less -- it raises ValidationException, which (because fetch is a
+# lazy generator consumed inside the write transaction) failed on the
+# OLDEST chunk and left the whole connection with zero rows.
+CE_MAX_MONTHS = 14
+# A hard floor in DAYS as well as months. Month arithmetic alone still
+# reached 426 days on a month-end -- right on the retention boundary --
+# because `end` crosses into the next month. 400 leaves real headroom.
+CE_MAX_DAYS = 400
+
+
 def cmd_backfill(args: argparse.Namespace) -> int:
-    end = date.today() + timedelta(days=1)
-    start = date(end.year, end.month, 1)
-    for _ in range(args.months):
+    months = max(1, min(args.months, CE_MAX_MONTHS))
+    today = date.today()
+    end = today + timedelta(days=1)          # exclusive, as ingest expects
+
+    # Anchor on TODAY, not on `end`: anchoring on tomorrow shifted the
+    # whole window forward a month on the last day of a month, so
+    # --months 14 meant different things on different days.
+    start = today.replace(day=1)
+    for _ in range(months - 1):               # months-1: the current month counts
         start = (start - timedelta(days=1)).replace(day=1)
+
+    floor = today - timedelta(days=CE_MAX_DAYS)
+    clamped = start < floor
+    if clamped and not args.dev_seed:
+        start = floor
+
+    if not args.dev_seed and (clamped or months != args.months):
+        print(
+            f"note: window clamped to {start}; Cost Explorer keeps ~"
+            f"{CE_MAX_MONTHS} months of daily data and rejects older ranges "
+            f"outright rather than returning less."
+        )
+
     return _run_ingest(start, end, args.dev_seed)
-
-
-def cmd_detect(args: argparse.Namespace) -> int:
-    from costhub.anomaly.mad import MadDetector
-
-    det = MadDetector(
-        exclude_recent_days=args.exclude_recent,
-        scan_days=args.scan_days,
-        z_threshold=args.threshold,
-    )
-    result = anomaly_runner.scan(detector=det, lookback_days=args.lookback)
-    print(result)
-
-    rows = fetch_all(
-        """
-        SELECT account_id, service_name, detected_for_date, kind,
-               baseline_value, observed_value, delta_abs, delta_pct, score
-        FROM anomaly_findings WHERE status = 'new'
-        ORDER BY abs(delta_abs) DESC LIMIT 20
-        """
-    )
-    for r in rows:
-        pct = f"{r['delta_pct']:+.0f}%" if r["delta_pct"] is not None else "  new"
-        print(
-            f"  {r['kind']:<6} {r['account_id']:<14} {r['service_name']:<18} "
-            f"{r['detected_for_date']}  "
-            f"${r['baseline_value']:.2f} -> ${r['observed_value']:.2f}  "
-            f"{pct:>7}  z={r['score']:.1f}"
-        )
-    return 0
-
-
-def cmd_alerts(args: argparse.Namespace) -> int:
-    result = alert_runner.run()
-    print(result)
-    for line in result.details:
-        print(f"  {line}")
-    if args.feed:
-        rows = fetch_all(
-            """
-            SELECT r.name, e.fired_at, e.observed_value, e.status,
-                   e.delivered_at, e.delivery_error
-            FROM alert_events e JOIN alert_rules r ON r.id = e.rule_id
-            ORDER BY e.fired_at DESC LIMIT 10
-            """
-        )
-        print()
-        print("  feed:")
-        for r in rows:
-            mark = "sent" if r["delivered_at"] else "HELD"
-            val = f"${r['observed_value']:,.2f}" if r["observed_value"] is not None else "-"
-            note = f"  {r['delivery_error'][:70]}" if r["delivery_error"] else ""
-            print(f"    {r['fired_at']:%m-%d %H:%M} {mark} {r['name']:<22} {val:>12}{note}")
-    return 0
-
-
-def cmd_status(_: argparse.Namespace) -> int:
-    rows = fetch_all(
-        """
-        SELECT provider, account_id, count(*) AS days,
-               min(usage_date) AS first_day, max(usage_date) AS last_day,
-               round(sum(effective_cost), 2) AS total
-        FROM fact_cost_daily WHERE deleted_at IS NULL
-        GROUP BY 1, 2 ORDER BY 1, 2
-        """
-    )
-    if not rows:
-        print("fact_cost_daily is empty — run ingest or backfill")
-    for r in rows:
-        print(
-            f"  {r['provider']}/{r['account_id']:<14} "
-            f"{r['first_day']} .. {r['last_day']}  "
-            f"{r['days']:>6} rows  ${r['total']}"
-        )
-    runs = fetch_all(
-        """
-        SELECT source, status, rows_written, started_at, error
-        FROM ingest_runs ORDER BY started_at DESC LIMIT 5
-        """
-    )
-    if runs:
-        print("\n  recent runs:")
-        for r in runs:
-            err = f"  {r['error'][:80]}" if r["error"] else ""
-            print(
-                f"    {r['started_at']:%Y-%m-%d %H:%M}  {r['source']:<14} "
-                f"{r['status']:<8} {r['rows_written'] or 0:>6}{err}"
-            )
-    return 0
 
 
 # -------------------------------------------------------------------- parser

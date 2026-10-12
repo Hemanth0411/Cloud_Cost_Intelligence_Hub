@@ -81,6 +81,15 @@ resource "aws_cognito_user_pool_client" "web" {
   allowed_oauth_flows_user_pool_client = true
 
   prevent_user_existence_errors = "ENABLED"
+
+  # The client may read email but NOT write it. Cognito's default is
+  # every mutable attribute, and with ALLOW_USER_AUTH a token carries
+  # aws.cognito.signin.user.admin -- so a user could rewrite their own
+  # email to a known superadmin's address and inherit that role. The
+  # API also rejects email_verified=false; this removes the capability
+  # rather than only catching its effect.
+  read_attributes  = ["email", "email_verified"]
+  write_attributes = []
 }
 
 resource "aws_cognito_user_pool_domain" "main" {

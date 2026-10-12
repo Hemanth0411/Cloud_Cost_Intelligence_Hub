@@ -28,8 +28,15 @@ class Settings(BaseSettings):
     )
 
     database_url: str
-    app_env: str = "dev"
-    system_actor: str = "system@costhub"
+    # NOT "dev": that default plus terraform's APP_ENV=<workspace>
+    # meant a deployed dev environment permanently satisfied one of
+    # the two dev-auth conditions. An insecure default is not a
+    # default. See allow_dev_auth below.
+    app_env: str = "prod"
+    # Matches scoped.SYSTEM_EMAIL. Two different strings split the
+    # audit trail: filtering by actor silently missed half the
+    # machine writes.
+    system_actor: str = "system@costhub.internal"
     cost_accounts: str = "[]"
 
     aws_region: str = "us-east-1"
@@ -40,9 +47,12 @@ class Settings(BaseSettings):
     # environment has nobody who can invite anyone.
     superadmin_email: str = ""
 
-    # Auth. Empty pool id + app_env=dev enables the X-Dev-User header
-    # so the frontend can be built before Cognito exists.
+    # Auth. The X-Dev-User header is accepted only when ALL THREE of
+    # app_env=dev, no pool configured, and allow_dev_auth are true.
+    # allow_dev_auth is never set by terraform, so no deployed
+    # environment can reach the bypass however it is misconfigured.
     cognito_user_pool_id: str = ""
+    allow_dev_auth: bool = False
     cognito_client_id: str = ""
 
     # Comma-separated allowed origins for the browser app.

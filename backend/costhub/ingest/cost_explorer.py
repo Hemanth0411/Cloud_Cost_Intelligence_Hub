@@ -98,9 +98,20 @@ class CostExplorerSource:
                 metrics = group["Metrics"]
 
                 billed = _amount(metrics, "UnblendedCost")
-                # AmortizedCost spreads commitment purchases across the term,
-                # which is what period comparisons should use.
-                effective = _amount(metrics, "AmortizedCost") or billed
+                # AmortizedCost spreads commitment purchases across the
+                # term, which is what period comparisons should use.
+                #
+                # PRESENCE, not truthiness: Decimal("0") is falsy, and a
+                # zero AmortizedCost is exactly what an RI or Savings Plan
+                # upfront looks like on the day it is charged. The old
+                # `or billed` wrote the whole upfront into effective_cost
+                # -- the one-day spike amortization exists to remove --
+                # which then surfaced as a 'spike' finding.
+                effective = (
+                    _amount(metrics, "AmortizedCost")
+                    if "AmortizedCost" in metrics
+                    else billed
+                )
 
                 if billed == 0 and effective == 0:
                     continue  # CE emits a row per group per day regardless
@@ -110,12 +121,35 @@ class CostExplorerSource:
                     account_id=self.conn.account_id,
                     service_name=service,
                     region=region or "",
-                    charge_category="Usage",
+                    charge_category=_charge_category(service),
                     usage_date=usage_date,
                     billed_cost=billed,
                     effective_cost=effective,
                     currency=_unit(metrics) or "USD",
                 )
+
+
+# Cost Explorer has no charge-category dimension: grouping by SERVICE
+# returns "Tax", "Refund" and discounts AS service values. Hardcoding
+# "Usage" therefore made the downstream NOT IN ('Tax','Credit') filter
+# match nothing, so breakdowns showed a Tax row while claiming to exclude
+# it and the detector scanned Tax as if it were a service (FR-23).
+NON_USAGE_SERVICES: dict[str, str] = {
+    "tax": "Tax",
+    "refund": "Credit",
+    "credit": "Credit",
+    "credits": "Credit",
+    "enterprise discount program discount": "Credit",
+    "solution provider program discount": "Credit",
+    "bundled discount": "Credit",
+    "private rate discount": "Credit",
+    "savings plan negation": "Credit",
+}
+
+
+def _charge_category(service_name: str) -> str:
+    """Classify a Cost Explorer service value into a FOCUS ChargeCategory."""
+    return NON_USAGE_SERVICES.get(service_name.strip().lower(), "Usage")
 
 
 def _amount(metrics: dict, key: str) -> Decimal:

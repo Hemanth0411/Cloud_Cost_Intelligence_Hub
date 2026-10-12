@@ -102,6 +102,17 @@ variable "data_source_accounts" {
 }
 
 # ---- operations ------------------------------------------------------
+variable "excluded_availability_zones" {
+  type        = list(string)
+  default     = ["us-east-1e"]
+  description = <<-TXT
+    AZs to keep out of the DB subnet group. us-east-1e does not offer
+    every instance-class/storage combination, so including it makes RDS
+    placement fail non-deterministically. Named rather than discovered,
+    because the discovery data source needs an extra IAM permission.
+  TXT
+}
+
 variable "log_retention_days" {
   type    = number
   default = 7

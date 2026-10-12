@@ -49,6 +49,10 @@ data "aws_iam_policy_document" "lambda" {
     resources = ["*"] # Cost Explorer has no resource-level permissions
   }
 
+  # Kept deliberately: operators and a future config.py that reads the
+  # secret instead of taking DATABASE_URL in plaintext both need it. The
+  # plaintext env var is the weaker half of the pair and is noted as
+  # TODO in docs/10.
   statement {
     sid       = "ReadDatabaseSecret"
     actions   = ["secretsmanager:GetSecretValue"]
@@ -66,9 +70,14 @@ data "aws_iam_policy_document" "lambda" {
     actions   = ["ses:SendEmail", "ses:SendRawEmail"]
     resources = ["*"]
     condition {
-      test     = "StringEquals"
+      # StringLike, not StringEquals: an exact match breaks the moment
+      # anyone sends from a display name ("CostHub <a@b>"), and ses.py
+      # swallows the resulting AccessDenied into a log.warning -- so
+      # alerting would fail silently, which is the one failure mode this
+      # system is built to avoid.
+      test     = "StringLike"
       variable = "ses:FromAddress"
-      values   = [var.ses_sender_email]
+      values   = ["*${var.ses_sender_email}*"]
     }
   }
 
@@ -89,21 +98,31 @@ resource "aws_iam_role_policy" "lambda" {
   policy = data.aws_iam_policy_document.lambda.json
 }
 
-# Only created when there is actually a cross-account role to assume, so
-# an empty statement never ends up in the policy.
+# Cross-account cost roles.
+#
+# This used to be count-gated on var.data_source_accounts, but the
+# RUNTIME reads roles from the cloud_connections TABLE -- connections are
+# added through the UI, not tfvars -- so the first account registered
+# that way failed with AccessDenied against a policy that did not exist.
+#
+# The grant is therefore unconditional and name-constrained instead:
+# any role called CostHubCostReader, in any account, which is the
+# convention the onboarding instructions hand out. It cannot assume
+# arbitrary roles, and it does not depend on tfvars being kept in step
+# with the database.
 data "aws_iam_policy_document" "assume_cost_roles" {
-  count = length(local.assume_role_arns) > 0 ? 1 : 0
-
   statement {
-    sid       = "AssumeCostReaderRoles"
-    actions   = ["sts:AssumeRole"]
-    resources = local.assume_role_arns
+    sid     = "AssumeCostReaderRolesByName"
+    actions = ["sts:AssumeRole"]
+    resources = concat(
+      ["arn:aws:iam::*:role/CostHubCostReader"],
+      local.assume_role_arns,
+    )
   }
 }
 
 resource "aws_iam_role_policy" "assume_cost_roles" {
-  count  = length(local.assume_role_arns) > 0 ? 1 : 0
   name   = "${local.prefix}-assume-cost-roles"
   role   = aws_iam_role.lambda.id
-  policy = data.aws_iam_policy_document.assume_cost_roles[0].json
+  policy = data.aws_iam_policy_document.assume_cost_roles.json
 }

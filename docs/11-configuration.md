@@ -53,7 +53,6 @@ Consequences:
 | Variable | Portable? | Notes |
 |---|---|---|
 | `ses_sender_email` | **no** | the verified SES identity OTPs are sent from |
-| `ses_sender_region` | yes | must match where the identity is verified |
 
 **Email OTP does not work without SES.** Cognito's built-in sender (the
 `no-reply@verificationemail.com` / 50-per-day option) does not support the
@@ -94,9 +93,9 @@ entirely. 200/day far exceeds a handful of logins and alerts.
 
 | Variable | Portable? | Notes |
 |---|---|---|
-| `amplify_repo_url` | **no** | git repo Amplify builds from |
-| `amplify_branch` | yes | `main` |
-| `amplify_basic_auth_user` / `_pass` | **no** | the stakeholder gate. Set on day one — it is how people see the demo before Cognito is finished |
+| `amplify_repository` | **no** | git repo Amplify builds from |
+| *(branch name)* | — | derived from the workspace (`amplify.tf`), not a variable |
+| `amplify_basic_auth_user` / `amplify_basic_auth_password` | **no** | the stakeholder gate. Set on day one — it is how people see the demo before Cognito is finished |
 
 ### Database
 
@@ -212,7 +211,7 @@ is unavoidable here. Rotation is TODO-3.
 |---|---|---|
 | `superadmin_email` | maybe | only if a different person administers it |
 | `ses_sender_email` | **yes** | identities are per-account; re-verify |
-| `amplify_basic_auth_pass` | **yes** | rotate on migration |
+| `amplify_basic_auth_password` | **yes** | rotate on migration |
 | `data_source_accounts` | **yes** | new External ID, new trust policy |
 | Everything else in tfvars | no | portable as-is |
 | Lambda / Amplify env vars | regenerated | never hand-edited |

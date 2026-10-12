@@ -76,8 +76,12 @@ resource "aws_lambda_function_url" "api" {
       "https://${aws_amplify_branch.main.branch_name}.${aws_amplify_app.main.default_domain}",
       "http://localhost:5173",
     ]
-    allow_methods     = ["*"]
-    allow_headers     = ["authorization", "content-type", "x-dev-user"]
+    allow_methods = ["*"]
+    # x-dev-user is deliberately ABSENT. A public, unauthenticated
+    # Function URL must not advertise the dev-auth bypass header --
+    # and ALLOW_DEV_AUTH is never set here, so it would be refused
+    # anyway. Both, because either alone is one mistake from a leak.
+    allow_headers     = ["authorization", "content-type"]
     allow_credentials = true
     max_age           = 3600
   }

@@ -44,6 +44,7 @@ costhub/
 │   ├── evaluate.py      threshold / forecast / digest / anomaly
 │   ├── inapp.py         writes alert_events
 │   ├── ses.py           email (never raises; returns a failed Delivery)
+│   ├── azure_parse.py   (ingest) pure response parsing, no I/O
 │   └── runner.py        orchestration + the FR-34 access check
 │
 └── api/
