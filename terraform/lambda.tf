@@ -73,7 +73,10 @@ resource "aws_lambda_function_url" "api" {
   cors {
     allow_origins = concat(
       ["https://${aws_amplify_branch.main.branch_name}.${aws_amplify_app.main.default_domain}"],
-      var.allow_local_frontend ? ["http://localhost:5173"] : [],
+      # 3000 is `next dev`. This said 5173 (Vite), which is the port the
+      # previous frontend used -- every local API call failed CORS
+      # preflight, which presents as an opaque "Failed to fetch".
+      var.allow_local_frontend ? ["http://localhost:3000"] : [],
     )
     allow_methods = ["*"]
     # x-dev-user is deliberately ABSENT. A public, unauthenticated

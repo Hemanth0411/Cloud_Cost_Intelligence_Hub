@@ -85,13 +85,29 @@ resource "aws_cognito_user_pool_client" "web" {
     id_token      = "minutes"
   }
 
+  # PORT 3000, NOT 5173. The frontend is Next.js (`next dev` serves on
+  # 3000); 5173 was Vite's port, from the frontend this one replaced. A
+  # redirect_uri that is not listed here fails at Cognito with
+  # `redirect_mismatch` before any code is issued, so local sign-in is
+  # simply impossible without it.
+  #
+  # Both `/auth/callback` and the bare origin are listed. The app uses
+  # `/auth/callback`: Next's root page is a server component that
+  # redirects to /dashboard, and a server redirect DROPS the query
+  # string -- so a code delivered to `/` is lost before any client code
+  # can read it. The bare origin stays listed so a hand-built authorize
+  # URL against the root still works.
   callback_urls = [
+    "https://${aws_amplify_branch.main.branch_name}.${aws_amplify_app.main.default_domain}/auth/callback",
     "https://${aws_amplify_branch.main.branch_name}.${aws_amplify_app.main.default_domain}/",
-    "http://localhost:5173/",
+    "http://localhost:3000/auth/callback",
+    "http://localhost:3000/",
   ]
   logout_urls = [
+    "https://${aws_amplify_branch.main.branch_name}.${aws_amplify_app.main.default_domain}/login",
     "https://${aws_amplify_branch.main.branch_name}.${aws_amplify_app.main.default_domain}/",
-    "http://localhost:5173/",
+    "http://localhost:3000/login",
+    "http://localhost:3000/",
   ]
 
   supported_identity_providers         = ["COGNITO"]

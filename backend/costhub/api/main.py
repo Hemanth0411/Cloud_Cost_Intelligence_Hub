@@ -68,7 +68,11 @@ app = FastAPI(
 # required. Dev allows localhost; deployed origins come from settings.
 origins = [o for o in settings().cors_origins.split(",") if o.strip()]
 if settings().app_env == "dev":
-    origins += ["http://localhost:5173", "http://localhost:3000"]
+    # 3000 is `next dev`, which is what the frontend uses. 5173 was the
+    # previous (Vite) frontend's port and is kept only so an old local
+    # checkout still works; the Function URL's own CORS config is the
+    # gate that actually matters in a deployed environment.
+    origins += ["http://localhost:3000", "http://localhost:5173"]
 
 # Never `origins or ["*"]`: an unset CORS_ORIGINS used to serve a
 # wildcard WITH credentials enabled. No origins configured means no

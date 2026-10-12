@@ -156,12 +156,12 @@ variable "budget_limit_usd" {
 # Whether the deployed API should accept a browser on localhost.
 #
 # This was unconditional, which meant a production Function URL
-# advertised http://localhost:5173 as an allowed origin with
-# allow_credentials = true -- useful while the frontend is being built,
-# and nothing anybody needs once it is deployed. Default true for dev,
-# set false in main.tfvars.
+# advertised localhost as an allowed origin with allow_credentials =
+# true -- useful while the frontend is being built, and nothing anybody
+# needs once it is deployed. Default true for dev, set false in
+# main.tfvars.
 variable "allow_local_frontend" {
   type        = bool
   default     = true
-  description = "Allow http://localhost:5173 as a CORS origin (local frontend dev)"
+  description = "Allow http://localhost:3000 (next dev) as a CORS origin"
 }
