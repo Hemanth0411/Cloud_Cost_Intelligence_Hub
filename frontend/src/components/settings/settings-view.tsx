@@ -1,24 +1,22 @@
 'use client';
 
 import { RotateCcw } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { NotificationPreferences } from '@/components/alerts/notification-preferences';
 import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog } from '@/components/ui/dialog';
 import { DEMO_CREDENTIALS } from '@/lib/auth/constants';
-import { readSession } from '@/lib/auth/session';
+import { useSession } from '@/hooks/use-session';
 import { USERS_KEY, TOKENS_KEY } from '@/lib/auth/store';
-import type { User } from '@/types/domain';
 
 /** Keys written by the app. Demo accounts and reset tokens are kept so a reset never signs you out of a registered login. */
 const KEEP = new Set([USERS_KEY, TOKENS_KEY]);
 
 export function SettingsView() {
-  const [user, setUser] = useState<User | null>(null);
+  const { user } = useSession();
   const [confirming, setConfirming] = useState(false);
-  useEffect(() => setUser(readSession()), []);
 
   function resetDemoData(): void {
     try {

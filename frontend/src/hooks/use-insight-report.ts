@@ -115,8 +115,15 @@ export function useInsightReport(filters: Filters, overrides: StatusOverrides, c
       };
     }
 
-    const stepCount = mode === 'quick' ? 2 : ANALYSIS_STEPS.length;
-    const stepMs = mode === 'manual' ? 420 : mode === 'initial' ? 170 : 110;
+    // `mode` is narrowed to 'manual' here: every other mode returned at
+    // the `if (mode !== 'manual')` above, which finishes without
+    // animating. The original lines branched on 'quick' and 'initial',
+    // which TypeScript rejects as unreachable -- and since tsc errors
+    // fail `next build`, this broke the deploy rather than just reading
+    // oddly. Behaviour is unchanged: these were the values 'manual'
+    // already selected.
+    const stepCount = ANALYSIS_STEPS.length;
+    const stepMs = 420;
     setState((prev) => ({ ...prev, status: 'analyzing', step: 0 }));
     for (let i = 1; i <= stepCount; i += 1) {
       timers.push(window.setTimeout(() => !cancelled && setState((prev) => ({ ...prev, step: i })), i * stepMs));

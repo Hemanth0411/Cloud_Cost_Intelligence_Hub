@@ -2,10 +2,9 @@
 
 import { ChevronDown, LogOut } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
 import { DropdownMenu, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
-import { endSession, readSession } from '@/lib/auth/session';
-import type { User } from '@/types/domain';
+import { endSession } from '@/lib/auth/session';
+import { useSession } from '@/hooks/use-session';
 
 const initials = (name: string): string =>
   name
@@ -17,8 +16,7 @@ const initials = (name: string): string =>
 
 export function UserMenu() {
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
-  useEffect(() => setUser(readSession()), []);
+  const { user } = useSession();
 
   function handleSignOut(): void {
     endSession();

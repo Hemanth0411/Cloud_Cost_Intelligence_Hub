@@ -199,3 +199,70 @@ export interface User {
   email: string;
   role: string;
 }
+
+// ---------------------------------------------------------------- admin
+//
+// Mirrors the backend's users / access_grants / audit_log tables. Field
+// names are camelCase here and snake_case over the wire; the mapping
+// belongs in admin-service, so nothing above this line cares.
+
+/** Matches the backend exactly: there are two roles, not a spectrum. */
+export type Role = 'superadmin' | 'user';
+
+export type UserStatus = 'invited' | 'active' | 'disabled';
+
+export interface ManagedUser {
+  id: string;
+  email: string;
+  displayName: string | null;
+  role: Role;
+  status: UserStatus;
+  invitedAt: string;
+  lastSeenAt: string | null;
+}
+
+/**
+ * One grant = one account, optionally narrowed to a single service.
+ *
+ * `serviceName: null` means every service in that account -- the same
+ * convention as the SQL predicate, where a NULL service_name matches
+ * any row. Keeping the null rather than inventing an 'all' sentinel is
+ * what lets the UI and the database agree without a translation step.
+ */
+export interface Grant {
+  id: string;
+  userId: string;
+  userEmail: string;
+  providerId: string;
+  accountId: string;
+  accountName: string;
+  serviceName: string | null;
+  grantedBy: string;
+  grantedAt: string;
+  /** null = indefinite. */
+  validUntil: string | null;
+  /** Set once revoked; grants are never deleted, so history survives. */
+  revokedAt: string | null;
+  reason: string | null;
+}
+
+export type AuditAction =
+  | 'user.invite'
+  | 'user.disable'
+  | 'grant.create'
+  | 'grant.revoke'
+  | 'connection.create'
+  | 'connection.disable'
+  | 'access.superadmin_bypass';
+
+export interface AuditEntry {
+  id: string;
+  at: string;
+  actor: string;
+  action: AuditAction;
+  entityType: string;
+  entityId: string;
+  /** Free-form before/after snapshots, rendered as a diff, not raw JSON. */
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+}

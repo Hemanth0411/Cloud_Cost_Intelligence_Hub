@@ -4,9 +4,10 @@ import { ChevronsLeft, ChevronsRight, Cloud, Database } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAlerts } from '@/components/alerts/alerts-context';
+import { useSession } from '@/hooks/use-session';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { NAV_GROUPS } from './nav-config';
+import { navGroupsFor } from './nav-config';
 
 interface SidebarContentProps {
   collapsed: boolean;
@@ -17,6 +18,10 @@ interface SidebarContentProps {
 export function SidebarContent({ collapsed, onNavigate, onToggleCollapse }: SidebarContentProps) {
   const pathname = usePathname();
   const { unread } = useAlerts();
+  const { isSuperadmin } = useSession();
+  // Admin links appear only for a superadmin. Until the session cookie
+  // has been read they are hidden, which is the safe default.
+  const groups = navGroupsFor(isSuperadmin);
 
   return (
     <div className="flex h-full flex-col">
@@ -44,7 +49,7 @@ export function SidebarContent({ collapsed, onNavigate, onToggleCollapse }: Side
       </div>
 
       <nav aria-label="Primary" className="flex-1 space-y-3 overflow-y-auto px-2 py-2">
-        {NAV_GROUPS.map((group) => (
+        {groups.map((group) => (
           <div key={group.label}>
             {!collapsed && (
               <p className="mb-1.5 px-2 font-slab text-[11px] font-medium uppercase tracking-wider text-khaki">

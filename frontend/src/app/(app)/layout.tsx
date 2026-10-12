@@ -1,4 +1,5 @@
 import { Suspense, type ReactNode } from 'react';
+import { AdminProvider } from '@/components/admin/admin-context';
 import { AlertsProvider } from '@/components/alerts/alerts-context';
 import { DetectionConfigProvider } from '@/components/anomalies/detection-config-context';
 import { ConnectionsProvider } from '@/components/connections/connections-context';
@@ -21,7 +22,11 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <AnomalyStatusProvider>
               <ConnectionsProvider>
                 <AlertsProvider>
-                  <AppShell>{children}</AppShell>
+                  {/* Last: needs toasts, and the sidebar reads its users
+                      to decide whether to show the admin group. */}
+                  <AdminProvider>
+                    <AppShell>{children}</AppShell>
+                  </AdminProvider>
                 </AlertsProvider>
               </ConnectionsProvider>
             </AnomalyStatusProvider>
