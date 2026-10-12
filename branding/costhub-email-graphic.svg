@@ -1,0 +1,12 @@
+<svg width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Shown on the "enter the code we emailed you" screen, which is the
+       screen this product's sign-in actually spends its time on.
+       56x56 and stroke-only, matching the box and weight of the default
+       Cognito graphic it replaces; colour is the bronze custom property from globals.css. -->
+  <rect x="5" y="13" width="46" height="30" rx="3"
+        stroke="#c98b27" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M6 15 L28 32 L50 15"
+        stroke="#c98b27" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M6 41 L21 28 M50 41 L35 28"
+        stroke="#c98b27" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

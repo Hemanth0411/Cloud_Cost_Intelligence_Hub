@@ -25,6 +25,7 @@ BACKEND="backend"
 DIST="dist"
 BUNDLE="$DIST/lambda.zip"
 BACKUPS="backups"
+BRANDING="branding"
 # Absolute, not relative: `db_url` is called from inside `cd backend`
 # subshells, where a relative -chdir would resolve to backend/terraform.
 # The path handed to terraform.exe must be a WINDOWS path.
@@ -63,6 +64,17 @@ APP_TABLES=(users identities access_grants cloud_connections
 
 die()  { echo "ERROR: $*" >&2; exit 1; }
 step() { echo; echo "==> $*"; }
+
+# Same problem as TF_DIR above: an `aws --settings file://...` argument
+# is handed to a native binary, so it needs a WINDOWS path, and relying
+# on Git Bash to rewrite it breaks for anyone who has exported
+# MSYS_NO_PATHCONV=1. cygpath resolves it explicitly instead. Relative
+# arguments are anchored to $ROOT, which is where this script cds to.
+winpath() {
+  local p="$1"
+  case "$p" in /* | [A-Za-z]:*) ;; *) p="$ROOT/$p" ;; esac
+  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$p"; else printf '%s' "$p"; fi
+}
 
 # The backup-before-destroy guard is only as good as the tools it calls.
 # Neither pg_dump nor psql ships with the AWS CLI or with Git for
@@ -229,34 +241,126 @@ ensure_login_branding() {
   # provider (verified: 14 cognito resources in 5.100.0, not that one),
   # so this is scripted here rather than declared. It is idempotent and
   # visible, which is the next best thing to being in Terraform.
-  local pool client
+  #
+  # What it applies is CostHub's own palette and logo rather than AWS's
+  # defaults, because this page is the one screen of the product that
+  # AWS renders: sign-in leaves the app for a cognito domain, and in the
+  # default skin the user is looking at a different product mid-flow.
+  # The redirect itself cannot be removed -- passwordless email OTP
+  # requires managed login -- so styling it is the whole fix. Colours,
+  # radii and assets live in branding/; see branding/README.md.
+  local pool client style tmp f
   pool="$($TF output -raw cognito_user_pool_id)"
   client="$($TF output -raw cognito_client_id)"
 
-  if aws cognito-idp describe-managed-login-branding-by-client \
-       --user-pool-id "$pool" --client-id "$client" \
-       --region "$REGION" >/dev/null 2>&1; then
-    echo "login branding: already present"
-    return 0
+  for f in managed-login-settings.json costhub-header-logo.png \
+           costhub-favicon.ico costhub-email-graphic.svg; do
+    [ -f "$BRANDING/$f" ] || die "missing $BRANDING/$f
+
+       All four are committed, so the first move is to restore it:
+         git checkout -- branding/$f
+
+       Only the logo and the favicon can be redrawn
+       (python branding/make-assets.py). The settings document and the
+       email graphic are written by hand and have no generator."
+  done
+
+  tmp="$(mktemp -d)"
+  # Explicitly, not on set -e: an unreadable asset here would otherwise
+  # abort with nothing but base64's message, leaving the temp dir behind
+  # and never saying that the login page is what just broke.
+  branding_assets >"$tmp/assets.json" \
+    || branding_died "encoding the branding assets" "$tmp"
+
+  # Two paths because the API has two, and create fails on a client that
+  # already has a style. Both end at the same settings, so re-running
+  # `up` converges rather than erroring.
+  if style="$(aws cognito-idp describe-managed-login-branding-by-client \
+                --user-pool-id "$pool" --client-id "$client" \
+                --region "$REGION" \
+                --query 'ManagedLoginBranding.ManagedLoginBrandingId' \
+                --output text 2>"$tmp/describe.err")" \
+     && [ -n "$style" ] && [ "$style" != "None" ]; then
+    step "updating managed login branding ($style)"
+    aws cognito-idp update-managed-login-branding \
+      --user-pool-id "$pool" --managed-login-branding-id "$style" \
+      --settings "file://$(winpath "$BRANDING/managed-login-settings.json")" \
+      --assets "file://$(winpath "$tmp/assets.json")" \
+      --region "$REGION" >/dev/null \
+      || branding_died UpdateManagedLoginBranding "$tmp"
+    echo "login branding: updated"
+  else
+    # Only "there is no style yet" may fall through to create, so that a
+    # missing permission is not read as absence and reported as the wrong
+    # problem. It does not separate out a wrong pool id: Cognito answers
+    # ResourceNotFoundException for that too (verified), so that case
+    # falls through and fails on the create instead -- loudly, and with
+    # the real AWS message, which names the pool.
+    grep -q 'ResourceNotFoundException' "$tmp/describe.err" 2>/dev/null || {
+      echo "could not read managed login branding:" >&2
+      cat "$tmp/describe.err" >&2
+      rm -rf "$tmp"
+      die "login branding not verifiable"
+    }
+    step "creating managed login branding (not expressible in the pinned provider)"
+    aws cognito-idp create-managed-login-branding \
+      --user-pool-id "$pool" --client-id "$client" \
+      --settings "file://$(winpath "$BRANDING/managed-login-settings.json")" \
+      --assets "file://$(winpath "$tmp/assets.json")" \
+      --region "$REGION" >/dev/null \
+      || branding_died CreateManagedLoginBranding "$tmp"
+    echo "login branding: created"
   fi
 
-  step "creating managed login branding (not expressible in the pinned provider)"
-  if aws cognito-idp create-managed-login-branding \
-       --user-pool-id "$pool" --client-id "$client" \
-       --use-cognito-provided-values --region "$REGION" >/dev/null; then
-    echo "login branding: created"
-  else
-    # Not a warning. Without branding the Managed Login page does not
-    # render, so a successful-looking `up` would hand over a deployment
-    # nobody can sign in to. cognito-idp:CreateManagedLoginBranding is
-    # the permission to check first.
-    echo "could not create managed login branding -- nobody can sign in." >&2
-    echo "  Grant cognito-idp:CreateManagedLoginBranding, then run:" >&2
-    echo "  aws cognito-idp create-managed-login-branding \\" >&2
-    echo "    --user-pool-id $pool --client-id $client \\" >&2
-    echo "    --use-cognito-provided-values --region $REGION" >&2
-    die "login branding missing"
-  fi
+  rm -rf "$tmp"
+}
+
+# base64 of each committed asset, as the --assets document.
+#
+# ColorMode is required per asset. colorSchemeMode is pinned to LIGHT in
+# managed-login-settings.json, but both modes are supplied so that
+# switching it later does not leave AWS's default artwork behind. The
+# whole request must stay under 2MB; these are ~20KB.
+branding_assets() {
+  # Two deliberate things here, and a probe that failed before both were:
+  #
+  #   `local logo="$(base64 ...)"` would return the exit status of
+  #   `local`, which is always 0, so a failing base64 would be swallowed
+  #   and an empty "Bytes" uploaded. Hence declare first, assign after.
+  #
+  #   `|| return 1` rather than leaning on set -e, because the caller
+  #   invokes this as `branding_assets || branding_died`, and set -e is
+  #   suppressed inside a command on the left of `||` -- the failing
+  #   assignment would carry on to the cat below and the function would
+  #   return 0 having written an empty document. It did, until this.
+  local logo favicon email
+  logo="$(base64 -w0 "$BRANDING/costhub-header-logo.png")"        || return 1
+  favicon="$(base64 -w0 "$BRANDING/costhub-favicon.ico")"         || return 1
+  email="$(base64 -w0 "$BRANDING/costhub-email-graphic.svg")"     || return 1
+  cat <<ASSETS
+[
+  {"Category":"PAGE_HEADER_LOGO","ColorMode":"LIGHT","Extension":"PNG","Bytes":"$logo"},
+  {"Category":"PAGE_HEADER_LOGO","ColorMode":"DARK","Extension":"PNG","Bytes":"$logo"},
+  {"Category":"FAVICON_ICO","ColorMode":"LIGHT","Extension":"ICO","Bytes":"$favicon"},
+  {"Category":"FAVICON_ICO","ColorMode":"DARK","Extension":"ICO","Bytes":"$favicon"},
+  {"Category":"EMAIL_GRAPHIC","ColorMode":"LIGHT","Extension":"SVG","Bytes":"$email"},
+  {"Category":"EMAIL_GRAPHIC","ColorMode":"DARK","Extension":"SVG","Bytes":"$email"}
+]
+ASSETS
+}
+
+# Not a warning. Without a branding style the managed login page does not
+# render at all, so a successful-looking `up` would hand over a deployment
+# nobody can sign in to.
+branding_died() {
+  local op="$1" tmp="$2"
+  rm -rf "$tmp"
+  echo "$op failed -- the login page may not render, and nobody can sign in." >&2
+  echo "  The real error is above. If it came from AWS, check these first:" >&2
+  echo "  cognito-idp:CreateManagedLoginBranding, cognito-idp:UpdateManagedLoginBranding," >&2
+  echo "  cognito-idp:DescribeManagedLoginBranding." >&2
+  echo "  Then re-run: ./do.sh up $ENV" >&2
+  die "login branding not applied"
 }
 
 cmd_migrate() {
