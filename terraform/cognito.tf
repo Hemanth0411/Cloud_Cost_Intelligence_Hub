@@ -16,13 +16,26 @@ resource "aws_cognito_user_pool" "main" {
   auto_verified_attributes = ["email"]
 
   sign_in_policy {
-    # EMAIL_OTP only. Leaving PASSWORD in the list made the pool
-    # password-capable, and AdminCreateUser on a password-capable pool
-    # generates a temporary password -- which puts the seeded superadmin
-    # into FORCE_CHANGE_PASSWORD, a state an OTP-only client cannot
-    # clear. The comment on aws_cognito_user below claiming "the pool is
-    # passwordless" was false until this line changed.
-    allowed_first_auth_factors = ["EMAIL_OTP"]
+    # PASSWORD IS MANDATORY HERE. Cognito rejects a list without it:
+    #
+    #   InvalidParameterException: Password should be configured as one
+    #   of the allowed first auth factors.
+    #
+    # This briefly said ["EMAIL_OTP"] alone, on the theory that leaving
+    # PASSWORD in made the pool "password-capable" and would push the
+    # seeded superadmin into FORCE_CHANGE_PASSWORD. That was wrong twice
+    # over: the list is invalid without PASSWORD, and AdminCreateUser
+    # does not generate a password when a passwordless factor is active.
+    # Per the AdminCreateUser docs on TemporaryPassword: "If you don't
+    # specify a value, Amazon Cognito generates one for you UNLESS you
+    # have passwordless options active for your user pool."
+    #
+    # So listing EMAIL_OTP is what makes the omitted password mean
+    # "passwordless, CONFIRMED" rather than "generate a temporary one".
+    # Including PASSWORD does not weaken that: the app client below
+    # enables only the choice-based flow, and no screen offers a
+    # password.
+    allowed_first_auth_factors = ["EMAIL_OTP", "PASSWORD"]
   }
 
   email_configuration {
@@ -115,9 +128,13 @@ resource "aws_cognito_user_pool_domain" "main" {
 # the user does not exist in the pool, so Cognito can never send them a
 # code. A fresh environment had zero users and no way in.
 #
-# No password and no temporary_password: the pool is passwordless, and
-# AdminCreateUser without a password puts the user straight into
-# CONFIRMED rather than FORCE_CHANGE_PASSWORD.
+# No password and no temporary_password. Because EMAIL_OTP is an active
+# first-auth factor, AdminCreateUser treats the omission as "create a
+# passwordless user" and lands on CONFIRMED -- it only generates a
+# temporary password (and so FORCE_CHANGE_PASSWORD) for pools with no
+# passwordless option. That is why sign_in_policy above must keep
+# EMAIL_OTP listed, and why it must also keep PASSWORD: Cognito refuses
+# the list without it.
 resource "aws_cognito_user" "superadmin" {
   user_pool_id = aws_cognito_user_pool.main.id
 
