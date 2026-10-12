@@ -112,13 +112,20 @@ interface ApiGrant {
   provider: string;
   accountId: string;
   serviceName: string | null;
-  validFrom: string;
   validUntil: string | null;
   revokedAt: string | null;
   reason: string | null;
   createdBy: string;
   createdAt: string;
-  isActive: boolean;
+  // `valid_from` and `is_active` also come back and are not read.
+  //
+  // `is_active` is the backend's own liveness verdict and it matches the
+  // security predicate exactly, so using it would be better than
+  // `activeGrantsFor` re-deriving the rule here. It is not mapped
+  // because the mock path has no such field, and one of the two modes
+  // silently computing liveness differently is worse than both
+  // computing it the same imperfect way. Worth revisiting with the
+  // cost screens, when `valid_from` can also start being set.
 }
 
 interface ApiAuditEntry {

@@ -23,7 +23,7 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** `display_name` -> `displayName`. Leaves an already-camel key alone. */
-export function camelCase(key: string): string {
+function camelCase(key: string): string {
   return key.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
 }
 

@@ -24,11 +24,13 @@ import type { User } from '@/types/domain';
 interface MeResponse {
   email: string;
   role: string;
-  isSuperadmin: boolean;
+  // `is_superadmin` also comes back and is deliberately not read:
+  // `useSession` derives it from `role === 'superadmin'`, and two
+  // sources for one fact is how they come to disagree.
 }
 
 /** `GET /meta/me` -- the caller as the server sees them. */
-export function fetchMe(): Promise<MeResponse> {
+function fetchMe(): Promise<MeResponse> {
   return get<MeResponse>('/meta/me');
 }
 

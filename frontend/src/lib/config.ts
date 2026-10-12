@@ -29,17 +29,20 @@ function trimSlash(value: string): string {
 
 const env = {
   apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL ?? '',
-  userPoolId: process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID ?? '',
   clientId: process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID ?? '',
   cognitoDomain: process.env.NEXT_PUBLIC_COGNITO_DOMAIN ?? '',
-  region: process.env.NEXT_PUBLIC_AWS_REGION ?? 'us-east-1',
   useMock: process.env.NEXT_PUBLIC_USE_MOCK,
 } as const;
 
 export const API_BASE_URL = trimSlash(env.apiBaseUrl);
 export const COGNITO_CLIENT_ID = env.clientId;
-export const COGNITO_USER_POOL_ID = env.userPoolId;
-export const AWS_REGION = env.region;
+
+// NO pool-id or region export. Managed Login needs only the hosted
+// domain and the public client id, and this app never verifies a JWT
+// locally (`tokens.ts` decodes without verifying, by design), so
+// neither value has a consumer. They stay in .env.local and
+// `do.sh outputs` because they document the stack, but exporting them
+// would advertise a capability the client does not have.
 
 /** `https://<domain>` -- the value is stored without a scheme. */
 export const COGNITO_DOMAIN_URL = env.cognitoDomain
@@ -61,11 +64,28 @@ export const USE_MOCK: boolean =
   COGNITO_CLIENT_ID === '' ||
   COGNITO_DOMAIN_URL === '';
 
-/** Why live mode was refused, for the settings screen and the console. */
-export function liveModeBlockers(): string[] {
+/** Which of the three values live mode needs are missing. */
+function liveModeBlockers(): string[] {
   const missing: string[] = [];
   if (API_BASE_URL === '') missing.push('NEXT_PUBLIC_API_BASE_URL');
   if (COGNITO_CLIENT_ID === '') missing.push('NEXT_PUBLIC_COGNITO_CLIENT_ID');
   if (COGNITO_DOMAIN_URL === '') missing.push('NEXT_PUBLIC_COGNITO_DOMAIN');
   return missing;
+}
+
+// SAY SO WHEN LIVE MODE IS REFUSED.
+//
+// Asking for live mode and silently getting mock is the single most
+// confusing thing this flag can do: the app looks like it is working,
+// the numbers are plausible, and nothing anywhere says the API was
+// never contacted. The usual cause is an Amplify build whose console
+// environment variables were wiped by a terraform apply, which is a
+// thing that has actually happened here.
+//
+// Module scope, so it fires once per page load for whoever is looking.
+if (env.useMock === 'false' && USE_MOCK && typeof console !== 'undefined') {
+  console.warn(
+    `[costhub] NEXT_PUBLIC_USE_MOCK=false was requested but mock data is still in use: ` +
+      `${liveModeBlockers().join(', ')} ${liveModeBlockers().length === 1 ? 'is' : 'are'} not set.`,
+  );
 }
