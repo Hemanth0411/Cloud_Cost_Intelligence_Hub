@@ -54,6 +54,35 @@ resource "aws_amplify_app" "main" {
     NEXT_PUBLIC_AWS_REGION    = var.aws_region
     AMPLIFY_MONOREPO_APP_ROOT = "frontend"
   }
+
+  # THIS MAP IS CO-OWNED, and without this block an apply silently
+  # breaks the deployed frontend.
+  #
+  # The five keys below cannot be set here -- that is the dependency
+  # cycle documented above -- so they are set in the Amplify console
+  # instead. But `environment_variables` is authoritative: Terraform
+  # plans to DELETE any key it does not declare. Observed on a real
+  # plan, with all five already set in the console:
+  #
+  #   ~ environment_variables = {
+  #       - "NEXT_PUBLIC_API_BASE_URL"      = "https://...on.aws" -> null
+  #       - "NEXT_PUBLIC_COGNITO_CLIENT_ID" = "3bvd..."           -> null
+  #       ...
+  #
+  # Applying that removes them, the next Amplify build inlines empty
+  # strings, and the app falls back to mock data -- a deployment that
+  # succeeds and quietly serves the wrong thing. Ignoring exactly these
+  # keys, rather than the whole map, keeps Terraform authoritative over
+  # the two it genuinely owns.
+  lifecycle {
+    ignore_changes = [
+      environment_variables["NEXT_PUBLIC_API_BASE_URL"],
+      environment_variables["NEXT_PUBLIC_COGNITO_USER_POOL_ID"],
+      environment_variables["NEXT_PUBLIC_COGNITO_CLIENT_ID"],
+      environment_variables["NEXT_PUBLIC_COGNITO_DOMAIN"],
+      environment_variables["NEXT_PUBLIC_USE_MOCK"],
+    ]
+  }
 }
 
 # ORDERING CONSTRAINT Terraform cannot infer.
