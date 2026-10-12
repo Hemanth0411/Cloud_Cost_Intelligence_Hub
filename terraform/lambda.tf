@@ -53,7 +53,16 @@ resource "aws_lambda_function" "fn" {
     variables = merge(local.common_env, {
       COGNITO_USER_POOL_ID = aws_cognito_user_pool.main.id
       COGNITO_CLIENT_ID    = aws_cognito_user_pool_client.web.id
-      CORS_ORIGINS         = "https://${aws_amplify_branch.main.branch_name}.${aws_amplify_app.main.default_domain}"
+      # The ONLY CORS configuration now. API Gateway deliberately adds
+      # none (see apigateway.tf), so CORSMiddleware in the app is the
+      # single owner -- and that means localhost has to be listed here.
+      # The Function URL used to supply it at the edge, so dropping the
+      # URL without this would break local dev against the deployed API
+      # with an opaque "Failed to fetch".
+      CORS_ORIGINS = join(",", concat(
+        ["https://${aws_amplify_branch.main.branch_name}.${aws_amplify_app.main.default_domain}"],
+        var.allow_local_frontend ? ["http://localhost:3000"] : [],
+      ))
     })
   }
 
@@ -63,50 +72,19 @@ resource "aws_lambda_function" "fn" {
   ]
 }
 
-# A Function URL rather than API Gateway: one less component, and nothing
-# here needs request transformation. The trade is no built-in throttling,
-# which is TODO-6.
-resource "aws_lambda_function_url" "api" {
-  function_name      = aws_lambda_function.fn["api"].function_name
-  authorization_type = "NONE" # the app verifies Cognito JWTs itself
-
-  cors {
-    allow_origins = concat(
-      ["https://${aws_amplify_branch.main.branch_name}.${aws_amplify_app.main.default_domain}"],
-      # 3000 is `next dev`. This said 5173 (Vite), which is the port the
-      # previous frontend used -- every local API call failed CORS
-      # preflight, which presents as an opaque "Failed to fetch".
-      var.allow_local_frontend ? ["http://localhost:3000"] : [],
-    )
-    allow_methods = ["*"]
-    # x-dev-user is deliberately ABSENT. A public, unauthenticated
-    # Function URL must not advertise the dev-auth bypass header --
-    # and ALLOW_DEV_AUTH is never set here, so it would be refused
-    # anyway. Both, because either alone is one mistake from a leak.
-    allow_headers     = ["authorization", "content-type"]
-    allow_credentials = true
-    max_age           = 3600
-  }
-}
-
-# WITHOUT THIS THE API RETURNS 403 AND TERRAFORM REPORTS SUCCESS.
+# NO Function URL. It is replaced by the HTTP API in apigateway.tf,
+# because this account refuses anonymous Lambda invocation -- the URL
+# returned 403 AccessDeniedException to every request with a correct
+# public resource policy, and a hand-built throwaway function URL did
+# the same. The full evidence is in apigateway.tf; it is written up
+# there rather than here because that is where the replacement lives.
 #
-# authorization_type = "NONE" controls who Lambda *asks* about the call,
-# not whether the call is allowed: the function still needs a
-# resource-based policy permitting lambda:InvokeFunctionUrl. The console
-# adds one when you create a URL by hand, Terraform does not, so this is
-# a config that plans and applies cleanly and then serves nothing.
+# Removing this also removes the duplicate public-access statement the
+# AWS console added while the 403 was being diagnosed. Terraform does
+# not know about that one, so clear it by hand after the apply:
 #
-# function_url_auth_type = "NONE" is what scopes this to the URL rather
-# than granting the world lambda:InvokeFunction generally.
-resource "aws_lambda_permission" "api_url" {
-  statement_id           = "AllowFunctionUrlInvoke"
-  action                 = "lambda:InvokeFunctionUrl"
-  function_name          = aws_lambda_function.fn["api"].function_name
-  principal              = "*"
-  function_url_auth_type = "NONE"
-}
-
+#   aws lambda remove-permission --function-name costhub-dev-api \
+#     --statement-id FunctionURLAllowPublicAccess --region us-east-1
 
 # Standalone, and deliberately depends on the ROLE rather than the role
 # POLICY: the policy references the user pool, the pool references this
