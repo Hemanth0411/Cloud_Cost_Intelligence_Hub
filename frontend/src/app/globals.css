@@ -1,0 +1,157 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Cream #e8e1ce, Khaki #c6b78a, Chinese Bronze #C98B27, Ateneo Blue #004567, Periwinkle #9296b2, Slate #5c6082. */
+    --cream: 43.8 36.1% 85.9%;
+    --khaki: 45 34.5% 65.9%;
+    --bronze: 37 67.5% 47.1%;
+    --ateneo: 199.8 100% 20.2%;
+    --periwinkle: 232.5 17.2% 63.5%;
+    --slate: 233.7 17.1% 43.5%;
+
+    --background: 43.8 36.1% 85.9%;
+    --foreground: 233 22% 16%;
+    --card: 43 40% 96%;
+    --card-foreground: 233 22% 16%;
+    --sidebar: 199.8 100% 20.2%;
+    --sidebar-foreground: 43.8 36.1% 92%;
+    --sidebar-muted: 43 22% 78%;
+    --sidebar-accent: 37 67.5% 47.1%;
+    --sidebar-accent-foreground: 43 40% 97%;
+    --sidebar-border: 199.8 45% 28%;
+    --muted: 43 24% 80%;
+    --muted-foreground: 233.7 17.1% 43.5%;
+    --secondary: 45 28% 78%;
+    --secondary-foreground: 233 22% 16%;
+    --accent: 37 42% 88%;
+    --accent-foreground: 199.8 100% 20.2%;
+    --border: 43 18% 74%;
+    --input: 43 16% 70%;
+    --ring: 37 67.5% 47.1%;
+    --primary: 199.8 100% 20.2%;
+    --primary-foreground: 43 40% 97%;
+    --destructive: 0 72% 42%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 152 42% 28%;
+    --warning: 32 72% 36%;
+    --provider-aws: 37 67.5% 47.1%;
+    --provider-azure: 199.8 72% 32%;
+    --provider-gcp: 233.7 17.1% 43.5%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 200 48% 8%;
+    --foreground: 45 30% 92%;
+    --card: 200 40% 12%;
+    --card-foreground: 45 30% 92%;
+    --sidebar: 200 55% 12%;
+    --sidebar-foreground: 45 30% 92%;
+    --sidebar-muted: 45 18% 74%;
+    --sidebar-accent: 37 67.5% 47.1%;
+    --sidebar-accent-foreground: 45 40% 97%;
+    --sidebar-border: 200 30% 22%;
+    --muted: 200 28% 16%;
+    --muted-foreground: 233 18% 74%;
+    --secondary: 233 16% 22%;
+    --secondary-foreground: 45 30% 92%;
+    --accent: 37 32% 18%;
+    --accent-foreground: 37 65% 74%;
+    --border: 200 22% 20%;
+    --input: 200 18% 24%;
+    --ring: 37 67.5% 47.1%;
+    --primary: 37 62% 54%;
+    --primary-foreground: 200 50% 8%;
+    --destructive: 0 72% 62%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 152 42% 52%;
+    --warning: 36 72% 58%;
+    --provider-aws: 37 68% 58%;
+    --provider-azure: 200 55% 62%;
+    --provider-gcp: 233 20% 72%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-roboto-slab), Georgia, 'Times New Roman', serif;
+  }
+
+  h1 {
+    color: hsl(var(--ateneo));
+  }
+
+  .dark h1 {
+    color: hsl(var(--bronze));
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.25);
+  }
+
+  /* Subtle scrollbars that suit data-dense UIs */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+}
+
+@layer utilities {
+  .surface-grid {
+    background-image:
+      linear-gradient(hsl(var(--border) / 0.5) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--border) / 0.5) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+}
+
+/* Body copy is Roboto. Higher specificity than .font-sans, which still points at the old font variable. */
+body.font-sans {
+  font-family: var(--font-roboto), ui-sans-serif, system-ui, sans-serif;
+}
+
+.font-slab {
+  font-family: var(--font-roboto-slab), Georgia, serif;
+}
+
+.bg-bronze { background-color: hsl(var(--bronze)); }
+.text-bronze { color: hsl(var(--bronze)); }
+.bg-khaki { background-color: hsl(var(--khaki)); }
+.text-khaki { color: hsl(var(--khaki)); }
+.bg-ateneo { background-color: hsl(var(--ateneo)); }
+.text-ateneo { color: hsl(var(--ateneo)); }
+.bg-cream { background-color: hsl(var(--cream)); }
+.text-cream { color: hsl(var(--cream)); }
+.text-sidebar-foreground { color: hsl(var(--sidebar-foreground)); }
+.text-sidebar-muted { color: hsl(var(--sidebar-muted)); }
+.text-sidebar-accent-foreground { color: hsl(var(--sidebar-accent-foreground)); }
+.bg-sidebar-accent { background-color: hsl(var(--sidebar-accent)); }
+.border-sidebar-border { border-color: hsl(var(--sidebar-border)); }
+.hover\:text-sidebar-foreground:hover { color: hsl(var(--sidebar-foreground)); }
+.from-ateneo { --tw-gradient-from: hsl(var(--ateneo)) var(--tw-gradient-from-position); --tw-gradient-to: hsl(var(--ateneo) / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
+.via-bronze { --tw-gradient-to: hsl(var(--bronze) / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), hsl(var(--bronze)) var(--tw-gradient-via-position), var(--tw-gradient-to); }
+.to-bronze { --tw-gradient-to: hsl(var(--bronze)) var(--tw-gradient-to-position); }
+.to-khaki { --tw-gradient-to: hsl(var(--khaki)) var(--tw-gradient-to-position); }
+
+/* Recharts: remove default focus outline on clickable SVG elements */
+.recharts-wrapper,
+.recharts-surface,
+.recharts-sector,
+.recharts-rectangle {
+  outline: none;
+}
