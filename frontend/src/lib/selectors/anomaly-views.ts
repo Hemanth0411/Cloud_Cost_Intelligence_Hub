@@ -14,13 +14,13 @@ export const SEVERITY_ORDER: readonly Severity[] = ['critical', 'high', 'medium'
  * workflow changes (acknowledge, resolve, ...) layered on top. The dashboard, the Anomalies
  * page and the insight engine all read anomalies through this one function.
  */
-export function getAnomalyViews(
+export function getAnomalyViews<T extends Anomaly>(
   ds: Dataset,
-  anomalies: readonly Anomaly[],
+  anomalies: readonly T[],
   filters: ScopeFilters,
   range: Pick<ResolvedRange, 'from' | 'to'>,
   overrides: StatusOverrides = {},
-): AnomalyView[] {
+): Array<T & { accountName: string; serviceName: string }> {
   return anomalies
     .filter((a) => matchesScope(a, filters) && a.date >= range.from && a.date <= range.to)
     .map((a) => ({
@@ -55,10 +55,18 @@ export interface AnomalySummary {
   bySeverity: Record<Severity, number>;
   byStatus: Record<AnomalyStatus, number>;
   byKind: Record<AnomalyKind, number>;
-  /** Dollars of excess cost inside the detection windows of active increases. */
-  activeIncreaseImpact: number;
+  /**
+   * Dollars of excess cost inside the detection windows of active
+   * increases.
+   *
+   * NULL when any contributing finding has no window length -- which
+   * is every finding from the API, because `anomaly_findings` stores
+   * only the date the change began. A partial sum presented as a
+   * total is the kind of number that gets quoted in a meeting.
+   */
+  activeIncreaseImpact: number | null;
   /** Dollars below expected inside the detection windows of active decreases (positive number). */
-  activeDecreaseImpact: number;
+  activeDecreaseImpact: number | null;
 }
 
 export function summarizeAnomalies(list: readonly AnomalyView[]): AnomalySummary {
@@ -67,18 +75,27 @@ export function summarizeAnomalies(list: readonly AnomalyView[]): AnomalySummary
     active: 0,
     bySeverity: { critical: 0, high: 0, medium: 0, low: 0 },
     byStatus: { open: 0, investigating: 0, acknowledged: 0, resolved: 0, dismissed: 0 },
-    byKind: { spike: 0, 'sustained-increase': 0, drop: 0, 'sustained-decrease': 0 },
+    byKind: { spike: 0, 'sustained-increase': 0, creep: 0, drop: 0, 'sustained-decrease': 0 },
     activeIncreaseImpact: 0,
     activeDecreaseImpact: 0,
   };
+  let impactKnown = true;
   for (const a of list) {
     summary.bySeverity[a.severity] += 1;
     summary.byStatus[a.status] += 1;
     summary.byKind[a.kind] += 1;
     if (!isActive(a.status)) continue;
     summary.active += 1;
-    if (isIncrease(a.kind)) summary.activeIncreaseImpact += a.impactCost;
-    else summary.activeDecreaseImpact += Math.abs(a.impactCost);
+    if (a.impactCost === null) {
+      impactKnown = false;
+      continue;
+    }
+    if (isIncrease(a.kind)) summary.activeIncreaseImpact = (summary.activeIncreaseImpact ?? 0) + a.impactCost;
+    else summary.activeDecreaseImpact = (summary.activeDecreaseImpact ?? 0) + Math.abs(a.impactCost);
+  }
+  if (!impactKnown) {
+    summary.activeIncreaseImpact = null;
+    summary.activeDecreaseImpact = null;
   }
   return summary;
 }

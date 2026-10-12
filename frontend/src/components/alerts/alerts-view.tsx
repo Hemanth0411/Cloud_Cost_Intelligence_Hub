@@ -14,6 +14,7 @@ import { useDemoNow } from '@/hooks/use-demo-now';
 import { formatRelative } from '@/lib/format';
 import { ALERT_CATEGORY_LABEL, SEVERITY_LABEL } from '@/lib/theme';
 import type { AlertCategory, AlertItem, AlertStatus, Severity } from '@/types/domain';
+import { COST_CAPABILITIES } from '@/lib/services/cost-service';
 import { useAlerts } from './alerts-context';
 import { AlertRow } from './alert-row';
 import { NotificationPreferences } from './notification-preferences';
@@ -23,7 +24,18 @@ type StatusFilter = 'all' | 'unread' | AlertStatus;
 const CATEGORIES: readonly AlertCategory[] = ['anomaly', 'budget', 'connection', 'simulated'];
 
 export function AlertsView() {
-  const { alerts, unread, isRead, setRead, markAllRead, act, anomalyById, prefs, simulateAlert, simulatedCount, clearSimulated } = useAlerts();
+  const { alerts, unread, isRead, setRead, markAllRead, act, anomalyById, prefs, rules, simulateAlert, simulatedCount, clearSimulated } = useAlerts();
+  /**
+   * DERIVED alerts (mock) vs STORED feed rows (live).
+   *
+   * Everything this flag hides is a control over something the
+   * stored model does not have: a severity to filter on, a
+   * workflow beyond "read", a delivery channel the user chooses, an
+   * event they can conjure. Leaving them rendered meant a severity
+   * dropdown that emptied the list whatever you picked and a
+   * "Simulate incoming alert" button that silently did nothing.
+   */
+  const derived = COST_CAPABILITIES.simulatedAlerts;
   const [status, setStatus] = useState<StatusFilter>('all');
   const [category, setCategory] = useState<AlertCategory | 'all'>('all');
   const [severity, setSeverity] = useState<Severity | 'all'>('all');
@@ -65,12 +77,18 @@ export function AlertsView() {
     <>
       <PageHeader
         title="Alerts & notifications"
-        description="Anomaly, budget and connection alerts. Delivery is simulated: no email or message is ever sent."
+        description={
+          derived
+            ? 'Anomaly, budget and connection alerts. Delivery is simulated: no email or message is ever sent.'
+            : 'Events written by your alert rules. Rule evaluation runs server-side; nothing here is derived in the browser.'
+        }
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={simulateAlert}>
-              <FlaskConical className="h-3.5 w-3.5" aria-hidden /> Simulate incoming alert
-            </Button>
+            {derived && (
+              <Button variant="outline" size="sm" onClick={simulateAlert}>
+                <FlaskConical className="h-3.5 w-3.5" aria-hidden /> Simulate incoming alert
+              </Button>
+            )}
             <Button size="sm" onClick={markAllRead} disabled={unread === 0}>
               <CheckCheck className="h-3.5 w-3.5" aria-hidden /> Mark all as read
             </Button>
@@ -79,7 +97,16 @@ export function AlertsView() {
       />
 
       <section aria-label="Alert summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard title="Unread" icon={Bell} tone={unread > 0 ? 'danger' : 'default'} value={String(unread)} hint={unread === 0 ? 'all caught up' : 'need your attention'} />
+        {/* "All caught up" is a claim about a system that is
+            watching. With no rules and no evaluator run, the honest
+            version is that nothing has fired. */}
+        <KpiCard
+          title="Unread"
+          icon={Bell}
+          tone={unread > 0 ? 'danger' : 'default'}
+          value={String(unread)}
+          hint={unread > 0 ? 'need your attention' : derived ? 'all caught up' : rules.length === 0 ? 'no rules defined' : 'nothing has fired'}
+        />
         <KpiCard title="Active" icon={TriangleAlert} tone={counts.active > 0 ? 'warning' : 'default'} value={String(counts.active)} hint="not yet acknowledged" />
         <KpiCard title="Acknowledged" icon={Eye} value={String(counts.acknowledged)} hint="being looked at" />
         <KpiCard title="Resolved" icon={CheckCircle2} tone="success" value={String(counts.resolved)} hint="closed out" />
@@ -100,11 +127,17 @@ export function AlertsView() {
                   <option value="all">All categories</option>
                   {CATEGORIES.map((c) => <option key={c} value={c}>{ALERT_CATEGORY_LABEL[c]}</option>)}
                 </Select>
-                <label className="sr-only" htmlFor="alert-severity">Severity</label>
-                <Select id="alert-severity" className="w-36" value={severity} onChange={(e) => setSeverity(e.target.value as Severity | 'all')}>
-                  <option value="all">All severities</option>
-                  {[...SEVERITIES].reverse().map((s) => <option key={s} value={s}>{SEVERITY_LABEL[s]}</option>)}
-                </Select>
+                {/* `alert_events` has no severity column, so every
+                    choice but "all" would return nothing. */}
+                {derived && (
+                  <>
+                    <label className="sr-only" htmlFor="alert-severity">Severity</label>
+                    <Select id="alert-severity" className="w-36" value={severity} onChange={(e) => setSeverity(e.target.value as Severity | 'all')}>
+                      <option value="all">All severities</option>
+                      {[...SEVERITIES].reverse().map((s) => <option key={s} value={s}>{SEVERITY_LABEL[s]}</option>)}
+                    </Select>
+                  </>
+                )}
               </div>
             </div>
           </CardHeader>
@@ -112,7 +145,13 @@ export function AlertsView() {
             {filtered.length === 0 ? (
               <div className="flex flex-col items-center gap-2 px-3 py-8 text-center text-sm text-muted-foreground">
                 <CheckCircle2 className="h-6 w-6 text-success" aria-hidden />
-                {alerts.length === 0 ? 'No alerts right now.' : activeFilters ? 'No alerts match these filters.' : 'Nothing to show.'}
+                {alerts.length > 0
+                  ? activeFilters
+                    ? 'No alerts match these filters.'
+                    : 'Nothing to show.'
+                  : derived
+                    ? 'No alerts right now.'
+                    : 'No alert rule has fired. Nothing is evaluated until a rule exists and the evaluator runs.'}
                 {activeFilters && <Button variant="outline" size="sm" onClick={() => { setStatus('all'); setCategory('all'); setSeverity('all'); }}>Clear filters</Button>}
               </div>
             ) : (
@@ -123,7 +162,8 @@ export function AlertsView() {
                     alert={a}
                     read={isRead(a)}
                     now={now}
-                    channels={a.simulated ? [] : channels}
+                    channels={derived && !a.simulated ? channels : []}
+                    workflow={derived}
                     onToggleRead={() => setRead(a.id, !isRead(a))}
                     onAction={(action) => act(a, action)}
                     onInvestigate={a.anomalyId && anomalyById.has(a.anomalyId) ? () => setAnomalyId(a.anomalyId) : undefined}
@@ -135,11 +175,16 @@ export function AlertsView() {
         </Card>
 
         <div className="space-y-3">
-          <NotificationPreferences />
+          {derived && <NotificationPreferences />}
+          {!derived && <AlertRules rules={rules} />}
           <Card>
             <CardHeader>
-              <CardTitle>Delivery log (simulated)</CardTitle>
-              <CardDescription>How the latest alerts would have been delivered. Nothing was actually sent.</CardDescription>
+              <CardTitle>{derived ? 'Delivery log (simulated)' : 'Delivery'}</CardTitle>
+              <CardDescription>
+                {derived
+                  ? 'How the latest alerts would have been delivered. Nothing was actually sent.'
+                  : 'Delivery is recorded by the server on each event. Channels come from the rule, not from a preference here.'}
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {recentForLog.length === 0 ? (
@@ -149,7 +194,12 @@ export function AlertsView() {
                   {recentForLog.map((a) => (
                     <li key={a.id} className="text-sm">
                       <p className="truncate font-medium">{a.title}</p>
-                      <p className="text-xs text-muted-foreground">{a.simulated ? 'Simulated event · in-app only' : channels.join(' · ') || 'No channels enabled'} · {formatRelative(a.timestamp, now)}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {derived
+                          ? `${a.simulated ? 'Simulated event · in-app only' : channels.join(' · ') || 'No channels enabled'} · `
+                          : ''}
+                        {formatRelative(a.timestamp, now)}
+                      </p>
                     </li>
                   ))}
                 </ul>
@@ -166,5 +216,41 @@ export function AlertsView() {
 
       <InvestigationDialog anomaly={selectedAnomaly} onClose={() => setAnomalyId(null)} />
     </>
+  );
+}
+
+/**
+ * The rules behind the live feed.
+ *
+ * Without it the feed is unexplainable: an empty list could mean
+ * "nothing fired" or "nothing is being watched", and those call for
+ * opposite responses.
+ */
+function AlertRules({ rules }: { rules: ReturnType<typeof useAlerts>['rules'] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Alert rules</CardTitle>
+        <CardDescription>What the server is watching. Rules are created through the API.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {rules.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No rules exist, so nothing can fire. The feed above will stay empty until one is created.
+          </p>
+        ) : (
+          <ul className="space-y-2.5">
+            {rules.map((r) => (
+              <li key={r.id} className="text-sm">
+                <p className="truncate font-medium">{r.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {[r.type, r.metric, r.frequency, r.enabled ? 'enabled' : 'disabled'].join(' \u00b7 ')}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   );
 }

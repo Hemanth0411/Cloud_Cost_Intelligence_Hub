@@ -8,9 +8,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { formatCompactCurrency, formatCurrency, formatPercent, formatSignedPercent } from '@/lib/format';
 import {
   BUDGET_BAR_CLASS,
-  BUDGET_STATUS_CLASS,
-  BUDGET_STATUS_LABEL,
-  ENVIRONMENT_LABEL,
+  budgetStatusClass,
+  budgetStatusLabel,
+  environmentLabel,
   PROVIDER_COLOR,
   PROVIDER_SHORT_NAME,
 } from '@/lib/theme';
@@ -30,17 +30,27 @@ const COLUMNS: Array<{ key: SortKey; label: string; align?: 'right' }> = [
 function sortValue(a: AccountSummary, key: SortKey): string | number {
   if (key === 'name') return a.name.toLowerCase();
   if (key === 'deltaPct') return a.deltaPct ?? Number.NEGATIVE_INFINITY;
-  return a[key];
+  // An unknown value sorts to the bottom in either direction rather
+  // than mixing in with real zeros.
+  return a[key] ?? Number.NEGATIVE_INFINITY;
 }
 
 interface AccountsTableProps {
   accounts: AccountSummary[];
-  /** False when a single service is selected: account budgets are not comparable. */
+  /**
+   * False when a single service is selected (account budgets are not
+   * comparable) OR when the source has no budgets at all. The two
+   * read the same here -- there is nothing to show either way -- but
+   * `budgetNote` is what says which, so the row does not tell someone
+   * to clear a filter that is not the problem.
+   */
   budgetApplicable: boolean;
+  /** What to print in the budget column when it is not applicable. */
+  budgetNote?: string;
   onSelect: (account: AccountSummary) => void;
 }
 
-export function AccountsTable({ accounts, budgetApplicable, onSelect }: AccountsTableProps) {
+export function AccountsTable({ accounts, budgetApplicable, budgetNote, onSelect }: AccountsTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>('cost');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
@@ -115,7 +125,9 @@ export function AccountsTable({ accounts, budgetApplicable, onSelect }: Accounts
                         {a.name}
                       </button>
                       <p className="text-xs text-muted-foreground">
-                        {PROVIDER_SHORT_NAME[a.providerId]} · {ENVIRONMENT_LABEL[a.environment]} · {a.team}
+                        {[PROVIDER_SHORT_NAME[a.providerId], a.environment && environmentLabel(a.environment), a.team]
+                          .filter(Boolean)
+                          .join(' · ')}
                       </p>
                     </div>
                   </div>
@@ -132,7 +144,7 @@ export function AccountsTable({ accounts, budgetApplicable, onSelect }: Accounts
                 >
                   {a.deltaPct === null ? '–' : formatSignedPercent(a.deltaPct)}
                 </TableCell>
-                {budgetApplicable ? (
+                {budgetApplicable && a.mtdPct !== null && a.mtdSpend !== null && a.monthlyBudget !== null && a.projectedPct !== null ? (
                   <>
                     <TableCell className="min-w-[210px]">
                       <div className="flex items-center gap-3">
@@ -144,7 +156,10 @@ export function AccountsTable({ accounts, budgetApplicable, onSelect }: Accounts
                           aria-valuemax={100}
                           aria-valuenow={Math.min(Math.round(a.mtdPct), 100)}
                         >
-                          <div className={cn('h-full rounded-full', BUDGET_BAR_CLASS[a.budgetStatus])} style={{ width: `${Math.min(a.mtdPct, 100)}%` }} />
+                          <div
+                            className={cn('h-full rounded-full', a.budgetStatus ? BUDGET_BAR_CLASS[a.budgetStatus] : 'bg-muted')}
+                            style={{ width: `${Math.min(a.mtdPct, 100)}%` }}
+                          />
                         </div>
                         <span className="w-24 text-right text-xs tabular-nums text-muted-foreground">
                           {formatCompactCurrency(a.mtdSpend)} / {formatCompactCurrency(a.monthlyBudget)}
@@ -155,12 +170,12 @@ export function AccountsTable({ accounts, budgetApplicable, onSelect }: Accounts
                       </p>
                     </TableCell>
                     <TableCell>
-                      <Badge className={BUDGET_STATUS_CLASS[a.budgetStatus]}>{BUDGET_STATUS_LABEL[a.budgetStatus]}</Badge>
+                      <Badge className={budgetStatusClass(a.budgetStatus)}>{budgetStatusLabel(a.budgetStatus)}</Badge>
                     </TableCell>
                   </>
                 ) : (
                   <TableCell colSpan={2} className="text-xs text-muted-foreground">
-                    Budget not shown while filtering by service
+                    {budgetNote ?? 'Budget not shown while filtering by service'}
                   </TableCell>
                 )}
               </TableRow>

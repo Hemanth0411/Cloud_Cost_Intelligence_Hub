@@ -1,19 +1,30 @@
 'use client';
 
-import { useMemo } from 'react';
-import { readDashboardData } from '@/lib/services/cost-service';
+import { useCallback } from 'react';
+import { useAsyncData, type AsyncState } from '@/hooks/use-async-data';
+import { loadDashboardData } from '@/lib/services/cost-service';
 import type { DashboardData, Filters, StatusOverrides } from '@/types/analytics';
 import type { AnomalyConfig } from '@/types/domain';
 
-export type DashboardState =
-  | { status: 'loading' }
-  | { status: 'ready'; data: DashboardData; isRefreshing: boolean };
+export type DashboardState = AsyncState<DashboardData>;
 
-/** Local mock data, so the page can render on the same turn as the sidebar click. */
-export function useDashboardData(filters: Filters, statusOverrides: StatusOverrides, config: AnomalyConfig): DashboardState {
-  const data = useMemo(
-    () => readDashboardData(filters, statusOverrides, config),
+/**
+ * The dashboard's data, for whichever mode is running.
+ *
+ * It used to be a `useMemo` over the in-memory mock, which is why
+ * every view has a `status === 'loading'` branch that could never be
+ * reached. Live mode makes five or more requests here, so the branch
+ * is now the first thing anyone sees.
+ */
+export function useDashboardData(
+  filters: Filters,
+  statusOverrides: StatusOverrides,
+  config: AnomalyConfig,
+): DashboardState {
+  const key = JSON.stringify([filters, statusOverrides, config]);
+  const load = useCallback(
+    () => loadDashboardData(filters, statusOverrides, config),
     [filters, statusOverrides, config],
   );
-  return { status: 'ready', data, isRefreshing: false };
+  return useAsyncData(key, load);
 }

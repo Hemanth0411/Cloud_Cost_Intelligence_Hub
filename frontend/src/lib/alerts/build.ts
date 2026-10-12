@@ -3,7 +3,7 @@ import { formatCompactCurrency, formatCurrency, formatDateTime, formatSignedPerc
 import { hashString } from '@/lib/mock/seed';
 import { KIND_LABELS } from '@/lib/selectors/detect-anomalies';
 import { DEMO_NOW_ISO } from '@/lib/clock';
-import type { AnomalyView, BudgetStatus } from '@/types/analytics';
+import type { BudgetStatus, DetectedAnomalyView } from '@/types/analytics';
 import type { AlertItem, AlertStatus, AnomalyStatus, Connectivity, NotificationPreferences, ProviderId, Severity } from '@/types/domain';
 import { severityAtLeast } from './preferences';
 
@@ -36,7 +36,7 @@ export interface SimulatedAlert {
 }
 
 export interface AlertSources {
-  anomalies: readonly AnomalyView[];
+  anomalies: readonly DetectedAnomalyView[];
   budgets: readonly BudgetAlertSource[];
   connections: readonly ConnectionAlertSource[];
   simulated: readonly SimulatedAlert[];
@@ -49,7 +49,7 @@ export interface AlertSources {
 const pad = (n: number): string => String(n).padStart(2, '0');
 
 /** Billing data lands early the next morning, so an anomaly on day D is "detected" at 02:00-03:59 UTC on D+1. */
-export function detectionTimestamp(anomaly: Pick<AnomalyView, 'id' | 'date'>): string {
+export function detectionTimestamp(anomaly: Pick<DetectedAnomalyView, 'id' | 'date'>): string {
   const h = hashString(anomaly.id);
   return `${addDays(anomaly.date, 1)}T${pad(2 + (h % 2))}:${pad((h >>> 3) % 60)}:00Z`;
 }
@@ -136,13 +136,21 @@ export function buildAlerts(src: AlertSources, localStatuses: Readonly<Record<st
   }
 
   const rank: Record<Severity, number> = { critical: 0, high: 1, medium: 2, low: 3 };
-  return alerts.sort((x, y) => (x.timestamp === y.timestamp ? rank[x.severity] - rank[y.severity] || (x.id < y.id ? -1 : 1) : x.timestamp < y.timestamp ? 1 : -1));
+  // An item with no severity sorts last within its timestamp rather
+  // than first: an unranked row at the top of the list reads as the
+  // most urgent one.
+  const rankOf = (a: AlertItem): number => (a.severity === null ? 4 : rank[a.severity]);
+  return alerts.sort((x, y) => (x.timestamp === y.timestamp ? rankOf(x) - rankOf(y) || (x.id < y.id ? -1 : 1) : x.timestamp < y.timestamp ? 1 : -1));
 }
 
 /** Hides alerts the user opted out of. Simulated demo events always show. */
 export function applyPreferences(alerts: readonly AlertItem[], prefs: NotificationPreferences): { visible: AlertItem[]; hidden: number } {
   const visible = alerts.filter((a) => {
     if (a.category === 'simulated') return true;
+    // An item with no severity cannot be below a minimum, so it is
+    // never hidden by one. Hiding it would silently drop every live
+    // feed item the moment someone raised the threshold.
+    if (a.severity === null) return prefs.categories[a.category];
     return prefs.categories[a.category] && severityAtLeast(a.severity, prefs.minSeverity);
   });
   return { visible, hidden: alerts.length - visible.length };

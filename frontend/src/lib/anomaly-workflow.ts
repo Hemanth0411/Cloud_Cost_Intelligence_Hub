@@ -6,8 +6,25 @@ export interface WorkflowAction {
   intent: 'primary' | 'secondary' | 'ghost';
 }
 
-/** The next steps available from each status. Every status can always be undone via "Reopen". */
-export function workflowActions(status: AnomalyStatus): WorkflowAction[] {
+/**
+ * The next steps available from each status.
+ *
+ * `persisted` restricts the list to the transitions the BACKEND has.
+ * `anomaly_findings.status` is CHECKed to new / acknowledged /
+ * dismissed, so "Start investigating" and "Mark resolved" would be
+ * 422s, and "Reopen" has no endpoint at all. Offering a button that
+ * fails is worse than not offering it, and keeping the extra states
+ * only in the browser would mean the workflow silently reset on the
+ * next page load.
+ */
+const PERSISTED: readonly AnomalyStatus[] = ['acknowledged', 'dismissed'];
+
+export function workflowActions(status: AnomalyStatus, persisted = false): WorkflowAction[] {
+  const all = allActions(status);
+  return persisted ? all.filter((a) => PERSISTED.includes(a.to)) : all;
+}
+
+function allActions(status: AnomalyStatus): WorkflowAction[] {
   switch (status) {
     case 'open':
       return [

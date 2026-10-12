@@ -11,6 +11,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAnomalyData } from '@/hooks/use-anomaly-data';
+import { COST_CAPABILITIES } from '@/lib/services/cost-service';
+import { ErrorState } from '@/components/shared/error-state';
+import { NoDataNotice } from '@/components/shared/no-data-notice';
 import { downloadTextFile } from '@/lib/download';
 import { anomaliesToCsv } from '@/lib/export';
 import { formatDateRange } from '@/lib/format';
@@ -28,13 +31,25 @@ import { useDetectionConfig } from './detection-config-context';
 import { DetectionSettingsDialog } from './detection-settings-dialog';
 import { InvestigationDialog } from './investigation-dialog';
 
-const KINDS: readonly AnomalyKind[] = ['spike', 'sustained-increase', 'drop', 'sustained-decrease'];
 const KIND_HELP: Record<AnomalyKind, string> = {
   spike: 'One day far above comparable days',
   'sustained-increase': 'Typical daily cost stepped up and stayed',
+  creep: 'Still climbing rather than settled at a new level',
   drop: 'One day far below comparable days',
   'sustained-decrease': 'Typical daily cost stepped down and stayed',
 };
+
+/**
+ * ONLY LIST THE KINDS THE RUNNING DETECTOR CAN EMIT.
+ *
+ * The client-side detector finds four; the server's finds three, and
+ * two of those sets barely overlap -- it flags rises only, so a live
+ * "Drop: 0" row is not a finding of no drops, it is a filter for
+ * something that cannot happen. The list follows the mode rather
+ * than being a fixed four.
+ */
+const CLIENT_KINDS: readonly AnomalyKind[] = ['spike', 'sustained-increase', 'drop', 'sustained-decrease'];
+const SERVER_KINDS: readonly AnomalyKind[] = ['spike', 'sustained-increase', 'creep'];
 
 function LoadingState() {
   return (
@@ -58,15 +73,18 @@ export function AnomaliesView() {
   const { config, isDefault, reset } = useDetectionConfig();
   const { overrides, setStatus } = useAnomalyStatus();
   const state = useAnomalyData(filters, overrides, config);
+  const configurable = COST_CAPABILITIES.detectionSettings;
+  const kinds = configurable ? CLIENT_KINDS : SERVER_KINDS;
 
   const [filter, setFilter] = useState<AnomalyFilter>(DEFAULT_ANOMALY_FILTER);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const all = state.status === 'ready' ? state.data.anomalies : null;
+  const ready = state.status === 'ready' ? state : null;
+  const all = ready ? ready.data.anomalies : null;
   const filtered = useMemo(() => (all ? filterAnomalies(all, filter) : []), [all, filter]);
   const summary = useMemo(() => summarizeAnomalies(all ?? []), [all]);
-  const timeline = useMemo(() => (state.status === 'ready' ? anomalyTimeline(all ?? [], state.data.range) : []), [state, all]);
+  const timeline = useMemo(() => (ready ? anomalyTimeline(all ?? [], ready.data.range) : []), [ready, all]);
 
   const presetId = matchPreset(config);
   const presetLabel = presetId === 'custom' ? 'Custom' : PRESET_LABELS[presetId];
@@ -84,19 +102,28 @@ export function AnomaliesView() {
     <>
       <PageHeader
         title="Anomaly detection"
-        description="Rule-based detection of cost spikes, sustained increases and unexpected decreases."
+        description={
+          configurable
+            ? 'Rule-based detection of cost spikes, sustained increases and unexpected decreases.'
+            : 'Findings from the rolling median / MAD detector that runs server-side. It flags increases only.'
+        }
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
-              <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
-              Detection settings
-              <Badge variant={isDefault ? 'secondary' : 'default'} className="ml-1">{presetLabel}</Badge>
-            </Button>
+            {/* HIDDEN WHEN THE DETECTOR IS NOT OURS. The dialog edits
+                thresholds the server never sees, so in live mode it
+                would be a settings panel that changes nothing. */}
+            {configurable && (
+              <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
+                <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
+                Detection settings
+                <Badge variant={isDefault ? 'secondary' : 'default'} className="ml-1">{presetLabel}</Badge>
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
               disabled={filtered.length === 0}
-              onClick={() => state.status === 'ready' && downloadTextFile(`cloudlens-anomalies-${state.data.range.from}_${state.data.range.to}.csv`, anomaliesToCsv(filtered))}
+              onClick={() => ready && downloadTextFile(`cloudlens-anomalies-${ready.data.range.from}_${ready.data.range.to}.csv`, anomaliesToCsv(filtered))}
             >
               <Download className="h-3.5 w-3.5" aria-hidden /> Export CSV
             </Button>
@@ -105,7 +132,7 @@ export function AnomaliesView() {
       />
       <FilterBar />
 
-      {!isDefault && (
+      {configurable && !isDefault && (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-accent px-4 py-2.5 text-sm text-accent-foreground" role="status">
           <SlidersHorizontal className="h-4 w-4" aria-hidden />
           Using {presetLabel.toLowerCase()} detection thresholds instead of the defaults.
@@ -115,8 +142,21 @@ export function AnomaliesView() {
 
       {state.status === 'loading' ? (
         <LoadingState />
+      ) : state.status === 'error' ? (
+        <ErrorState title="Could not load anomalies" message={state.message} onRetry={() => window.location.reload()} />
       ) : (
         <div className={cn('animate-fade-in space-y-3 transition-opacity duration-150', state.isRefreshing && 'opacity-60')} aria-busy={state.isRefreshing}>
+          {/* "0 detected" is a real and good finding ONCE there is
+              spend to detect over. Before that it is an absence of
+              input, not an absence of anomalies -- the notice tells
+              those two apart from the data status. */}
+          {state.data.anomalies.length === 0 && state.data.totalDetectedAllTime === 0 && (
+            <NoDataNotice
+              range={formatDateRange(state.data.range.from, state.data.range.to)}
+              emptyTitle="No anomalies detected"
+              emptyMessage="The detector found nothing unusual in this selection. That is the good outcome, not a gap."
+            />
+          )}
           <AnomalySummaryCards summary={summary} totalAllTime={state.data.totalDetectedAllTime} />
 
           <div className="grid gap-3 xl:grid-cols-3">
@@ -128,7 +168,7 @@ export function AnomaliesView() {
               </CardHeader>
               <CardContent>
                 <ul className="space-y-2">
-                  {KINDS.map((k) => {
+                  {kinds.map((k) => {
                     const active = filter.kind === k;
                     return (
                       <li key={k}>

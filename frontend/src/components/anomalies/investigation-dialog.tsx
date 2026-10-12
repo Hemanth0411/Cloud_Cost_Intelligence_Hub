@@ -13,7 +13,7 @@ import { dashboardLink } from '@/lib/links';
 import { workflowActions } from '@/lib/anomaly-workflow';
 import { KIND_LABELS } from '@/lib/selectors/detect-anomalies';
 import { investigateAnomaly } from '@/lib/services/cost-service';
-import { ANOMALY_KIND_CLASS, ANOMALY_STATUS_CLASS, ANOMALY_STATUS_LABEL, PROVIDER_SHORT_NAME, SEVERITY_CLASS, SEVERITY_LABEL } from '@/lib/theme';
+import { ABSENT, ANOMALY_KIND_CLASS, ANOMALY_STATUS_CLASS, ANOMALY_STATUS_LABEL, PROVIDER_SHORT_NAME, severityClass, severityLabel } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import type { AnomalyView } from '@/types/analytics';
 import type { AnomalyStatus } from '@/types/domain';
@@ -62,7 +62,7 @@ function BulletList({ title, items }: { title: string; items: string[] }) {
  */
 export function InvestigationDialog({ anomaly, onClose }: { anomaly: AnomalyView | null; onClose: () => void }) {
   const { config } = useDetectionConfig();
-  const { notes, setStatus, setNote } = useAnomalyStatus();
+  const { notes, setStatus, setNote, persists } = useAnomalyStatus();
   const [draft, setDraft] = useState('');
   const [saved, setSaved] = useState(false);
 
@@ -90,7 +90,10 @@ export function InvestigationDialog({ anomaly, onClose }: { anomaly: AnomalyView
       open={anomaly !== null}
       onOpenChange={(open) => !open && onClose()}
       className="sm:max-w-3xl"
-      title={investigation?.explanation.headline ?? 'Anomaly'}
+      title={
+        investigation?.explanation.headline ??
+        (anomaly ? `${anomaly.serviceName} ${KIND_LABELS[anomaly.kind].toLowerCase()} in ${anomaly.accountName}` : 'Anomaly')
+      }
       description={anomaly ? `${PROVIDER_SHORT_NAME[anomaly.providerId]} · ${anomaly.accountName} · detected ${formatDate(anomaly.date, 'long')}` : undefined}
       footer={
         anomaly && (
@@ -98,7 +101,7 @@ export function InvestigationDialog({ anomaly, onClose }: { anomaly: AnomalyView
             <Link href={link} className="mr-auto inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline">
               <ExternalLink className="h-3.5 w-3.5" aria-hidden /> Open in dashboard
             </Link>
-            {workflowActions(anomaly.status).map((action) => {
+            {workflowActions(anomaly.status, persists).map((action) => {
               const Icon = ACTION_ICON[action.to];
               return (
                 <Button key={action.to} size="sm" variant={action.intent === 'primary' ? 'default' : action.intent === 'secondary' ? 'outline' : 'ghost'} onClick={() => setStatus(anomaly.id, action.to)}>
@@ -110,54 +113,95 @@ export function InvestigationDialog({ anomaly, onClose }: { anomaly: AnomalyView
         )
       }
     >
-      {anomaly && investigation && (
+      {anomaly && (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge className={SEVERITY_CLASS[anomaly.severity]}>{SEVERITY_LABEL[anomaly.severity]} severity</Badge>
+            <Badge className={severityClass(anomaly.severity)}>{severityLabel(anomaly.severity)} severity</Badge>
             <Badge className={ANOMALY_KIND_CLASS[anomaly.kind]}>{KIND_LABELS[anomaly.kind]}</Badge>
             <Badge className={ANOMALY_STATUS_CLASS[anomaly.status]}>{ANOMALY_STATUS_LABEL[anomaly.status]}</Badge>
           </div>
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <Metric label={anomaly.windowDays > 1 ? 'Observed (daily median)' : 'Observed cost'} value={formatCurrency(anomaly.observedCost)} />
+            <Metric label={(anomaly.windowDays ?? 1) > 1 ? 'Observed (daily median)' : 'Observed cost'} value={formatCurrency(anomaly.observedCost)} />
             <Metric label="Expected cost" value={formatCurrency(anomaly.expectedCost)} sub="per day, from the baseline" />
             <Metric label="Difference" value={`${signedUsd(anomaly.differenceCost)} / day`} tone={increase ? 'bad' : 'info'} />
-            <Metric label="Change" value={formatSignedPercent(anomaly.changePct, 0)} tone={increase ? 'bad' : 'info'} />
-            <Metric label="Detection window" value={`${anomaly.windowDays} day${anomaly.windowDays === 1 ? '' : 's'}`} sub={anomaly.windowDays > 1 ? `${formatDate(investigation.context.windowStart, 'short')} – ${formatDate(anomaly.date, 'short')}` : formatDate(anomaly.date, 'short')} />
-            <Metric label="Impact in window" value={signedUsd(anomaly.impactCost)} tone={increase ? 'bad' : 'info'} />
+            <Metric
+              label="Change"
+              value={anomaly.changePct === null ? ABSENT : formatSignedPercent(anomaly.changePct, 0)}
+              sub={anomaly.changePct === null ? 'no prior spend to compare against' : undefined}
+              tone={increase ? 'bad' : 'info'}
+            />
+            <Metric
+              label="Detection window"
+              value={anomaly.windowDays === null ? ABSENT : `${anomaly.windowDays} day${anomaly.windowDays === 1 ? '' : 's'}`}
+              sub={
+                anomaly.windowDays === null
+                  ? `not recorded - began ${formatDate(anomaly.date, 'short')}`
+                  : anomaly.windowDays > 1 && investigation
+                    ? `${formatDate(investigation.context.windowStart, 'short')} - ${formatDate(anomaly.date, 'short')}`
+                    : formatDate(anomaly.date, 'short')
+              }
+            />
+            <Metric
+              label="Impact in window"
+              value={anomaly.impactCost === null ? ABSENT : signedUsd(anomaly.impactCost)}
+              sub={anomaly.impactCost === null ? 'needs a recorded window length' : undefined}
+              tone={increase ? 'bad' : 'info'}
+            />
           </div>
 
-          <div>
-            <h3 className="mb-2 text-sm font-semibold">Daily cost around the detection date</h3>
-            <div className="rounded-lg border p-3">
-              <AnomalyContextChart anomaly={anomaly} context={investigation.context} />
-              <p className="mt-1 text-xs text-muted-foreground">Dashed line: expected daily cost. Shaded area: detection window.</p>
+          {investigation ? (
+            <>
+            <div>
+              <h3 className="mb-2 text-sm font-semibold">Daily cost around the detection date</h3>
+              <div className="rounded-lg border p-3">
+                <AnomalyContextChart anomaly={anomaly} context={investigation.context} />
+                <p className="mt-1 text-xs text-muted-foreground">Dashed line: expected daily cost. Shaded area: detection window.</p>
+              </div>
             </div>
-          </div>
 
-          <div>
-            <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold">
-              What the data shows
-              <Badge variant="outline" className="font-normal">Rule-based explanation</Badge>
-            </h3>
-            <div className="space-y-2.5 text-sm leading-relaxed">
-              <p>{investigation.explanation.whatChanged}</p>
-              {investigation.explanation.contribution && <p>{investigation.explanation.contribution}</p>}
-              {investigation.explanation.usageNote && <p>{investigation.explanation.usageNote}</p>}
-              {investigation.explanation.concurrentNote && <p>{investigation.explanation.concurrentNote}</p>}
+            <div>
+              <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                What the data shows
+                <Badge variant="outline" className="font-normal">Rule-based explanation</Badge>
+              </h3>
+              <div className="space-y-2.5 text-sm leading-relaxed">
+                <p>{investigation.explanation.whatChanged}</p>
+                {investigation.explanation.contribution && <p>{investigation.explanation.contribution}</p>}
+                {investigation.explanation.usageNote && <p>{investigation.explanation.usageNote}</p>}
+                {investigation.explanation.concurrentNote && <p>{investigation.explanation.concurrentNote}</p>}
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Generated from your cost data with deterministic templates. It describes what changed, not why; use the checks below to find the cause.
+              </p>
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Generated from your cost data with deterministic templates. It describes what changed, not why; use the checks below to find the cause.
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <BulletList title="What to investigate next" items={investigation.explanation.investigateNext} />
+              <BulletList title="Recommended actions" items={investigation.explanation.recommendedActions} />
+            </div>
+            </>
+          ) : (
+            /* NO NARRATIVE AND NO CURVE WITHOUT THE ROWS BEHIND THEM.
+               The explanation names the owning team, the service
+               category and the billed-usage trend; the chart plots
+               forty-three daily points. The API returns one finding
+               row and none of that, so the figures above stand alone
+               rather than being padded out with invented context. */
+            <p className="rounded-md border border-dashed bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
+              These figures are the whole finding as the detector recorded it. The surrounding cost
+              curve and the written explanation are built from individual daily rows and from the
+              owning team, owner and service category, none of which the API returns, so they are
+              not shown.
             </p>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <BulletList title="What to investigate next" items={investigation.explanation.investigateNext} />
-            <BulletList title="Recommended actions" items={investigation.explanation.recommendedActions} />
-          </div>
+          )}
 
           <div>
             <label htmlFor="anomaly-note" className="mb-2 block text-sm font-semibold">Investigation notes</label>
+            <p className="mb-2 text-xs text-muted-foreground">
+              Saved in this browser only. There is no column for them in the database, so they do not
+              reach anyone else and do not survive clearing site data.
+            </p>
             <Textarea
               id="anomaly-note"
               value={draft}

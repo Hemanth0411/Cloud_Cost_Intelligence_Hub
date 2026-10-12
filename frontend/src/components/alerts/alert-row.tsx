@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { ACTION_LABELS, availableActions, type AlertAction } from '@/lib/alerts/actions';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { dashboardLink } from '@/lib/links';
-import { ALERT_CATEGORY_LABEL, ALERT_STATUS_CLASS, ALERT_STATUS_LABEL, SEVERITY_CLASS, SEVERITY_LABEL } from '@/lib/theme';
+import { ALERT_CATEGORY_LABEL, ALERT_STATUS_CLASS, ALERT_STATUS_LABEL, severityClass, severityLabel } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import type { AlertCategory, AlertItem } from '@/types/domain';
 
@@ -19,14 +19,20 @@ interface AlertRowProps {
   now: Date;
   /** Channels this alert would be delivered through (always simulated). */
   channels: string[];
+  /**
+   * False for a stored feed row: `alert_events` has one transition
+   * ('read'), so acknowledge / resolve / reopen have nothing to write
+   * to and the buttons are not offered.
+   */
+  workflow?: boolean;
   onToggleRead: () => void;
   onAction: (action: AlertAction) => void;
   onInvestigate?: () => void;
 }
 
-export function AlertRow({ alert, read, now, channels, onToggleRead, onAction, onInvestigate }: AlertRowProps) {
+export function AlertRow({ alert, read, now, channels, workflow = true, onToggleRead, onAction, onInvestigate }: AlertRowProps) {
   const Icon = ICON[alert.category];
-  const actions = availableActions(alert.status);
+  const actions = workflow ? availableActions(alert.status) : [];
   const detailHref =
     alert.category === 'budget' && alert.accountId ? dashboardLink({ accountId: alert.accountId })
       : alert.category === 'connection' && alert.accountId ? '/accounts'
@@ -37,7 +43,7 @@ export function AlertRow({ alert, read, now, channels, onToggleRead, onAction, o
       <span className="mt-2 flex w-2 shrink-0 justify-center" aria-hidden>
         {!read && <span className="h-2 w-2 rounded-full bg-primary" />}
       </span>
-      <span className={cn('mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md', SEVERITY_CLASS[alert.severity])}>
+      <span className={cn('mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md', severityClass(alert.severity))}>
         <Icon className="h-4 w-4" aria-hidden />
       </span>
 
@@ -47,7 +53,7 @@ export function AlertRow({ alert, read, now, channels, onToggleRead, onAction, o
             {!read && <span className="sr-only">Unread: </span>}
             {alert.title}
           </p>
-          <Badge className={SEVERITY_CLASS[alert.severity]}>{SEVERITY_LABEL[alert.severity]}</Badge>
+          {alert.severity !== null && <Badge className={severityClass(alert.severity)}>{severityLabel(alert.severity)}</Badge>}
           <Badge className={ALERT_STATUS_CLASS[alert.status]}>{ALERT_STATUS_LABEL[alert.status]}</Badge>
           <Badge variant="outline">{ALERT_CATEGORY_LABEL[alert.category]}</Badge>
         </div>
@@ -63,7 +69,11 @@ export function AlertRow({ alert, read, now, channels, onToggleRead, onAction, o
               {ACTION_LABELS[action]}
             </Button>
           ))}
-          <Button size="sm" variant="ghost" onClick={onToggleRead}>{read ? 'Mark unread' : 'Mark read'}</Button>
+          {/* Marking a stored feed row UNREAD has no endpoint, so the
+              toggle only appears where it can actually do both. */}
+          {(workflow || !read) && (
+            <Button size="sm" variant="ghost" onClick={onToggleRead}>{read ? 'Mark unread' : 'Mark read'}</Button>
+          )}
           {onInvestigate && <Button size="sm" variant="outline" onClick={onInvestigate}>Investigate</Button>}
           {detailHref && <Link href={detailHref} className="text-xs font-medium text-primary hover:underline">{alert.category === 'connection' ? 'Manage account' : 'View account'}</Link>}
         </div>

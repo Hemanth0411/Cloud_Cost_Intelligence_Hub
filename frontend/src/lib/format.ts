@@ -31,9 +31,22 @@ const dateFormats: Record<DateStyle, Intl.DateTimeFormat> = {
   long: new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }),
 };
 
-/** Formats a `yyyy-MM-dd` string. Always UTC so server and client render identically. */
+/**
+ * Formats a `yyyy-MM-dd` string. Always UTC so server and client
+ * render identically.
+ *
+ * AN UNPARSEABLE VALUE RETURNS A DASH RATHER THAN THROWING.
+ * `Intl.DateTimeFormat.format(Invalid Date)` raises `RangeError`,
+ * which in a React tree is not a bad cell -- it is the whole route
+ * replaced by the error boundary. The coercion layer in
+ * `lib/api/cost-api.ts` defaults missing date columns to `''` so the
+ * types stay honest, and those columns are NOT NULL today; this is
+ * the guard that keeps a schema change from taking a page down.
+ */
 export function formatDate(iso: string, style: DateStyle = 'medium'): string {
-  return dateFormats[style].format(new Date(`${iso}T00:00:00Z`));
+  const date = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return '—';
+  return dateFormats[style].format(date);
 }
 
 export function formatDateRange(from: string, to: string): string {

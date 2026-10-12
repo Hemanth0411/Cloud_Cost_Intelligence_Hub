@@ -9,7 +9,7 @@ interface Acc {
   id: string;
   label: string;
   providerId: ProviderId;
-  category?: ServiceCategory;
+  category?: ServiceCategory | null;
   cur: number[];
   base: number[];
   children: Map<string, number>;
@@ -33,7 +33,7 @@ export function getComparison(ds: Dataset, filters: Filters, baselineKind: Basel
   const curIndex = new Map(eachDay(range.from, range.to).map((d, i) => [d, i] as const));
   const baseIndex = hasBaseline ? new Map(eachDay(baselineFrom, baselineTo).map((d, i) => [d, i] as const)) : new Map<string, number>();
 
-  const newAcc = (id: string, label: string, providerId: ProviderId, category?: ServiceCategory): Acc => ({
+  const newAcc = (id: string, label: string, providerId: ProviderId, category?: ServiceCategory | null): Acc => ({
     id, label, providerId, category, cur: new Array<number>(range.days).fill(0), base: new Array<number>(range.days).fill(0), children: new Map(),
   });
 

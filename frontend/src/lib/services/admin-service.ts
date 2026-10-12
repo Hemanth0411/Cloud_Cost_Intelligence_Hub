@@ -284,7 +284,9 @@ export async function readServices(providerId: string, accountId: string): Promi
     return response.data ?? [];
   }
   const options = getFilterOptions();
-  const ids = new Set(options.serviceIdsByAccount[accountId] ?? []);
+  // Mock mode always knows this map; the null case belongs to live
+  // mode, which took the branch above.
+  const ids = new Set(options.serviceIdsByAccount?.[accountId] ?? []);
   return options.services.filter((s) => ids.has(s.id)).map((s) => s.name);
 }
 

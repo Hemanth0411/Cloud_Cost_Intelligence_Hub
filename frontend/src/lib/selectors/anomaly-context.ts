@@ -1,6 +1,6 @@
 import { addDays, dayOfWeek, diffDays } from '@/lib/dates';
 import type { Dataset } from '@/lib/mock/dataset';
-import type { Anomaly, AnomalyConfig, DailyCost } from '@/types/domain';
+import type { AnomalyConfig, DailyCost, DetectedAnomaly } from '@/types/domain';
 import { isIncrease } from './detect-anomalies';
 
 export interface ContextPoint {
@@ -24,7 +24,7 @@ export interface AnomalyContext {
   /** Billed usage quantity: observed versus typical. */
   usage: { observed: number; expected: number; changePct: number | null };
   /** Other anomalies in the same account within two days. */
-  concurrent: Anomaly[];
+  concurrent: DetectedAnomaly[];
 }
 
 const median = (values: readonly number[]): number => {
@@ -46,8 +46,8 @@ const isWeekend = (iso: string): boolean => {
  */
 export function getAnomalyContext(
   ds: Dataset,
-  anomaly: Anomaly,
-  allAnomalies: readonly Anomaly[],
+  anomaly: DetectedAnomaly,
+  allAnomalies: readonly DetectedAnomaly[],
   config: AnomalyConfig,
 ): AnomalyContext {
   const series: readonly DailyCost[] = ds.seriesByKey.get(`${anomaly.accountId}|${anomaly.serviceId}`) ?? [];

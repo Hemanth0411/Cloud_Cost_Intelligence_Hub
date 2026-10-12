@@ -3,6 +3,16 @@ import type { CostInsight, Opportunity } from '@/types/domain';
 
 export type CsvCell = string | number;
 
+/**
+ * An absent measure is an EMPTY CELL, never a zero.
+ *
+ * A spreadsheet cannot tell 0 from "not available", and these files
+ * get opened in one. `0` in a budget column would be summed.
+ */
+const cell = (value: string | number | null | undefined): CsvCell => value ?? '';
+const moneyCell = (value: number | null | undefined): CsvCell =>
+  value === null || value === undefined ? '' : money(value);
+
 const escapeCell = (value: CsvCell): string => {
   const text = String(value);
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
@@ -40,9 +50,11 @@ export function accountsToCsv(accounts: readonly AccountSummary[]): string {
   return toCsv(
     ['account', 'provider', 'environment', 'team', 'owner', 'spend', 'previous_spend', 'monthly_budget', 'mtd_spend', 'projected_spend', 'projected_budget_pct', 'status'],
     accounts.map((a) => [
-      a.name, a.providerId, a.environment, a.team, a.owner,
-      money(a.cost), money(a.previousCost), a.monthlyBudget, money(a.mtdSpend),
-      money(a.projectedSpend), Math.round(a.projectedPct * 10) / 10, a.budgetStatus,
+      a.name, a.providerId, cell(a.environment), cell(a.team), cell(a.owner),
+      money(a.cost), money(a.previousCost), cell(a.monthlyBudget), moneyCell(a.mtdSpend),
+      moneyCell(a.projectedSpend),
+      a.projectedPct === null ? '' : Math.round(a.projectedPct * 10) / 10,
+      cell(a.budgetStatus),
     ]),
   );
 }
@@ -52,7 +64,8 @@ export function anomaliesToCsv(anomalies: readonly AnomalyView[]): string {
     ['detected_on', 'kind', 'severity', 'status', 'provider', 'account', 'service', 'observed_cost', 'expected_cost', 'difference', 'change_pct', 'window_days', 'impact'],
     anomalies.map((a) => [
       a.date, a.kind, a.severity, a.status, a.providerId, a.accountName, a.serviceName,
-      a.observedCost, a.expectedCost, a.differenceCost, a.changePct, a.windowDays, a.impactCost,
+      a.observedCost, a.expectedCost, a.differenceCost,
+      cell(a.changePct), cell(a.windowDays), cell(a.impactCost),
     ]),
   );
 }

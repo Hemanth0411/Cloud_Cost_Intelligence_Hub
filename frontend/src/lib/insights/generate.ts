@@ -6,8 +6,8 @@ import { isActive, SEVERITY_ORDER } from '@/lib/selectors/anomaly-views';
 import { getContributors, increaseConcentration, type PairDelta } from '@/lib/selectors/contributors';
 import { isIncrease } from '@/lib/selectors/detect-anomalies';
 import { getScope } from '@/lib/selectors/scope';
-import type { AnomalyView, DashboardData, Filters } from '@/types/analytics';
-import type { Anomaly, AnomalyConfig, CostInsight, DailyCost, InsightKind, InsightPriority } from '@/types/domain';
+import type { DetectedAnomalyView, FullDashboardData, Filters } from '@/types/analytics';
+import type { AnomalyConfig, CostInsight, DailyCost, DetectedAnomaly, InsightKind, InsightPriority } from '@/types/domain';
 import { explainAnomaly } from './narrative';
 
 export interface InsightReport {
@@ -51,8 +51,8 @@ function sumByService(rows: readonly DailyCost[], from: string, to: string, pick
 export function generateInsightReport(
   ds: Dataset,
   filters: Filters,
-  data: DashboardData,
-  detected: readonly Anomaly[],
+  data: FullDashboardData,
+  detected: readonly DetectedAnomaly[],
   config: AnomalyConfig,
 ): InsightReport {
   const { range, kpis } = data;
@@ -149,7 +149,7 @@ export function generateInsightReport(
 
   // ---- 2. Anomalies: the largest unresolved findings, explained from the data ---------------------
   const active = data.anomalies.filter((a) => isActive(a.status));
-  const rankBySeverity = (a: AnomalyView, b: AnomalyView): number =>
+  const rankBySeverity = (a: DetectedAnomalyView, b: DetectedAnomalyView): number =>
     SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity) || abs(b.impactCost) - abs(a.impactCost);
   const increases = active.filter((a) => isIncrease(a.kind)).sort(rankBySeverity).slice(0, 3);
   const decreases = active.filter((a) => !isIncrease(a.kind)).sort(rankBySeverity).slice(0, 1);

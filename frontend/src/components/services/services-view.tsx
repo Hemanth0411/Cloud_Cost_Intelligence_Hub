@@ -8,6 +8,8 @@ import { useAnomalyStatus } from '@/components/dashboard/anomaly-status-context'
 import { FilterBar } from '@/components/filters/filter-bar';
 import { useFilters } from '@/components/filters/filters-context';
 import { PageHeader } from '@/components/layout/page-header';
+import { ErrorState } from '@/components/shared/error-state';
+import { NoDataNotice } from '@/components/shared/no-data-notice';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -17,7 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useDashboardData } from '@/hooks/use-dashboard-data';
 import { formatCurrency, formatPercent, formatSignedPercent } from '@/lib/format';
 import { dashboardLink } from '@/lib/links';
-import { getFilterOptions } from '@/lib/services/cost-service';
+import { COST_CAPABILITIES, getFilterOptions } from '@/lib/services/cost-service';
 import { PROVIDER_COLOR, PROVIDER_SHORT_NAME } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import type { BreakdownItem } from '@/types/analytics';
@@ -42,13 +44,27 @@ export function ServicesView() {
   const [sortKey, setSortKey] = useState<SortKey>('cost');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
+  /**
+   * How many accounts bill each service -- or NULL when the source
+   * cannot say.
+   *
+   * It would be one `/cost/breakdown?dimension=service` per account
+   * to find out, and the column previously rendered the unknown as
+   * `0`: every service in the estate shown as used by no account.
+   * Null drops the column instead.
+   */
   const accountsPerService = useMemo(() => {
+    const byAccount = getFilterOptions().serviceIdsByAccount;
+    if (byAccount === null) return null;
     const map = new Map<string, number>();
-    for (const ids of Object.values(getFilterOptions().serviceIdsByAccount)) for (const id of ids) map.set(id, (map.get(id) ?? 0) + 1);
+    for (const ids of Object.values(byAccount)) for (const id of ids) map.set(id, (map.get(id) ?? 0) + 1);
     return map;
   }, []);
 
-  const all: BreakdownItem[] = state.status === 'ready' ? state.data.breakdowns.service : [];
+  // Memoised so the identity is stable across renders: two useMemos
+  // below depend on it, and a fresh [] every render re-ran both.
+  const ready = state.status === 'ready' ? state.data : null;
+  const all: BreakdownItem[] = useMemo(() => ready?.breakdowns.service ?? [], [ready]);
   const categoryCounts = useMemo(() => {
     const counts = new Map<ServiceCategory | 'all', number>([['all', all.length]]);
     for (const s of all) if (s.category) counts.set(s.category, (counts.get(s.category) ?? 0) + 1);
@@ -59,7 +75,7 @@ export function ServicesView() {
     const q = query.trim().toLowerCase();
     const dir = sortDir === 'asc' ? 1 : -1;
     const value = (s: BreakdownItem): string | number =>
-      sortKey === 'label' ? s.label.toLowerCase() : sortKey === 'cost' ? s.cost : sortKey === 'sharePct' ? s.sharePct : sortKey === 'accounts' ? accountsPerService.get(s.id) ?? 0 : s.deltaPct ?? Number.NEGATIVE_INFINITY;
+      sortKey === 'label' ? s.label.toLowerCase() : sortKey === 'cost' ? s.cost : sortKey === 'sharePct' ? s.sharePct : sortKey === 'accounts' ? accountsPerService?.get(s.id) ?? 0 : s.deltaPct ?? Number.NEGATIVE_INFINITY;
     return all
       .filter((s) => (category === 'all' || s.category === category) && (q === '' || s.label.toLowerCase().includes(q) || PROVIDER_SHORT_NAME[s.providerId].toLowerCase().includes(q)))
       .sort((a, b) => (value(a) < value(b) ? -1 : value(a) > value(b) ? 1 : 0) * dir);
@@ -96,14 +112,24 @@ export function ServicesView() {
       <PageHeader title="Cloud services" description="Every service with spend in the selected period, across all providers." />
       <FilterBar />
 
+      {state.status === 'ready' && all.length === 0 && <NoDataNotice />}
+
       <Card>
         <CardHeader className="gap-3">
           <div>
             <CardTitle>Services</CardTitle>
-            <CardDescription>{state.status === 'ready' ? `${rows.length} services · ${formatCurrency(categoryTotal)} in view` : 'Loading…'}</CardDescription>
+            <CardDescription>
+              {state.status !== 'ready'
+                ? 'Loading…'
+                : rows.length === 0
+                  ? 'No services with spend in this selection'
+                  : `${rows.length} services · ${formatCurrency(categoryTotal)} in view`}
+            </CardDescription>
           </div>
           <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
-            <SegmentedControl ariaLabel="Service category" options={options} value={category} onChange={setCategory} />
+            {COST_CAPABILITIES.serviceCategories && (
+              <SegmentedControl ariaLabel="Service category" options={options} value={category} onChange={setCategory} />
+            )}
             <div className="relative lg:ml-auto lg:w-64">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
               <label htmlFor="service-search" className="sr-only">Search services</label>
@@ -112,22 +138,24 @@ export function ServicesView() {
           </div>
         </CardHeader>
         <CardContent className="px-0 pb-2">
-          {state.status === 'loading' ? (
+          {state.status === 'error' ? (
+            <div className="px-3 pb-3"><ErrorState title="Could not load services" message={state.message} onRetry={() => window.location.reload()} /></div>
+          ) : state.status === 'loading' ? (
             <div className="space-y-3 px-3 pb-3">{Array.from({ length: 8 }, (_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
           ) : (
             <Table className="min-w-[700px]">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   {header('label', 'Service')}
-                  <TableHead>Category</TableHead>
+                  {COST_CAPABILITIES.serviceCategories && <TableHead>Category</TableHead>}
                   {header('cost', 'Spend', true)}
                   {header('sharePct', 'Share', true)}
                   {header('deltaPct', 'vs previous', true)}
-                  {header('accounts', 'Accounts', true)}
+                  {accountsPerService !== null && header('accounts', 'Accounts', true)}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.length === 0 && <TableRow className="hover:bg-transparent"><TableCell colSpan={6} className="py-12 text-center text-sm text-muted-foreground">No services match.</TableCell></TableRow>}
+                {rows.length === 0 && <TableRow className="hover:bg-transparent"><TableCell colSpan={accountsPerService === null ? 5 : 6} className="py-12 text-center text-sm text-muted-foreground">No services match.</TableCell></TableRow>}
                 {rows.map((s) => (
                   <TableRow key={s.id}>
                     <TableCell>
@@ -139,11 +167,11 @@ export function ServicesView() {
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell><Badge variant="secondary">{s.category ? CATEGORY_LABEL[s.category] : 'n/a'}</Badge></TableCell>
+                    {COST_CAPABILITIES.serviceCategories && <TableCell><Badge variant="secondary">{s.category ? CATEGORY_LABEL[s.category] : 'n/a'}</Badge></TableCell>}
                     <TableCell className="text-right font-medium tabular-nums">{formatCurrency(s.cost)}</TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">{formatPercent(s.sharePct)}</TableCell>
                     <TableCell className={cn('text-right tabular-nums', s.deltaPct === null ? 'text-muted-foreground' : s.deltaPct > 0 ? 'text-destructive' : 'text-success')}>{s.deltaPct === null ? '–' : formatSignedPercent(s.deltaPct)}</TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">{accountsPerService.get(s.id) ?? 0}</TableCell>
+                    {accountsPerService !== null && <TableCell className="text-right tabular-nums text-muted-foreground">{accountsPerService.get(s.id) ?? 0}</TableCell>}
                   </TableRow>
                 ))}
               </TableBody>

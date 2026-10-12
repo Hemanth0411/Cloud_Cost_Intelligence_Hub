@@ -1,5 +1,5 @@
 import { dayOfWeek, eachDay } from '@/lib/dates';
-import type { Account, DailyCost, Service } from '@/types/domain';
+import type { DailyCost, MockAccount, MockService } from '@/types/domain';
 import { ACCOUNT_GENERATION, ENVIRONMENT_WEEKEND_FACTOR, SERVICE_PROFILE } from './catalog';
 import { createRng, hashString, noise } from './seed';
 
@@ -86,7 +86,7 @@ const LEVEL_SHIFTS: LevelShift[] = [
 
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 
-export function generateDailyCosts(accounts: Account[], services: Service[]): DailyCost[] {
+export function generateDailyCosts(accounts: MockAccount[], services: MockService[]): DailyCost[] {
   const serviceById = new Map(services.map((s) => [s.id, s]));
   const dates = eachDay(DATASET_START_DATE, DATASET_END_DATE);
   const lastIndex = dates.length - 1;

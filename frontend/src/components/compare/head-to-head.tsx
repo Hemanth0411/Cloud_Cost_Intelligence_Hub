@@ -78,7 +78,13 @@ export function HeadToHead({ entities, points, dimension, days, hasBaseline, dis
     );
   }
 
-  const rows: Row[] = points.map((p, i) => ({ date: p.currentDate, a: a.dailyCurrent[i] ?? 0, b: b.dailyCurrent[i] ?? 0 }));
+  // Null means the source cannot produce a per-entity daily curve, not
+  // that it spent nothing. Zeros here would draw two flat lines along
+  // the axis, which is a picture of a fact nobody measured.
+  const curves = a.dailyCurrent !== null && b.dailyCurrent !== null ? { a: a.dailyCurrent, b: b.dailyCurrent } : null;
+  const rows: Row[] = curves === null
+    ? []
+    : points.map((p, i) => ({ date: p.currentDate, a: curves.a[i] ?? 0, b: curves.b[i] ?? 0 }));
   const diff = a.current - b.current;
   const diffPct = b.current > 0 ? (diff / b.current) * 100 : null;
   const interval = Math.max(0, Math.ceil(rows.length / 8) - 1);
@@ -118,22 +124,35 @@ export function HeadToHead({ entities, points, dimension, days, hasBaseline, dis
           <Side entity={b} name={nameB} color={COLOR_B} days={days} hasBaseline={hasBaseline} childLabel={childLabel} />
         </div>
 
-        <div className="h-[240px] w-full" role="img" aria-label={`Daily spend of ${nameA} compared with ${nameB}`}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid vertical={false} stroke={GRID_STROKE} strokeDasharray="3 4" />
-              <XAxis dataKey="date" tick={AXIS_TICK} tickLine={false} axisLine={false} interval={interval} minTickGap={16} tickFormatter={(v: string) => formatDate(v, 'short')} />
-              <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} width={52} tickFormatter={(v: number) => formatCompactCurrency(v)} />
-              <Tooltip content={<PairTooltip nameA={nameA} nameB={nameB} />} cursor={{ stroke: 'hsl(var(--muted-foreground))', strokeDasharray: '3 3' }} />
-              <Line type="monotone" dataKey="a" stroke={COLOR_A} strokeWidth={2} dot={false} animationDuration={450} />
-              <Line type="monotone" dataKey="b" stroke={COLOR_B} strokeWidth={2} dot={false} animationDuration={450} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1.5"><span className="h-0.5 w-5 rounded" style={{ backgroundColor: COLOR_A }} aria-hidden /> {nameA}</span>
-          <span className="flex items-center gap-1.5"><span className="h-0.5 w-5 rounded" style={{ backgroundColor: COLOR_B }} aria-hidden /> {nameB}</span>
-        </div>
+        {/* WITHHELD, NOT DRAWN EMPTY. With no per-entity daily
+            curve this used to render the axes, the grid and a
+            two-colour legend over nothing -- a chart frame that
+            looks like a measurement returning no values. */}
+        {curves === null ? (
+          <p className="rounded-md border border-dashed bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
+            A day-by-day curve per {dimension} is not available from this data source: it needs one
+            request per {dimension}. The totals above are complete.
+          </p>
+        ) : (
+          <>
+            <div className="h-[240px] w-full" role="img" aria-label={`Daily spend of ${nameA} compared with ${nameB}`}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid vertical={false} stroke={GRID_STROKE} strokeDasharray="3 4" />
+                  <XAxis dataKey="date" tick={AXIS_TICK} tickLine={false} axisLine={false} interval={interval} minTickGap={16} tickFormatter={(v: string) => formatDate(v, 'short')} />
+                  <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} width={52} tickFormatter={(v: number) => formatCompactCurrency(v)} />
+                  <Tooltip content={<PairTooltip nameA={nameA} nameB={nameB} />} cursor={{ stroke: 'hsl(var(--muted-foreground))', strokeDasharray: '3 3' }} />
+                  <Line type="monotone" dataKey="a" stroke={COLOR_A} strokeWidth={2} dot={false} animationDuration={450} />
+                  <Line type="monotone" dataKey="b" stroke={COLOR_B} strokeWidth={2} dot={false} animationDuration={450} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1.5"><span className="h-0.5 w-5 rounded" style={{ backgroundColor: COLOR_A }} aria-hidden /> {nameA}</span>
+              <span className="flex items-center gap-1.5"><span className="h-0.5 w-5 rounded" style={{ backgroundColor: COLOR_B }} aria-hidden /> {nameB}</span>
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );

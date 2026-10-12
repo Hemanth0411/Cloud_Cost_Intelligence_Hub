@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCompactCurrency, formatCurrency, formatDate, formatSignedPercent } from '@/lib/format';
 import { isIncrease, KIND_LABELS } from '@/lib/selectors/detect-anomalies';
-import { ANOMALY_KIND_CLASS, ANOMALY_STATUS_CLASS, ANOMALY_STATUS_LABEL, PROVIDER_COLOR, PROVIDER_SHORT_NAME, SEVERITY_CLASS, SEVERITY_LABEL } from '@/lib/theme';
+import { ABSENT, ANOMALY_KIND_CLASS, ANOMALY_STATUS_CLASS, ANOMALY_STATUS_LABEL, PROVIDER_COLOR, PROVIDER_SHORT_NAME, SEVERITY_CLASS, SEVERITY_LABEL } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import type { AnomalyView } from '@/types/analytics';
 
@@ -59,7 +59,7 @@ export function AnomaliesPanel({ anomalies, onSelect }: AnomaliesPanelProps) {
                 </div>
                 <div className="text-right">
                   <p className={cn('text-sm font-semibold tabular-nums', isIncrease(a.kind) ? 'text-destructive' : 'text-primary')}>
-                    {formatSignedPercent(a.changePct, 0)}
+                    {a.changePct === null ? ABSENT : formatSignedPercent(a.changePct, 0)}
                   </p>
                   <p className="text-xs text-muted-foreground tabular-nums" title={`${formatCurrency(a.observedCost)} vs ${formatCurrency(a.expectedCost)} expected per day`}>
                     {formatCompactCurrency(a.observedCost)} vs {formatCompactCurrency(a.expectedCost)}

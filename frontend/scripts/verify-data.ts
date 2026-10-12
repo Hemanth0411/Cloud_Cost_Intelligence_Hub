@@ -30,7 +30,22 @@ import { EMPTY_ALERT_STATE, parseAlertState } from '@/lib/alerts/state';
 import { parseConnectionOverrides } from '@/lib/connections';
 import { maskEmail } from '@/lib/auth/validation';
 import { isUser } from '@/lib/auth/session';
-import type { DashboardData, Filters, Granularity } from '@/types/analytics';
+import type { Filters, FullDashboardData, Granularity } from '@/types/analytics';
+
+/**
+ * EVERYTHING HERE RUNS ON THE MOCK DATASET, so the facade functions
+ * that return null in live mode never do. These two unwrap that,
+ * loudly: a null would mean the script had somehow been pointed at
+ * the API, and failing with a named error beats 40 lines of
+ * `Cannot read properties of null`.
+ */
+function required<T>(value: T | null, what: string): T {
+  if (value === null) throw new Error(`${what} is null: verify-data only runs against the mock dataset.`);
+  return value;
+}
+
+const requiredBundle = (...args: Parameters<typeof buildInsightBundle>): NonNullable<ReturnType<typeof buildInsightBundle>> =>
+  required(buildInsightBundle(...args), 'insight bundle');
 
 const ds = getDataset();
 let failures = 0;
@@ -96,7 +111,7 @@ const rowsFor = (f: Filters, from: string, to: string): number =>
 
 for (const f of matrix) {
   const label = `${f.range}/${f.providerId}/${f.accountId}/${f.serviceId}`;
-  const d: DashboardData = getDashboardData(ds, f);
+  const d: FullDashboardData = getDashboardData(ds, f);
   const total = d.kpis.totalSpend.value;
   const raw = rowsFor(f, d.range.from, d.range.to);
 
@@ -110,7 +125,6 @@ for (const f of matrix) {
   check(`[${label}] account table sums to total`, near(sum(d.accounts.map((a) => a.cost)), total));
   check(`[${label}] shares sum to ~100%`, total === 0 || near(sum(d.breakdowns.service.map((p) => p.sharePct)), 100, 0.01));
   check(`[${label}] services KPI == service breakdown size`, d.kpis.services.inUse === d.breakdowns.service.length);
-  check(`[${label}] connected accounts KPI == account rows`, d.kpis.accounts.connected === d.accounts.length);
   check(`[${label}] anomalies inside range and scope`,
     d.anomalies.every((a) => a.date >= d.range.from && a.date <= d.range.to &&
       (f.providerId === 'all' || a.providerId === f.providerId) &&
@@ -247,8 +261,8 @@ check('facade returns cached default and custom configs', getAnomalies(DEFAULT_A
     check('overrides do not alter spend figures', d1.kpis.totalSpend.value === d0.kpis.totalSpend.value);
     const d2 = getDashboardData(ds, base, { [target.id]: 'investigating' });
     check("'investigating' still counts as active", d2.kpis.anomalies.active === d0.kpis.anomalies.active);
-    const ins0 = buildInsightBundle(base, {}, DEFAULT_ANOMALY_CONFIG).report.insights.filter((i) => i.kind === 'anomaly');
-    const ins1 = buildInsightBundle(base, Object.fromEntries(d0.anomalies.map((a) => [a.id, 'resolved' as const])), DEFAULT_ANOMALY_CONFIG).report.insights.filter((i) => i.kind === 'anomaly');
+    const ins0 = requiredBundle(base, {}, DEFAULT_ANOMALY_CONFIG).report.insights.filter((i) => i.kind === 'anomaly');
+    const ins1 = requiredBundle(base, Object.fromEntries(d0.anomalies.map((a) => [a.id, 'resolved' as const])), DEFAULT_ANOMALY_CONFIG).report.insights.filter((i) => i.kind === 'anomaly');
     check('anomaly insights exist, and vanish when every anomaly is resolved', ins0.length > 0 && ins1.length === 0, `${ins0.length}/${ins1.length}`);
   }
 }
@@ -268,8 +282,8 @@ check('facade returns cached default and custom configs', getAnomalies(DEFAULT_A
   ];
   for (const f of scopes) {
     const label = `${f.range}/${f.providerId}/${f.accountId}/${f.serviceId}`;
-    const a = buildInsightBundle(f, {}, DEFAULT_ANOMALY_CONFIG);
-    const b = buildInsightBundle(f, {}, DEFAULT_ANOMALY_CONFIG);
+    const a = requiredBundle(f, {}, DEFAULT_ANOMALY_CONFIG);
+    const b = requiredBundle(f, {}, DEFAULT_ANOMALY_CONFIG);
     check(`[insights ${label}] deterministic`, JSON.stringify(a.report) === JSON.stringify(b.report));
     const r = a.report;
     check(`[insights ${label}] headline mentions spend`, /\$[\d.]+[KMB]?/.test(r.headline) && !BAD.test(r.headline), r.headline);
@@ -285,11 +299,11 @@ check('facade returns cached default and custom configs', getAnomalies(DEFAULT_A
     check(`[insights ${label}] optimization text labels savings as estimates`, r.insights.filter((i) => i.kind === 'optimization').every((i) => /estimate/i.test(i.summary)));
     check(`[insights ${label}] no root-cause claims`, !/\b(caused by|because of a|due to a|root cause is)\b/i.test(text), (text.match(/\b(caused by|because of a|due to a|root cause is)\b/i) ?? [''])[0]);
   }
-  const main = buildInsightBundle(base, {}, DEFAULT_ANOMALY_CONFIG);
+  const main = requiredBundle(base, {}, DEFAULT_ANOMALY_CONFIG);
   const change = main.report.insights.find((i) => i.kind === 'change');
   check('change insight names a contributing account and service', !!change && change.relatedAccountIds.length === 1 && change.relatedServiceIds.length === 1);
   check('change insight cites the same total as the KPI', !!change && change.evidence[0]?.label === 'This period');
-  check('different scope changes the insight text', buildInsightBundle({ ...base, providerId: 'aws' }, {}, DEFAULT_ANOMALY_CONFIG).report.headline !== main.report.headline);
+  check('different scope changes the insight text', requiredBundle({ ...base, providerId: 'aws' }, {}, DEFAULT_ANOMALY_CONFIG).report.headline !== main.report.headline);
   check('insights CSV rows == insights', insightsToCsv(main.report.insights).split('\r\n').length >= main.report.insights.length + 1);
 }
 
@@ -322,7 +336,7 @@ check('facade returns cached default and custom configs', getAnomalies(DEFAULT_A
   check('the whole history is available as anomaly views', everyView.length === ds.anomalies.length);
   let badText = 0, badContext = 0, badShare = 0, noSteps = 0;
   for (const v of everyView) {
-    const inv = investigateAnomaly(v, DEFAULT_ANOMALY_CONFIG);
+    const inv = required(investigateAnomaly(v, DEFAULT_ANOMALY_CONFIG), 'investigation');
     const text = [inv.explanation.headline, inv.explanation.whatChanged, inv.explanation.contribution ?? '', inv.explanation.usageNote ?? '', inv.explanation.concurrentNote ?? '', ...inv.explanation.investigateNext, ...inv.explanation.recommendedActions, ...inv.explanation.evidence.map((e) => `${e.label} ${e.value}`)].join(' ');
     if (/NaN|undefined|Infinity|null|\[object/.test(text)) badText += 1;
     if (inv.context.points.length < 8 || !inv.context.points.some((p) => p.date === v.date)) badContext += 1;
@@ -332,17 +346,19 @@ check('facade returns cached default and custom configs', getAnomalies(DEFAULT_A
   }
   check('every anomaly explanation is free of NaN/undefined', badText === 0, `${badText} bad`);
   check('every anomaly has a context curve containing its detection date', badContext === 0, `${badContext} bad`);
+  check('the client detector always records a window, an impact and a percent change',
+    ds.anomalies.every((a) => a.windowDays !== null && a.impactCost !== null && a.changePct !== null));
   check('account contribution share stays within 0-100%', badShare === 0, `${badShare} bad`);
   check('every anomaly has investigate/action guidance', noSteps === 0);
   const sample = everyView.find((v) => v.kind === 'sustained-increase');
   if (sample) {
-    const inv = investigateAnomaly(sample, DEFAULT_ANOMALY_CONFIG);
+    const inv = required(investigateAnomaly(sample, DEFAULT_ANOMALY_CONFIG), 'investigation');
     check('sustained explanation mentions the monthly run-rate', /per month/.test(inv.explanation.whatChanged));
     check('sustained context window starts 6 days before detection', inv.context.windowStart < sample.date);
   }
   const decrease = everyView.find((v) => v.kind === 'drop');
   if (decrease) {
-    const inv = investigateAnomaly(decrease, DEFAULT_ANOMALY_CONFIG);
+    const inv = required(investigateAnomaly(decrease, DEFAULT_ANOMALY_CONFIG), 'investigation');
     check('drop explanation warns it may signal an outage rather than savings', /outage/i.test(inv.explanation.investigateNext.join(' ')));
     check('drop explanation uses the word "below"', /below/.test(inv.explanation.whatChanged));
   }
@@ -449,7 +465,7 @@ function memoryStore(): KeyValueStore & { dump(): string } {
       check(`[compare ${label}] ${name} diffs sum to the total diff`, near(sum(mine.map((m) => m.diff)), c.totals.diff, 0.1));
       check(`[compare ${label}] ${name} diffPct sign matches diff`, mine.every((m) => m.diffPct === null || (m.diff >= 0) === (m.diffPct >= 0)));
       check(`[compare ${label}] ${name} contributions sum to 100% when there is a change`, !c.hasBaseline || c.totals.diff === 0 || near(sum(mine.map((m) => m.contributionPct ?? 0)), 100, 0.01));
-      check(`[compare ${label}] ${name} daily arrays have one value per day and sum to the entity`, mine.every((m) => m.dailyCurrent.length === c.range.days && m.dailyBaseline.length === c.range.days && near(sum(m.dailyCurrent), m.current, 0.5 + c.range.days * 0.005)));
+      check(`[compare ${label}] ${name} daily arrays have one value per day and sum to the entity`, mine.every((m) => m.dailyCurrent !== null && m.dailyBaseline !== null && m.dailyCurrent.length === c.range.days && m.dailyBaseline.length === c.range.days && near(sum(m.dailyCurrent), m.current, 0.5 + c.range.days * 0.005)));
       check(`[compare ${label}] ${name} shares add to ~100%`, c.totals.current === 0 || near(sum(mine.map((m) => m.sharePct)), 100, 0.01));
       check(`[compare ${label}] ${name} sorted by current spend`, mine.every((m, i) => i === 0 || (mine[i - 1]?.current ?? 0) >= m.current));
       check(`[compare ${label}] ${name} top child exists for every entity with spend`, mine.every((m) => m.current === 0 || m.topChild !== null));
@@ -515,7 +531,7 @@ function memoryStore(): KeyValueStore & { dump(): string } {
   check('lowest threshold shows everything', all.visible.length === withSim.length && all.hidden === 0);
   check('raising the minimum severity hides more (monotonic)', str.visible.length <= def.visible.length && def.visible.length <= all.visible.length);
   check('hidden count is consistent', def.hidden === withSim.length - def.visible.length && str.hidden === withSim.length - str.visible.length);
-  check('visible alerts respect the minimum severity (simulated events excepted)', str.visible.every((a) => a.simulated || severityAtLeast(a.severity, 'critical')));
+  check('visible alerts respect the minimum severity (simulated events excepted)', str.visible.every((a) => a.simulated || (a.severity !== null && severityAtLeast(a.severity, 'critical'))));
   check('category toggles remove that category', applyPreferences(withSim, noBudget).visible.every((a) => a.category !== 'budget') && applyPreferences(withSim, noBudget).visible.some((a) => a.category === 'anomaly'));
   check('simulated demo events are always shown', str.visible.some((a) => a.simulated));
   check('severityAtLeast ordering', severityAtLeast('high', 'medium') && !severityAtLeast('low', 'medium') && severityAtLeast('critical', 'critical'));
@@ -593,13 +609,13 @@ const all = getDashboardData(ds, base);
 console.log(`\nDataset: ${ds.startDate} -> ${ds.endDate}  rows=${ds.costs.length}  accounts=${ds.accounts.length}  services=${ds.services.length}  anomalies=${ds.anomalies.length}`);
 const k = all.kpis;
 console.log(`30d spend ${usd(k.totalSpend.value)} vs prev ${usd(k.previousSpend.value ?? 0)} (${k.previousSpend.changePct?.toFixed(1)}%) | MTD ${usd(k.monthToDate.value)} | forecast ${usd(k.forecast.value)} | budget ${usd(k.budget.monthlyBudget)} (${k.budget.projectedPct.toFixed(1)}%)`);
-console.log(`accounts ${k.accounts.connected} | services ${k.services.inUse} | anomalies ${k.anomalies.total} (${k.anomalies.active} active) | savings ${usd(k.savings.monthly)}/mo (${k.savings.pctOfRunRate.toFixed(1)}% of run-rate)`);
+console.log(`accounts ${all.accounts.length} | services ${k.services.inUse} | anomalies ${k.anomalies.total} (${k.anomalies.active} active) | savings ${usd(k.savings.monthly)}/mo (${k.savings.pctOfRunRate.toFixed(1)}% of run-rate)`);
 console.log('Yearly:', all.series.year.map((p) => `${p.start.slice(0, 4)}=${usd(p.total)}${p.partial ? '*' : ''}`).join('  '));
 console.log('\nAccounts (projected vs budget):');
 for (const a of all.accounts) console.log(`  ${a.name.padEnd(22)} ${usd(a.projectedSpend).padStart(9)} / ${usd(a.monthlyBudget).padStart(9)} = ${a.projectedPct.toFixed(0).padStart(3)}%  ${a.budgetStatus}`);
 console.log('\nSavings opportunities:');
 for (const s of all.savings) console.log(`  ${usd(s.estimatedMonthlySavings).padStart(8)}  (${usd(s.rangeLow)}-${usd(s.rangeHigh)}) ${s.confidence.padEnd(6)} ${s.title}`);
-console.log('\nHeadline:', buildInsightBundle(base, {}, DEFAULT_ANOMALY_CONFIG).report.headline);
+console.log('\nHeadline:', requiredBundle(base, {}, DEFAULT_ANOMALY_CONFIG).report.headline);
 console.log('\nAnomalies by year:', [...years].sort().map((y) => `${y}:${ds.anomalies.filter((a) => a.date.startsWith(y)).length}`).join('  '));
 
 console.log(`\n${checks - failures}/${checks} checks passed`);

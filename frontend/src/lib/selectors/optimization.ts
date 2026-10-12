@@ -1,7 +1,7 @@
 import { dayOfWeek } from '@/lib/dates';
 import { formatCompactCurrency, formatPercent } from '@/lib/format';
 import type { Dataset } from '@/lib/mock/dataset';
-import type { AnomalyView } from '@/types/analytics';
+import type { DetectedAnomalyView } from '@/types/analytics';
 import type { Confidence, DailyCost, Effort, Environment, Evidence, Opportunity, ServiceCategory } from '@/types/domain';
 import { isActive } from './anomaly-views';
 
@@ -249,7 +249,7 @@ export interface OpportunityResult {
 export function computeOpportunities(
   ds: Dataset,
   rows: readonly DailyCost[],
-  anomalies: readonly AnomalyView[],
+  anomalies: readonly DetectedAnomalyView[],
   days: number,
 ): OpportunityResult {
   const monthly = 30 / days;

@@ -1,12 +1,14 @@
 'use client';
 
-import { useMemo } from 'react';
-import { readComparison } from '@/lib/services/cost-service';
+import { useCallback } from 'react';
+import { useAsyncData, type AsyncState } from '@/hooks/use-async-data';
+import { loadComparison } from '@/lib/services/cost-service';
 import type { BaselineKind, ComparisonResult, Filters } from '@/types/analytics';
 
-export type ComparisonState = { status: 'loading' } | { status: 'ready'; data: ComparisonResult; isRefreshing: boolean };
+export type ComparisonState = AsyncState<ComparisonResult>;
 
 export function useComparison(filters: Filters, baseline: BaselineKind): ComparisonState {
-  const data = useMemo(() => readComparison(filters, baseline), [filters, baseline]);
-  return { status: 'ready', data, isRefreshing: false };
+  const key = JSON.stringify([filters, baseline]);
+  const load = useCallback(() => loadComparison(filters, baseline), [filters, baseline]);
+  return useAsyncData(key, load);
 }

@@ -1,6 +1,7 @@
 import { Activity, AlertTriangle, ArrowDownRight, DollarSign, Radar } from 'lucide-react';
 import { KpiCard } from '@/components/dashboard/kpi-card';
 import { formatCompactCurrency } from '@/lib/format';
+import { ABSENT } from '@/lib/theme';
 import type { AnomalySummary } from '@/lib/selectors/anomaly-views';
 
 export function AnomalySummaryCards({ summary, totalAllTime }: { summary: AnomalySummary; totalAllTime: number }) {
@@ -16,12 +17,29 @@ export function AnomalySummaryCards({ summary, totalAllTime }: { summary: Anomal
         hint={`${summary.byStatus.open} open · ${summary.byStatus.investigating} investigating · ${summary.byStatus.acknowledged} acknowledged`}
       />
       <KpiCard title="High / critical" icon={AlertTriangle} tone={highCritical > 0 ? 'danger' : 'default'} value={String(highCritical)} hint={`${summary.bySeverity.critical} critical · ${summary.bySeverity.high} high (all statuses)`} />
-      <KpiCard title="Excess spend" icon={DollarSign} tone={summary.activeIncreaseImpact > 0 ? 'danger' : 'default'} value={formatCompactCurrency(summary.activeIncreaseImpact)} hint="in active increases (inside detection windows)" />
+      <KpiCard
+        title="Excess spend"
+        icon={DollarSign}
+        tone={(summary.activeIncreaseImpact ?? 0) > 0 ? 'danger' : 'default'}
+        value={summary.activeIncreaseImpact === null ? ABSENT : formatCompactCurrency(summary.activeIncreaseImpact)}
+        hint={
+          // The API's findings carry no window length, so the dollars
+          // inside the window cannot be summed. Saying so beats
+          // printing a total that silently omits most of the findings.
+          summary.activeIncreaseImpact === null
+            ? 'not available: findings carry no detection window'
+            : 'in active increases (inside detection windows)'
+        }
+      />
       <KpiCard
         title="Unexpected decreases"
         icon={ArrowDownRight}
         value={String(summary.byKind.drop + summary.byKind['sustained-decrease'])}
-        hint={`${formatCompactCurrency(summary.activeDecreaseImpact)} below expected in active ones`}
+        hint={
+          summary.activeDecreaseImpact === null
+            ? 'detection window not recorded for these findings'
+            : `${formatCompactCurrency(summary.activeDecreaseImpact)} below expected in active ones`
+        }
       />
     </section>
   );

@@ -31,7 +31,12 @@ export function FilterBar({ trailing }: { trailing?: ReactNode }) {
   const visibleServices = services.filter(
     (s) =>
       (filters.providerId === 'all' || s.providerId === filters.providerId) &&
-      (filters.accountId === 'all' || (serviceIdsByAccount[filters.accountId] ?? []).includes(s.id)),
+      // Null means the source cannot narrow services to an account,
+      // so every service stays offered rather than the dropdown
+      // emptying itself the moment an account is picked.
+      (filters.accountId === 'all' ||
+        serviceIdsByAccount === null ||
+        (serviceIdsByAccount[filters.accountId] ?? []).includes(s.id)),
   );
 
   function onPreset(preset: DateRangePreset): void {

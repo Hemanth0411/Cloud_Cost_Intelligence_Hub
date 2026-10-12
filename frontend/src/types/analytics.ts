@@ -54,20 +54,29 @@ export interface DashboardKpis {
   };
   monthToDate: KpiMetric;
   forecast: KpiMetric & { daysRemaining: number; monthLabel: string };
+  /**
+   * Null when the source has no budgets AT ALL -- which is live mode,
+   * because nothing in the schema stores one. That is a different
+   * statement from `applicable: false`, which means "there are budgets
+   * but this selection is not comparable against them" (a single
+   * service is selected; budgets belong to whole accounts). Rendering
+   * both as a dash with the same hint told people to clear a filter
+   * that was not the problem.
+   */
   budget: {
-    /** Budgets belong to accounts, so they are not comparable when a single service is selected. */
     applicable: boolean;
     monthlyBudget: number;
     mtdSpend: number;
     projectedSpend: number;
     mtdPct: number;
     projectedPct: number;
-  };
-  accounts: { connected: number; providers: number; degradedProviders: number };
-  services: { inUse: number; categories: number };
+  } | null;
+  /** `categories` is null when service categories are not available. */
+  services: { inUse: number; categories: number | null };
   /** `active` = open + investigating + acknowledged. */
   anomalies: { active: number; total: number; criticalOrHigh: number };
-  savings: { monthly: number; pctOfRunRate: number; opportunities: number };
+  /** Null when no optimization engine ran: there is no savings endpoint. */
+  savings: { monthly: number; pctOfRunRate: number; opportunities: number } | null;
 }
 
 export interface TrendPoint {
@@ -94,7 +103,7 @@ export interface BreakdownItem {
   id: string;
   label: string;
   providerId: ProviderId;
-  category?: ServiceCategory;
+  category?: ServiceCategory | null;
   cost: number;
   previousCost: number;
   deltaPct: number | null;
@@ -107,26 +116,49 @@ export interface AccountSummary {
   accountId: string;
   name: string;
   providerId: ProviderId;
-  environment: Environment;
-  team: string;
-  owner: string;
-  region: string;
+  /** Null when the source has no such column -- see types/domain.ts. */
+  environment: Environment | null;
+  team: string | null;
+  owner: string | null;
+  region: string | null;
   externalId: string;
   cost: number;
   previousCost: number;
   deltaPct: number | null;
   sharePct: number;
+  /** All six are null together: no budget means nothing to measure against. */
+  monthlyBudget: number | null;
+  mtdSpend: number | null;
+  projectedSpend: number | null;
+  mtdPct: number | null;
+  projectedPct: number | null;
+  budgetStatus: BudgetStatus | null;
+}
+
+export interface AnomalyView extends Anomaly {
+  accountName: string;
+  serviceName: string;
+}
+
+/** An `AnomalyView` from the client-side detector -- see `DetectedAnomaly`. */
+export interface DetectedAnomalyView extends AnomalyView {
+  changePct: number;
+  windowDays: number;
+  impactCost: number;
+}
+
+/** An account summary with the budget and metadata the mock estate has. */
+export interface BudgetedAccountSummary extends AccountSummary {
+  environment: Environment;
+  team: string;
+  owner: string;
+  region: string;
   monthlyBudget: number;
   mtdSpend: number;
   projectedSpend: number;
   mtdPct: number;
   projectedPct: number;
   budgetStatus: BudgetStatus;
-}
-
-export interface AnomalyView extends Anomaly {
-  accountName: string;
-  serviceName: string;
 }
 
 export interface DashboardData {
@@ -142,6 +174,30 @@ export interface DashboardData {
   };
   accounts: AccountSummary[];
   anomalies: AnomalyView[];
+  /**
+   * Null when no optimization pass ran. An EMPTY ARRAY would claim the
+   * estate was examined and found nothing to save, which is a finding;
+   * null says the question was never asked.
+   */
+  savings: Opportunity[] | null;
+}
+
+/**
+ * A dashboard with every optional measure present -- i.e. one built
+ * from the mock dataset.
+ *
+ * The insight generator and the optimizer are written against a
+ * complete picture: they compare projected spend to a budget and rank
+ * anomalies by windowed impact. Rather than teach them to say
+ * "unknown" for a mode they never run in, they take this.
+ */
+export interface FullDashboardData extends DashboardData {
+  kpis: DashboardKpis & {
+    budget: NonNullable<DashboardKpis['budget']>;
+    savings: NonNullable<DashboardKpis['savings']>;
+  };
+  accounts: BudgetedAccountSummary[];
+  anomalies: DetectedAnomalyView[];
   savings: Opportunity[];
 }
 
@@ -152,7 +208,7 @@ export interface ComparisonEntity {
   id: string;
   label: string;
   providerId: ProviderId;
-  category?: ServiceCategory;
+  category?: ServiceCategory | null;
   current: number;
   baseline: number;
   /** current - baseline */
@@ -163,9 +219,16 @@ export interface ComparisonEntity {
   sharePct: number;
   /** Share of the total change this entity explains (can exceed 100% or be negative). */
   contributionPct: number | null;
-  /** Daily cost over the current period, one value per day. */
-  dailyCurrent: number[];
-  dailyBaseline: number[];
+  /**
+   * Daily cost over the current period, one value per day.
+   *
+   * Null in live mode: a per-entity daily curve needs one
+   * `/cost/series` call per entity, and the services dimension can
+   * carry fifty. An array of zeros would draw a flat line that reads
+   * as "spent nothing", so the chart is withheld instead.
+   */
+  dailyCurrent: number[] | null;
+  dailyBaseline: number[] | null;
   /** Largest child in the current period (service for providers/accounts, account for services). */
   topChild: { label: string; cost: number } | null;
 }

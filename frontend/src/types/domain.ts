@@ -18,22 +18,90 @@ export type ServiceCategory =
   | 'ai-ml';
 export type Severity = 'low' | 'medium' | 'high' | 'critical';
 export type AnomalyStatus = 'open' | 'investigating' | 'acknowledged' | 'resolved' | 'dismissed';
-export type AnomalyKind = 'spike' | 'sustained-increase' | 'drop' | 'sustained-decrease';
+/**
+ * `creep` comes from the backend detector only.
+ *
+ * The server's MadDetector classifies step / spike / creep and flags
+ * RISES ONLY (`if delta <= 0: continue`), so it never emits a drop;
+ * the client-side detector that powers the mock emits the other four
+ * and never a creep. Both sets live in one union because the anomaly
+ * screens render whichever mode produced them, and collapsing creep
+ * into 'sustained-increase' would merge two counts the detector
+ * deliberately separates: a creep is still climbing, a step jumped
+ * and held.
+ */
+export type AnomalyKind =
+  | 'spike'
+  | 'sustained-increase'
+  | 'creep'
+  | 'drop'
+  | 'sustained-decrease';
 
+/**
+ * NULLABLE FIELDS ARE "THIS SOURCE CANNOT SAY", NOT "ZERO".
+ *
+ * The mock dataset invented a cloud estate: budgets, owning teams,
+ * environments, service categories and connection health. The API
+ * serves cost rows out of `fact_cost_daily` and account names out of
+ * `dim_account`, and neither table has any of those columns. Filling
+ * them with 0 / 'production' / 'connected' in live mode would put a
+ * number on the screen that nothing stands behind, which is the one
+ * thing this app must not do. So they are nullable, and every renderer
+ * has to decide what absent looks like.
+ */
 export interface Provider {
   id: ProviderId;
   name: string;
-  status: ConnectionStatus;
-  /** ISO timestamp of the last (simulated) billing sync. */
-  lastSyncedAt: string;
+  /** Null in live mode: connection health is simulated, never measured. */
+  status: ConnectionStatus | null;
+  /** ISO timestamp of the last (simulated) billing sync. Null in live mode. */
+  lastSyncedAt: string | null;
 }
 
 export interface Account {
   id: string;
   providerId: ProviderId;
   name: string;
-  /** Cloud-native identifier, e.g. an AWS account number. */
+  /** Cloud-native identifier, e.g. an AWS account number. In live mode this IS the id. */
   externalId: string;
+  /** The four below have no column in `dim_account`; null in live mode. */
+  environment: Environment | null;
+  team: string | null;
+  owner: string | null;
+  region: string | null;
+  /** No budget is stored anywhere in the backend. Null in live mode. */
+  monthlyBudget: number | null;
+}
+
+export interface Service {
+  /** In live mode the service NAME is the id: it is what the API groups by. */
+  id: string;
+  providerId: ProviderId;
+  name: string;
+  /**
+   * `dim_service.service_category` exists but no endpoint exposes it,
+   * so this is null in live mode until one does.
+   */
+  category: ServiceCategory | null;
+}
+
+/**
+ * THE MOCK'S OWN TYPES, where the nullable fields above are always
+ * filled.
+ *
+ * The invented estate HAS budgets, owners and categories, and the
+ * selectors that only ever run over it -- the optimizer, the insight
+ * generator, the anomaly narrative -- read them on every line. Giving
+ * those selectors a narrowed input type keeps that invariant checked
+ * by the compiler instead of asserted with `!` at seventy call sites,
+ * and means a future live caller cannot be passed in by mistake.
+ */
+export interface MockProvider extends Provider {
+  status: ConnectionStatus;
+  lastSyncedAt: string;
+}
+
+export interface MockAccount extends Account {
   environment: Environment;
   team: string;
   owner: string;
@@ -41,10 +109,7 @@ export interface Account {
   monthlyBudget: number;
 }
 
-export interface Service {
-  id: string;
-  providerId: ProviderId;
-  name: string;
+export interface MockService extends Service {
   category: ServiceCategory;
 }
 
@@ -57,6 +122,20 @@ export interface DailyCost {
   cost: number;
   usageQuantity: number;
 }
+
+/**
+ * The two slices of `DailyCost` the time-series maths actually reads.
+ *
+ * Live mode has no fact rows -- `/cost/series` returns one total per
+ * period, with no account or service attached -- so the bucketing and
+ * month-statistics helpers take these instead of the full row. That
+ * keeps ONE implementation of the forecast formula: two modes
+ * computing "month to date plus the trailing 7-day average" slightly
+ * differently is a discrepancy nobody would find until someone
+ * compared screenshots.
+ */
+export type CostRow = Pick<DailyCost, 'date' | 'cost'>;
+export type ProviderCostRow = CostRow & Pick<DailyCost, 'providerId'>;
 
 export interface Anomaly {
   id: string;
@@ -72,14 +151,43 @@ export interface Anomaly {
   expectedCost: number;
   /** observedCost - expectedCost (negative for decreases). */
   differenceCost: number;
-  /** Signed percent change versus expected. */
-  changePct: number;
-  /** Days the observation covers: 1 for spikes/drops, the window length for sustained changes. */
-  windowDays: number;
-  /** differenceCost x windowDays: dollars of deviation inside the detection window. */
-  impactCost: number;
+  /**
+   * Signed percent change versus expected.
+   *
+   * NULL WHEN THE BASELINE WAS ZERO, and that is the common
+   * switched-something-on case, not an edge case: a service with no
+   * prior charges has a zero median, so "percent change" has no
+   * value. Zero would read as "no change" on the exact finding that
+   * matters most.
+   */
+  changePct: number | null;
+  /**
+   * Days the observation covers: 1 for spikes/drops, the window length
+   * for sustained changes.
+   *
+   * Null for findings from the API: `anomaly_findings` stores only
+   * `detected_for_date`, so the run length the server grouped over is
+   * not persisted and cannot be recovered here.
+   */
+  windowDays: number | null;
+  /** differenceCost x windowDays. Null whenever `windowDays` is. */
+  impactCost: number | null;
   severity: Severity;
   status: AnomalyStatus;
+}
+
+/**
+ * An anomaly from the CLIENT-SIDE detector.
+ *
+ * It measures a window, so it knows how long the change ran and what
+ * it cost over that window; the API's findings do not (see the note
+ * on `windowDays`). Anything that multiplies by a window length takes
+ * this type.
+ */
+export interface DetectedAnomaly extends Anomaly {
+  changePct: number;
+  windowDays: number;
+  impactCost: number;
 }
 
 export interface SeverityThresholds {
@@ -163,7 +271,11 @@ export type AlertStatus = 'active' | 'acknowledged' | 'resolved';
 export interface AlertItem {
   id: string;
   category: AlertCategory;
-  severity: Severity;
+  /**
+   * Null for items that came from `alert_events`, which has no
+   * severity column. Derived mock alerts always have one.
+   */
+  severity: Severity | null;
   status: AlertStatus;
   title: string;
   message: string;

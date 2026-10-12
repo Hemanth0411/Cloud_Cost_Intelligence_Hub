@@ -64,8 +64,16 @@ export const USE_MOCK: boolean =
   COGNITO_CLIENT_ID === '' ||
   COGNITO_DOMAIN_URL === '';
 
-/** Which of the three values live mode needs are missing. */
-function liveModeBlockers(): string[] {
+/**
+ * Which of the three values live mode needs are missing.
+ *
+ * Exported because the runtime mock/live toggle (`lib/mode.ts`) has to
+ * refuse a switch to live when they are absent, and has to say which
+ * one is absent. `USE_MOCK` already folds this in, but it folds it in
+ * irreversibly -- once it is `true` you cannot tell "the build asked
+ * for mock" from "the build asked for live and could not have it".
+ */
+export function liveModeBlockers(): string[] {
   const missing: string[] = [];
   if (API_BASE_URL === '') missing.push('NEXT_PUBLIC_API_BASE_URL');
   if (COGNITO_CLIENT_ID === '') missing.push('NEXT_PUBLIC_COGNITO_CLIENT_ID');

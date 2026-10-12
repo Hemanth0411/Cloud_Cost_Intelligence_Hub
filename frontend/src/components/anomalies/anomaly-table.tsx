@@ -11,13 +11,14 @@ import { formatCurrency, formatDate, formatSignedPercent } from '@/lib/format';
 import { isIncrease, KIND_LABELS } from '@/lib/selectors/detect-anomalies';
 import { SEVERITY_ORDER } from '@/lib/selectors/anomaly-views';
 import {
+  ABSENT,
   ANOMALY_KIND_CLASS,
   ANOMALY_STATUS_CLASS,
   ANOMALY_STATUS_LABEL,
   PROVIDER_COLOR,
   PROVIDER_SHORT_NAME,
-  SEVERITY_CLASS,
-  SEVERITY_LABEL,
+  severityClass,
+  severityLabel,
 } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import type { AnomalyView } from '@/types/analytics';
@@ -52,7 +53,9 @@ function compare(a: AnomalyView, b: AnomalyView, key: SortKey): number {
     case 'difference':
       return Math.abs(a.differenceCost) - Math.abs(b.differenceCost);
     case 'change':
-      return Math.abs(a.changePct) - Math.abs(b.changePct);
+      // A finding with no comparable baseline sorts below every
+      // measured one rather than as a 0% change.
+      return Math.abs(a.changePct ?? -Infinity) - Math.abs(b.changePct ?? -Infinity);
     case 'status':
       return STATUS_RANK[b.status] - STATUS_RANK[a.status];
   }
@@ -129,7 +132,7 @@ export function AnomalyTable({ anomalies, onOpen, onSetStatus }: AnomalyTablePro
             return (
               <TableRow key={a.id} className="cursor-pointer" onClick={() => onOpen(a)}>
                 <TableCell className="whitespace-nowrap tabular-nums">{formatDate(a.date, 'medium')}</TableCell>
-                <TableCell><Badge className={SEVERITY_CLASS[a.severity]}>{SEVERITY_LABEL[a.severity]}</Badge></TableCell>
+                <TableCell><Badge className={severityClass(a.severity)}>{severityLabel(a.severity)}</Badge></TableCell>
                 <TableCell><Badge className={ANOMALY_KIND_CLASS[a.kind]}>{KIND_LABELS[a.kind]}</Badge></TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2.5">
@@ -151,11 +154,16 @@ export function AnomalyTable({ anomalies, onOpen, onSetStatus }: AnomalyTablePro
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
                   <p className="font-medium">{formatCurrency(a.observedCost)}</p>
-                  {a.windowDays > 1 && <p className="text-[11px] text-muted-foreground">daily median</p>}
+                  {(a.windowDays ?? 1) > 1 && <p className="text-[11px] text-muted-foreground">daily median</p>}
                 </TableCell>
                 <TableCell className="text-right tabular-nums text-muted-foreground">{formatCurrency(a.expectedCost)}</TableCell>
                 <TableCell className={cn('text-right font-medium tabular-nums', increase ? 'text-destructive' : 'text-primary')}>{signedUsd(a.differenceCost)}</TableCell>
-                <TableCell className={cn('text-right tabular-nums', increase ? 'text-destructive' : 'text-primary')}>{formatSignedPercent(a.changePct, 0)}</TableCell>
+                <TableCell
+                  className={cn('text-right tabular-nums', a.changePct === null ? 'text-muted-foreground' : increase ? 'text-destructive' : 'text-primary')}
+                  title={a.changePct === null ? 'No prior spend, so there is no percentage to compare against.' : undefined}
+                >
+                  {a.changePct === null ? ABSENT : formatSignedPercent(a.changePct, 0)}
+                </TableCell>
                 <TableCell><Badge className={ANOMALY_STATUS_CLASS[a.status]}>{ANOMALY_STATUS_LABEL[a.status]}</Badge></TableCell>
                 <TableCell onClick={(e) => e.stopPropagation()}>
                   <DropdownMenu

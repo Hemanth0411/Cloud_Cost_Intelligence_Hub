@@ -13,7 +13,16 @@ export function dashboardLink({ providerId: onlyProvider, accountId, serviceId, 
   const { accounts, services, serviceIdsByAccount } = getFilterOptions();
   const account = accountId ? accounts.find((a) => a.id === accountId) : undefined;
   const service = serviceId ? services.find((s) => s.id === serviceId) : undefined;
-  const serviceFits = service !== undefined && (!account || (serviceIdsByAccount[account.id] ?? []).includes(service.id));
+  // `serviceIdsByAccount` is null when the source cannot say which
+  // services an account uses. Unknown means KEEP the service filter:
+  // dropping it would silently widen the link to the whole account,
+  // and the API answers an account+service pair that has no rows with
+  // an honest empty result anyway.
+  const serviceFits =
+    service !== undefined &&
+    (!account ||
+      serviceIdsByAccount === null ||
+      (serviceIdsByAccount[account.id] ?? []).includes(service.id));
 
   const params = new URLSearchParams();
   if (range && range !== '30d' && range !== 'custom') params.set('range', range);

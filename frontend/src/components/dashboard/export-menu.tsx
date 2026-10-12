@@ -43,7 +43,7 @@ export function ExportMenu({ data, className }: { data: DashboardData; className
       <DropdownMenuItem icon={icon} onSelect={() => downloadTextFile(`cloudlens-anomalies-${stamp}.csv`, anomaliesToCsv(data.anomalies))}>
         Anomalies
       </DropdownMenuItem>
-      <DropdownMenuItem icon={icon} onSelect={() => downloadTextFile(`cloudlens-savings-${stamp}.csv`, savingsToCsv(data.savings))}>
+      <DropdownMenuItem icon={icon} onSelect={() => downloadTextFile(`cloudlens-savings-${stamp}.csv`, savingsToCsv(data.savings ?? []))}>
         Savings opportunities
       </DropdownMenuItem>
     </DropdownMenu>

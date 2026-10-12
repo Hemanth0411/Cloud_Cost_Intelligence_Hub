@@ -55,6 +55,9 @@ type Mode = 'initial' | 'manual' | 'quick' | 'silent';
  */
 export function useInsightReport(filters: Filters, overrides: StatusOverrides, config: AnomalyConfig) {
   const [state, setState] = useState<InsightReportState>(() => {
+    // Null in live mode: there is no insight endpoint. The view
+    // short-circuits before it ever gets here, but the hook must not
+    // assume that.
     const bundle = buildInsightBundle(filters, overrides, config);
     return {
       status: 'ready',
@@ -88,14 +91,14 @@ export function useInsightReport(filters: Filters, overrides: StatusOverrides, c
 
     const finish = (): void => {
       if (cancelled) return;
-      let bundle: InsightBundle;
+      let bundle: InsightBundle | null;
       try {
         bundle = buildInsightBundle(filters, overrides, config);
       } catch (error) {
         setFailure(error instanceof Error ? error : new Error(String(error)));
         return;
       }
-      const diff = mode === 'manual' ? diffInsights(previous.current?.report.insights ?? [], bundle.report.insights) : null;
+      const diff = mode === 'manual' ? diffInsights(previous.current?.report.insights ?? [], bundle?.report.insights ?? []) : null;
       previous.current = bundle;
       s.loaded = true;
       setState((prev) => ({

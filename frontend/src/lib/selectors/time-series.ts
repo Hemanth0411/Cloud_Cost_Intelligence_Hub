@@ -1,6 +1,6 @@
 import { addDays, addMonths, endOfMonth, eachDay, mondayOf, startOfMonth, yearOf } from '@/lib/dates';
 import type { Granularity, TrendPoint } from '@/types/analytics';
-import type { DailyCost } from '@/types/domain';
+import type { ProviderCostRow } from '@/types/domain';
 import type { DataBounds } from './range';
 
 export interface BucketDef {
@@ -41,7 +41,7 @@ export function bucketDefs(granularity: Exclude<Granularity, 'day'>, bounds: Dat
 const round2 = (v: number): number => Math.round(v * 100) / 100;
 
 /** Sums cost rows into the given buckets, split by provider. */
-export function buildSeries(rows: readonly DailyCost[], defs: readonly BucketDef[], bounds: DataBounds): TrendPoint[] {
+export function buildSeries(rows: readonly ProviderCostRow[], defs: readonly BucketDef[], bounds: DataBounds): TrendPoint[] {
   const points: TrendPoint[] = defs.map((d) => ({
     start: d.start,
     end: d.end,

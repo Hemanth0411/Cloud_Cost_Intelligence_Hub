@@ -1,6 +1,6 @@
-import type { Account, Environment, Provider, ProviderId, Service, ServiceCategory } from '@/types/domain';
+import type { Environment, MockAccount, MockProvider, MockService, ProviderId, ServiceCategory } from '@/types/domain';
 
-export const PROVIDERS: Provider[] = [
+export const PROVIDERS: MockProvider[] = [
   { id: 'aws', name: 'Amazon Web Services', status: 'connected', lastSyncedAt: '2026-10-12T04:00:00Z' },
   { id: 'azure', name: 'Microsoft Azure', status: 'connected', lastSyncedAt: '2026-10-12T03:55:00Z' },
   { id: 'gcp', name: 'Google Cloud', status: 'degraded', lastSyncedAt: '2026-10-12T01:20:00Z' },
@@ -47,7 +47,7 @@ const SERVICE_DEFS: ServiceDef[] = [
   { id: 'gcp-networking', providerId: 'gcp', name: 'Networking', category: 'network', baseDailyCost: 190, unitPrice: 0.085 },
 ];
 
-export const SERVICES: Service[] = SERVICE_DEFS.map(({ id, providerId, name, category }) => ({
+export const SERVICES: MockService[] = SERVICE_DEFS.map(({ id, providerId, name, category }) => ({
   id,
   providerId,
   name,
@@ -59,7 +59,7 @@ export const SERVICE_PROFILE: Record<string, { baseDailyCost: number; unitPrice:
     SERVICE_DEFS.map((s) => [s.id, { baseDailyCost: s.baseDailyCost, unitPrice: s.unitPrice }]),
   );
 
-interface AccountDef extends Account {
+interface AccountDef extends MockAccount {
   /** Relative size of the account (generator-only). */
   scale: number;
   serviceIds: string[];
@@ -140,7 +140,7 @@ const ACCOUNT_DEFS: AccountDef[] = [
   },
 ];
 
-export const ACCOUNTS: Account[] = ACCOUNT_DEFS.map((a) => ({
+export const ACCOUNTS: MockAccount[] = ACCOUNT_DEFS.map((a) => ({
   id: a.id,
   providerId: a.providerId,
   name: a.name,

@@ -1,7 +1,7 @@
 import { formatCompactCurrency, formatCurrency, formatDate, formatPercent } from '@/lib/format';
 import type { AnomalyContext } from '@/lib/selectors/anomaly-context';
 import { isIncrease, KIND_LABELS } from '@/lib/selectors/detect-anomalies';
-import type { AnomalyView } from '@/types/analytics';
+import type { DetectedAnomalyView } from '@/types/analytics';
 import type { AnomalyConfig, Evidence, ServiceCategory } from '@/types/domain';
 
 /**
@@ -11,7 +11,7 @@ import type { AnomalyConfig, Evidence, ServiceCategory } from '@/types/domain';
  */
 
 export interface AnomalyNarrativeInput {
-  anomaly: AnomalyView;
+  anomaly: DetectedAnomalyView;
   context: AnomalyContext;
   config: AnomalyConfig;
   providerName: string;

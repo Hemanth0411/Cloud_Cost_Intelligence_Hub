@@ -72,6 +72,8 @@ export const ANOMALY_STATUS_CLASS: Record<AnomalyStatus, string> = {
 
 /** Increases are shown in red (cost went up), decreases in blue (needs checking, not necessarily good news). */
 export const ANOMALY_KIND_CLASS: Record<AnomalyKind, string> = {
+  // Server-side detector only: a run that is still climbing.
+  creep: 'bg-warning/15 text-warning',
   spike: 'bg-destructive/15 text-destructive',
   'sustained-increase': 'bg-warning/15 text-warning',
   drop: 'bg-primary/15 text-primary',
@@ -105,3 +107,29 @@ export const ALERT_CATEGORY_LABEL: Record<AlertCategory, string> = {
   connection: 'Connection',
   simulated: 'Simulated',
 };
+
+// ---------------------------------------------------------- absent values
+//
+// Several of the maps above are indexed by a field that is null when
+// the data source does not carry it (see types/domain.ts). These
+// lookups render the absence instead of crashing on `MAP[null]`, and
+// they all render it the SAME WAY -- an em dash and a muted tone --
+// so "we do not know" never looks like a measured low value.
+
+/** The one string every screen uses for a value that does not exist. */
+export const ABSENT = '—';
+
+export const environmentLabel = (value: Environment | null): string =>
+  value === null ? ABSENT : ENVIRONMENT_LABEL[value];
+
+export const severityLabel = (value: Severity | null): string =>
+  value === null ? ABSENT : SEVERITY_LABEL[value];
+
+export const severityClass = (value: Severity | null): string =>
+  value === null ? 'bg-muted text-muted-foreground' : SEVERITY_CLASS[value];
+
+export const budgetStatusLabel = (value: BudgetStatus | null): string =>
+  value === null ? 'No budget set' : BUDGET_STATUS_LABEL[value];
+
+export const budgetStatusClass = (value: BudgetStatus | null): string =>
+  value === null ? 'bg-muted text-muted-foreground' : BUDGET_STATUS_CLASS[value];

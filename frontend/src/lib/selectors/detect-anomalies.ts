@@ -1,14 +1,6 @@
 import { dayOfWeek, diffDays } from '@/lib/dates';
 import { hashString } from '@/lib/mock/seed';
-import type {
-  Anomaly,
-  AnomalyConfig,
-  AnomalyKind,
-  AnomalyStatus,
-  DailyCost,
-  Severity,
-  SeverityThresholds,
-} from '@/types/domain';
+import type { AnomalyConfig, AnomalyKind, AnomalyStatus, DailyCost, DetectedAnomaly, Severity, SeverityThresholds } from '@/types/domain';
 
 /**
  * Deterministic, rule-based anomaly engine. Four rules run on every (account, service) series:
@@ -85,13 +77,16 @@ export function matchPreset(config: AnomalyConfig): AnomalyPresetId | 'custom' {
 }
 
 export const KIND_LABELS: Record<AnomalyKind, string> = {
+  // 'creep' is produced only by the server-side detector.
+  creep: 'Creeping increase',
   spike: 'Spike',
   'sustained-increase': 'Sustained increase',
   drop: 'Unexpected drop',
   'sustained-decrease': 'Sustained decrease',
 };
 
-export const isIncrease = (kind: AnomalyKind): boolean => kind === 'spike' || kind === 'sustained-increase';
+export const isIncrease = (kind: AnomalyKind): boolean =>
+  kind === 'spike' || kind === 'sustained-increase' || kind === 'creep';
 
 function median(values: readonly number[]): number {
   if (values.length === 0) return 0;
@@ -124,7 +119,7 @@ const QUIET_DAYS = 21;
 const round2 = (v: number): number => Math.round(v * 100) / 100;
 const round1 = (v: number): number => Math.round(v * 10) / 10;
 
-type Draft = Omit<Anomaly, 'status'>;
+type Draft = Omit<DetectedAnomaly, 'status'>;
 
 function draft(
   row: DailyCost,
@@ -243,7 +238,7 @@ export function detectAnomalies(
   costs: readonly DailyCost[],
   endDate: string,
   config: AnomalyConfig = DEFAULT_ANOMALY_CONFIG,
-): Anomaly[] {
+): DetectedAnomaly[] {
   const series = new Map<string, DailyCost[]>();
   for (const row of costs) {
     const key = `${row.accountId}|${row.serviceId}`;

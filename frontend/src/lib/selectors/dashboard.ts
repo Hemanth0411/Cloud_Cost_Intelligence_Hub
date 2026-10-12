@@ -7,15 +7,14 @@ import {
   startOfPreviousMonth,
 } from '@/lib/dates';
 import type { Dataset } from '@/lib/mock/dataset';
-import type { Anomaly, DailyCost } from '@/types/domain';
+import type { CostRow, DailyCost, DetectedAnomaly } from '@/types/domain';
 import type {
-  AccountSummary,
-  AnomalyView,
   BreakdownItem,
   BudgetStatus,
+  BudgetedAccountSummary,
   ComparisonPoint,
-  DashboardData,
-  DashboardKpis,
+  DetectedAnomalyView,
+  FullDashboardData,
   Filters,
   StatusOverrides,
 } from '@/types/analytics';
@@ -25,20 +24,21 @@ import { computeOpportunities } from './optimization';
 import { getScope } from './scope';
 import { bucketDefs, buildSeries, dailyBuckets } from './time-series';
 
-const MONTH_NAMES = [
+export const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
-const inWindow = (rows: readonly DailyCost[], from: string, to: string): DailyCost[] =>
+/** Exported for the live path, which has the same windows to cut but no fact rows. */
+export const inWindow = <T extends CostRow>(rows: readonly T[], from: string, to: string): T[] =>
   rows.filter((r) => r.date >= from && r.date <= to);
 
-const sum = (rows: readonly DailyCost[]): number => rows.reduce((acc, r) => acc + r.cost, 0);
+export const sum = (rows: readonly CostRow[]): number => rows.reduce((acc, r) => acc + r.cost, 0);
 
 export const pctChange = (current: number, previous: number): number | null =>
   previous > 0 ? ((current - previous) / previous) * 100 : null;
 
-function dailyTotals(rows: readonly DailyCost[], from: string, to: string): number[] {
+export function dailyTotals(rows: readonly CostRow[], from: string, to: string): number[] {
   const byDate = new Map<string, number>();
   for (const r of rows) byDate.set(r.date, (byDate.get(r.date) ?? 0) + r.cost);
   return eachDay(from, to).map((d) => byDate.get(d) ?? 0);
@@ -66,7 +66,7 @@ interface MonthStats {
  * Month-level figures anchored to the dataset's last day.
  * Forecast = month-to-date + (trailing 7-day average x days left in the month).
  */
-function monthStats(rows: readonly DailyCost[], endDate: string): MonthStats {
+export function monthStats(rows: readonly CostRow[], endDate: string): MonthStats {
   const monthStart = startOfMonth(endDate);
   const elapsed = dayOfMonth(endDate);
   const daysRemaining = daysInMonth(endDate) - elapsed;
@@ -96,8 +96,8 @@ export function getDashboardData(
   ds: Dataset,
   filters: Filters,
   statusOverrides: StatusOverrides = {},
-  detected: readonly Anomaly[] = ds.anomalies,
-): DashboardData {
+  detected: readonly DetectedAnomaly[] = ds.anomalies,
+): FullDashboardData {
   const bounds = { start: ds.startDate, end: ds.endDate };
   const range = resolveRange(filters, bounds);
   const scope = getScope(ds, filters);
@@ -109,7 +109,7 @@ export function getDashboardData(
   const previousSpend = range.hasPrevious ? sum(previous) : null;
 
   // ---- Anomalies (scoped, within range, with user workflow applied) -----------
-  const anomalies: AnomalyView[] = getAnomalyViews(ds, detected, filters, range, statusOverrides);
+  const anomalies: DetectedAnomalyView[] = getAnomalyViews(ds, detected, filters, range, statusOverrides);
 
   // ---- Breakdown maps ----------------------------------------------------------
   const costByProvider = groupCost(current, (r) => r.providerId);
@@ -199,10 +199,9 @@ export function getDashboardData(
   // ---- KPIs -----------------------------------------------------------------------------
   const month = monthStats(scoped, ds.endDate);
   const accountsInScope = ds.accounts.filter((a) => scope.accountIds.has(a.id));
-  const providersInScope = new Set(accountsInScope.map((a) => a.providerId));
   const monthlyBudget = accountsInScope.reduce((acc, a) => acc + a.monthlyBudget, 0);
 
-  const kpis: DashboardKpis = {
+  const kpis: FullDashboardData['kpis'] = {
     totalSpend: {
       value: totalSpend,
       previous: previousSpend,
@@ -239,11 +238,6 @@ export function getDashboardData(
       mtdPct: monthlyBudget > 0 ? (month.mtd / monthlyBudget) * 100 : 0,
       projectedPct: monthlyBudget > 0 ? (month.projected / monthlyBudget) * 100 : 0,
     },
-    accounts: {
-      connected: accountsInScope.filter((a) => ds.providerById.get(a.providerId)?.status !== 'disconnected').length,
-      providers: providersInScope.size,
-      degradedProviders: [...providersInScope].filter((id) => ds.providerById.get(id)?.status === 'degraded').length,
-    },
     services: {
       inUse: costByService.size,
       categories: new Set(serviceItems.flatMap((s) => (s.category ? [s.category] : []))).size,
@@ -267,7 +261,7 @@ export function getDashboardData(
     if (list) list.push(r);
     else rowsByAccount.set(r.accountId, [r]);
   }
-  const accounts: AccountSummary[] = accountsInScope
+  const accounts: BudgetedAccountSummary[] = accountsInScope
     .map((account) => {
       const rows = rowsByAccount.get(account.id) ?? [];
       const cost = costByAccount.get(account.id) ?? 0;

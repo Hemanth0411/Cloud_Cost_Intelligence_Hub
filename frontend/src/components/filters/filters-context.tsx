@@ -43,7 +43,14 @@ function normalize(filters: Filters): Filters {
   if (serviceId !== 'all') {
     const service = services.find((s) => s.id === serviceId);
     const fitsProvider = service !== undefined && (providerId === 'all' || service.providerId === providerId);
-    const fitsAccount = accountId === 'all' || (serviceIdsByAccount[accountId] ?? []).includes(serviceId);
+    // Unknown (null) means the source cannot say which services an
+    // account uses. Treat that as "it fits": clearing the filter
+    // because we could not verify it would silently widen a deep
+    // link, and the API answers a pair with no rows honestly anyway.
+    const fitsAccount =
+      accountId === 'all' ||
+      serviceIdsByAccount === null ||
+      (serviceIdsByAccount[accountId] ?? []).includes(serviceId);
     if (!fitsProvider || !fitsAccount) serviceId = 'all';
   }
 

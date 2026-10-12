@@ -9,6 +9,8 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { SegmentedControl, type SegmentedOption } from '@/components/ui/segmented-control';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ErrorState } from '@/components/shared/error-state';
+import { NoDataNotice } from '@/components/shared/no-data-notice';
 import { useComparison } from '@/hooks/use-comparison';
 import { formatCompactCurrency, formatCurrency, formatDateRange, formatSignedCompactCurrency, formatSignedPercent } from '@/lib/format';
 import { dashboardLink } from '@/lib/links';
@@ -77,20 +79,35 @@ export function CompareView() {
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }, (_, i) => <Card key={i} className="space-y-3 p-3"><Skeleton className="h-4 w-24" /><Skeleton className="h-8 w-28" /></Card>)}</div>
           <Card className="space-y-4 p-3"><Skeleton className="h-4 w-48" /><Skeleton className="h-[260px] w-full" /></Card>
         </div>
+      ) : state.status === 'error' ? (
+        <ErrorState title="Could not load the comparison" message={state.message} onRetry={() => window.location.reload()} />
       ) : (
         (() => {
           const c = state.data;
           const entities = entitiesFor(c, dimension);
+          const noRows = c.totals.current === 0 && c.totals.baseline === 0 && c.providers.length === 0;
           const tone = c.totals.diffPct === null ? undefined : c.totals.diff > 0 ? 'up' : 'down';
           return (
             <div className={cn('animate-fade-in space-y-3 transition-opacity duration-150', state.isRefreshing && 'opacity-60')} aria-busy={state.isRefreshing}>
-              {!c.hasBaseline && (
+              {/* Nothing was billed in either window. Four tiles of
+                  $0 and an overlay chart of two flat lines would be a
+                  claim, not an empty state. */}
+              {noRows && <NoDataNotice range={formatDateRange(c.range.from, c.range.to)} />}
+
+              {!noRows && !c.hasBaseline && (
                 <div role="status" className="flex items-start gap-3 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
                   <CalendarOff className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
-                  <p>There is no data for the {baselineName} ({formatDateRange(c.baselineFrom, c.baselineTo)}), because history starts on 1 Jan 2024. Showing this period only. Try a shorter or more recent range.</p>
+                  {/* DO NOT NAME A START DATE HERE. The old copy said
+                      "history starts on 1 Jan 2024", which is a fact
+                      about the mock generator and false of any real
+                      account. What is actually known is that the
+                      window returned nothing. */}
+                  <p>No cost data was returned for the {baselineName} ({formatDateRange(c.baselineFrom, c.baselineTo)}), so there is nothing to compare against. Showing this period only; try a shorter or more recent range.</p>
                 </div>
               )}
 
+              {!noRows && (
+              <>
               <section aria-label="Period summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <Tile label="This period" value={formatCompactCurrency(c.totals.current)} sub={`${formatDateRange(c.range.from, c.range.to)} · ${formatCurrency(c.totals.avgCurrent)}/day`} />
                 <Tile label={baseline === 'previous' ? 'Previous period' : 'Same period last year'} value={c.hasBaseline ? formatCompactCurrency(c.totals.baseline) : '—'} sub={c.hasBaseline ? `${formatDateRange(c.baselineFrom, c.baselineTo)} · ${formatCurrency(c.totals.avgBaseline)}/day` : 'No data for that window'} />
@@ -128,6 +145,8 @@ export function CompareView() {
               </div>
 
               <HeadToHead key={dimension} entities={entities} points={c.points} dimension={dimension} days={c.range.days} hasBaseline={c.hasBaseline} displayName={name} />
+              </>
+              )}
             </div>
           );
         })()

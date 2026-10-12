@@ -11,6 +11,8 @@ import { KpiCard } from '@/components/dashboard/kpi-card';
 import { FilterBar } from '@/components/filters/filter-bar';
 import { useFilters } from '@/components/filters/filters-context';
 import { PageHeader } from '@/components/layout/page-header';
+import { ErrorState } from '@/components/shared/error-state';
+import { NoDataNotice } from '@/components/shared/no-data-notice';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,8 +24,8 @@ import { useDemoNow } from '@/hooks/use-demo-now';
 import { formatCompactCurrency, formatCurrency, formatDateRange, formatDateTime, formatRelative, formatSignedPercent } from '@/lib/format';
 import { dashboardLink } from '@/lib/links';
 import { RANGE_LABELS } from '@/lib/selectors/range';
-import { getFilterOptions } from '@/lib/services/cost-service';
-import { ENVIRONMENT_LABEL, PROVIDER_COLOR, PROVIDER_SHORT_NAME } from '@/lib/theme';
+import { COST_CAPABILITIES, getFilterOptions } from '@/lib/services/cost-service';
+import { ABSENT, environmentLabel, PROVIDER_COLOR, PROVIDER_SHORT_NAME } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import type { Account } from '@/types/domain';
 import { ConnectDialog } from './connect-dialog';
@@ -37,6 +39,15 @@ export function AccountsView() {
   const { overrides } = useAnomalyStatus();
   const state = useDashboardData(filters, overrides, config);
   const { connectionOf, summarize, sync, syncAll } = useConnections();
+  /**
+   * CONNECT / DISCONNECT / SYNC ARE A SIMULATION. Nothing calls a
+   * cloud API, and no table records connection health -- the real
+   * `cloud_connections` rows record registration and are superadmin
+   * only. In live mode the whole column, the two dialogs and the
+   * three health tiles come off, rather than reporting an invented
+   * state next to real spend.
+   */
+  const simulated = COST_CAPABILITIES.simulatedConnections;
 
   const [connecting, setConnecting] = useState<Account | null>(null);
   const [disconnecting, setDisconnecting] = useState<Account | null>(null);
@@ -46,46 +57,84 @@ export function AccountsView() {
     () => getFilterOptions().accounts.filter((a) => (filters.providerId === 'all' || a.providerId === filters.providerId) && (filters.accountId === 'all' || a.id === filters.accountId)),
     [filters.providerId, filters.accountId],
   );
-  const summary = summarize(accounts);
+  const summary = simulated ? summarize(accounts) : null;
   const now = useDemoNow();
-  const latestSync = accounts.map((a) => connectionOf(a.id)).filter((c) => c.status !== 'disconnected').map((c) => c.lastSyncedAt).sort().pop();
+  const latestSync = simulated
+    ? accounts.map((a) => connectionOf(a.id)).filter((c) => c.status !== 'disconnected').map((c) => c.lastSyncedAt).sort().pop()
+    : undefined;
 
   const data = state.status === 'ready' ? state.data : null;
   const spendById = new Map((data?.accounts ?? []).map((a) => [a.accountId, a]));
   const totalSpend = accounts.reduce((acc, a) => acc + (spendById.get(a.id)?.cost ?? 0), 0);
   const periodLabel = data ? (data.range.preset === 'custom' ? formatDateRange(data.range.from, data.range.to) : RANGE_LABELS[data.range.preset]) : '';
   const detail = data?.accounts.find((a) => a.accountId === detailId) ?? null;
+  const providerCount = new Set(accounts.map((a) => a.providerId)).size;
+  /**
+   * The window returned no cost rows at all.
+   *
+   * The ACCOUNT LIST is still real -- it came from /meta/accounts --
+   * so it stays. The spend figures do not: every row would read $0,
+   * which asserts that each of these accounts was billed nothing.
+   * They render as an em dash instead, with the notice saying why.
+   */
+  const noRows = data !== null && data.kpis.totalSpend.value === 0;
 
   return (
     <>
       <PageHeader
         title="Cloud accounts"
-        description="The demo's AWS, Azure and Google Cloud accounts with their spend and simulated sync status."
+        description={
+          simulated
+            ? "The demo's AWS, Azure and Google Cloud accounts with their spend and simulated sync status."
+            : 'Every cloud account you have been granted access to, with its spend for the selected period.'
+        }
         actions={
-          <Button variant="outline" size="sm" onClick={() => syncAll(accounts.map((a) => a.id))} disabled={summary.linked === 0}>
-            <RefreshCw className="h-3.5 w-3.5" aria-hidden /> Sync all
-          </Button>
+          simulated ? (
+            <Button variant="outline" size="sm" onClick={() => syncAll(accounts.map((a) => a.id))} disabled={(summary?.linked ?? 0) === 0}>
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden /> Sync all
+            </Button>
+          ) : undefined
         }
       />
       <FilterBar />
 
-      <section aria-label="Connection summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <KpiCard title="Accounts" icon={Building2} value={String(accounts.length)} hint={`${summary.providers} provider${summary.providers === 1 ? '' : 's'}`} />
-        <KpiCard title="Healthy" icon={CircleCheck} tone="success" value={String(summary.healthy)} hint="syncing normally" />
-        <KpiCard title="Sync delayed" icon={TriangleAlert} tone={summary.degraded > 0 ? 'warning' : 'default'} value={String(summary.degraded)} hint="data may be out of date" />
-        <KpiCard title="Disconnected" icon={CloudOff} tone={summary.disconnected > 0 ? 'danger' : 'default'} value={String(summary.disconnected)} hint="no new data syncing" />
-        <KpiCard title="Spend" icon={Wallet} value={data ? formatCompactCurrency(totalSpend) : '…'} hint={latestSync ? `latest sync ${formatRelative(latestSync, now)}` : periodLabel} />
+      {state.status === 'ready' && (noRows || accounts.length === 0) && <NoDataNotice range={periodLabel} />}
+
+      <section aria-label="Account summary" className={cn('grid gap-3 sm:grid-cols-2', summary ? 'xl:grid-cols-5' : 'xl:grid-cols-3')}>
+        <KpiCard title="Accounts" icon={Building2} value={String(accounts.length)} hint={`${providerCount} provider${providerCount === 1 ? '' : 's'}`} />
+        {summary && <KpiCard title="Healthy" icon={CircleCheck} tone="success" value={String(summary.healthy)} hint="syncing normally" />}
+        {summary && <KpiCard title="Sync delayed" icon={TriangleAlert} tone={summary.degraded > 0 ? 'warning' : 'default'} value={String(summary.degraded)} hint="data may be out of date" />}
+        {summary && <KpiCard title="Disconnected" icon={CloudOff} tone={summary.disconnected > 0 ? 'danger' : 'default'} value={String(summary.disconnected)} hint="no new data syncing" />}
+        <KpiCard
+          title="Spend"
+          icon={Wallet}
+          value={data === null ? '…' : noRows ? ABSENT : formatCompactCurrency(totalSpend)}
+          hint={noRows ? 'no cost rows for this window' : latestSync ? `latest sync ${formatRelative(latestSync, now)}` : periodLabel}
+        />
+        {!simulated && (
+          <KpiCard
+            title="With spend"
+            icon={CircleCheck}
+            value={data === null ? '…' : noRows ? ABSENT : String(accounts.filter((a) => (spendById.get(a.id)?.cost ?? 0) > 0).length)}
+            hint="billed something in this period"
+          />
+        )}
       </section>
 
       <Card>
         <CardHeader>
           <CardTitle>Accounts</CardTitle>
           <CardDescription>
-            {periodLabel ? `Spend for ${periodLabel.toLowerCase()}. ` : ''}Sync, connect and disconnect are simulated: no cloud API is called.
+            {periodLabel ? `Spend for ${periodLabel.toLowerCase()}. ` : ''}
+            {simulated
+              ? 'Sync, connect and disconnect are simulated: no cloud API is called.'
+              : 'Registering an account and running an import are managed from Admin, not from this page.'}
           </CardDescription>
         </CardHeader>
         <CardContent className="px-0 pb-2">
-          {state.status === 'loading' ? (
+          {state.status === 'error' ? (
+            <div className="px-3 pb-3"><ErrorState title="Could not load accounts" message={state.message} onRetry={() => window.location.reload()} /></div>
+          ) : state.status === 'loading' ? (
             <div className="space-y-3 px-3 pb-3">{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
           ) : (
             <Table className="min-w-[920px]">
@@ -93,16 +142,16 @@ export function AccountsView() {
                 <TableRow className="hover:bg-transparent">
                   <TableHead>Account</TableHead>
                   <TableHead>Provider</TableHead>
-                  <TableHead>Environment</TableHead>
-                  <TableHead>Connection</TableHead>
+                  {simulated && <TableHead>Environment</TableHead>}
+                  {simulated && <TableHead>Connection</TableHead>}
                   <TableHead className="text-right">Spend</TableHead>
-                  <TableHead>Last synchronization</TableHead>
+                  {simulated && <TableHead>Last synchronization</TableHead>}
                   <TableHead className="text-right"><span className="sr-only">Actions</span></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {accounts.length === 0 && (
-                  <TableRow className="hover:bg-transparent"><TableCell colSpan={7} className="py-12 text-center text-sm text-muted-foreground">No accounts match these filters.</TableCell></TableRow>
+                  <TableRow className="hover:bg-transparent"><TableCell colSpan={simulated ? 7 : 4} className="py-12 text-center text-sm text-muted-foreground">No accounts match these filters.</TableCell></TableRow>
                 )}
                 {accounts.map((a) => {
                   const conn = connectionOf(a.id);
@@ -119,41 +168,45 @@ export function AccountsView() {
                             ) : (
                               <p className="truncate font-medium">{a.name}</p>
                             )}
-                            <p className="truncate font-mono text-[11px] text-muted-foreground">{a.externalId} · {a.team}</p>
+                            <p className="truncate font-mono text-[11px] text-muted-foreground">{[a.externalId, a.team].filter(Boolean).join(' · ')}</p>
                           </div>
                         </div>
                       </TableCell>
                       <TableCell><span className="font-medium">{PROVIDER_SHORT_NAME[a.providerId]}</span></TableCell>
-                      <TableCell><Badge variant="outline">{ENVIRONMENT_LABEL[a.environment]}</Badge></TableCell>
-                      <TableCell><ConnectionBadge status={conn.status} syncing={conn.syncing} /></TableCell>
+                      {simulated && <TableCell><Badge variant="outline">{environmentLabel(a.environment)}</Badge></TableCell>}
+                      {simulated && <TableCell><ConnectionBadge status={conn.status} syncing={conn.syncing} /></TableCell>}
                       <TableCell className="text-right tabular-nums">
-                        <p className="font-medium">{spend ? formatCurrency(spend.cost) : '–'}</p>
-                        {spend && spend.deltaPct !== null && (
+                        <p className="font-medium">{noRows || !spend ? ABSENT : formatCurrency(spend.cost)}</p>
+                        {!noRows && spend && spend.deltaPct !== null && (
                           <p className={cn('text-[11px]', spend.deltaPct > 0 ? 'text-destructive' : 'text-success')}>{formatSignedPercent(spend.deltaPct)} vs prev</p>
                         )}
                       </TableCell>
-                      <TableCell>
-                        <p className={cn('text-sm', disconnected && 'text-muted-foreground')}>{formatRelative(conn.lastSyncedAt, now)}</p>
-                        <p className="text-[11px] text-muted-foreground">{formatDateTime(conn.lastSyncedAt)}</p>
-                      </TableCell>
+                      {simulated && (
+                        <TableCell>
+                          <p className={cn('text-sm', disconnected && 'text-muted-foreground')}>{formatRelative(conn.lastSyncedAt, now)}</p>
+                          <p className="text-[11px] text-muted-foreground">{formatDateTime(conn.lastSyncedAt)}</p>
+                        </TableCell>
+                      )}
                       <TableCell>
                         <div className="flex items-center justify-end gap-1.5">
-                          {disconnected ? (
-                            <Button size="sm" onClick={() => setConnecting(a)}><Link2 className="h-3.5 w-3.5" aria-hidden /> Connect</Button>
-                          ) : (
-                            <Button size="sm" variant="outline" disabled={conn.syncing} onClick={() => sync(a.id)} aria-label={`Sync ${a.name}`}>
-                              <RefreshCw className={cn('h-3.5 w-3.5', conn.syncing && 'animate-spin')} aria-hidden /> {conn.syncing ? 'Syncing' : 'Sync'}
-                            </Button>
-                          )}
+                          {simulated &&
+                            (disconnected ? (
+                              <Button size="sm" onClick={() => setConnecting(a)}><Link2 className="h-3.5 w-3.5" aria-hidden /> Connect</Button>
+                            ) : (
+                              <Button size="sm" variant="outline" disabled={conn.syncing} onClick={() => sync(a.id)} aria-label={`Sync ${a.name}`}>
+                                <RefreshCw className={cn('h-3.5 w-3.5', conn.syncing && 'animate-spin')} aria-hidden /> {conn.syncing ? 'Syncing' : 'Sync'}
+                              </Button>
+                            ))}
                           <DropdownMenu label={`More actions for ${a.name}`} triggerClassName={cn(buttonVariants({ variant: 'ghost', size: 'icon' }), 'h-8 w-8')} trigger={<MoreHorizontal className="h-4 w-4" aria-hidden />}>
                             <DropdownMenuItem onSelect={() => router.push(dashboardLink({ accountId: a.id }))}>View in dashboard</DropdownMenuItem>
                             <DropdownMenuItem onSelect={() => router.push(`/compare?provider=${a.providerId}&account=${a.id}`)}>Compare spend</DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            {disconnected ? (
-                              <DropdownMenuItem onSelect={() => setConnecting(a)}>Connect…</DropdownMenuItem>
-                            ) : (
-                              <DropdownMenuItem destructive onSelect={() => setDisconnecting(a)}>Disconnect…</DropdownMenuItem>
-                            )}
+                            {simulated && <DropdownMenuSeparator />}
+                            {simulated &&
+                              (disconnected ? (
+                                <DropdownMenuItem onSelect={() => setConnecting(a)}>Connect…</DropdownMenuItem>
+                              ) : (
+                                <DropdownMenuItem destructive onSelect={() => setDisconnecting(a)}>Disconnect…</DropdownMenuItem>
+                              ))}
                           </DropdownMenu>
                         </div>
                       </TableCell>

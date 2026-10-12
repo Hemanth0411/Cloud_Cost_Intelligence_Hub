@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { DropdownMenu, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { useDemoNow } from '@/hooks/use-demo-now';
 import { formatRelative } from '@/lib/format';
-import { SEVERITY_LABEL } from '@/lib/theme';
+import { severityLabel } from '@/lib/theme';
 import { useAlerts } from './alerts-context';
 
 /** Header bell with the unread count and the latest unread alerts. */
@@ -46,7 +46,9 @@ export function NotificationBell() {
         >
           <span className="block min-w-0">
             <span className="block truncate text-sm font-medium">{a.title}</span>
-            <span className="block text-xs text-muted-foreground">{SEVERITY_LABEL[a.severity]} · {formatRelative(a.timestamp, now)}</span>
+            <span className="block text-xs text-muted-foreground">
+              {[a.severity === null ? null : severityLabel(a.severity), formatRelative(a.timestamp, now)].filter(Boolean).join(' · ')}
+            </span>
           </span>
         </DropdownMenuItem>
       ))}

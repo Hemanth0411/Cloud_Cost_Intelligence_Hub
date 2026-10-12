@@ -1,19 +1,19 @@
 import { DEFAULT_ANOMALY_CONFIG, detectAnomalies } from '@/lib/selectors/detect-anomalies';
-import type { Account, Anomaly, DailyCost, Provider, ProviderId, Service } from '@/types/domain';
+import type { DailyCost, DetectedAnomaly, MockAccount, MockProvider, MockService, ProviderId } from '@/types/domain';
 import { ACCOUNTS, PROVIDERS, SERVICES } from './catalog';
 import { DATASET_END_DATE, DATASET_START_DATE, generateDailyCosts } from './generate-costs';
 
 export interface Dataset {
-  providers: Provider[];
-  accounts: Account[];
-  services: Service[];
+  providers: MockProvider[];
+  accounts: MockAccount[];
+  services: MockService[];
   costs: DailyCost[];
-  anomalies: Anomaly[];
+  anomalies: DetectedAnomaly[];
   startDate: string;
   endDate: string;
-  providerById: Map<ProviderId, Provider>;
-  accountById: Map<string, Account>;
-  serviceById: Map<string, Service>;
+  providerById: Map<ProviderId, MockProvider>;
+  accountById: Map<string, MockAccount>;
+  serviceById: Map<string, MockService>;
   /** Services each account actually has spend in. */
   serviceIdsByAccount: Map<string, string[]>;
   /** Daily rows per (account, service), oldest first. Key: `${accountId}|${serviceId}`. */
