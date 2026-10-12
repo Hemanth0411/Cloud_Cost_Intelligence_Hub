@@ -1,0 +1,71 @@
+/**
+ * Runtime configuration, read once from `NEXT_PUBLIC_*`.
+ *
+ * WHY THESE CANNOT COME FROM TERRAFORM: putting them in
+ * `aws_amplify_app.environment_variables` closes a dependency cycle --
+ * Amplify's default domain is already an input to the Cognito callback
+ * URLs and to the Lambda Function URL's CORS origins, so making the
+ * Amplify app depend on Cognito's outputs makes the graph circular and
+ * terraform refuses the plan. They are set in the Amplify console for
+ * builds and in `frontend/.env.local` (written by `./do.sh outputs`)
+ * for local dev.
+ *
+ * Nothing here is a secret. `NEXT_PUBLIC_*` values are inlined into the
+ * client bundle at build time and are readable by anyone who loads the
+ * page; a Cognito pool id and a public app client id are designed for
+ * that. No credential, client secret or token belongs in this file.
+ *
+ * MOCK MODE IS THE DEFAULT, and that is deliberate: the app has to keep
+ * running with no backend reachable. `NEXT_PUBLIC_USE_MOCK` must be the
+ * exact string "false" to turn it off, so a missing, empty or
+ * misspelled variable falls back to mock rather than to a screen full
+ * of failed requests.
+ */
+
+/** Trailing slash removed, so callers can always join with `/path`. */
+function trimSlash(value: string): string {
+  return value.replace(/\/+$/, '');
+}
+
+const env = {
+  apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL ?? '',
+  userPoolId: process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID ?? '',
+  clientId: process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID ?? '',
+  cognitoDomain: process.env.NEXT_PUBLIC_COGNITO_DOMAIN ?? '',
+  region: process.env.NEXT_PUBLIC_AWS_REGION ?? 'us-east-1',
+  useMock: process.env.NEXT_PUBLIC_USE_MOCK,
+} as const;
+
+export const API_BASE_URL = trimSlash(env.apiBaseUrl);
+export const COGNITO_CLIENT_ID = env.clientId;
+export const COGNITO_USER_POOL_ID = env.userPoolId;
+export const AWS_REGION = env.region;
+
+/** `https://<domain>` -- the value is stored without a scheme. */
+export const COGNITO_DOMAIN_URL = env.cognitoDomain
+  ? `https://${trimSlash(env.cognitoDomain.replace(/^https?:\/\//, ''))}`
+  : '';
+
+/**
+ * Is the app running on mock data?
+ *
+ * True unless USE_MOCK is explicitly "false" AND the three values a
+ * live session actually needs are present. The second half matters: a
+ * build with `NEXT_PUBLIC_USE_MOCK=false` and a missing API URL would
+ * otherwise produce an app that can neither sign in nor show anything,
+ * which is a worse outcome than the mock it replaced.
+ */
+export const USE_MOCK: boolean =
+  env.useMock !== 'false' ||
+  API_BASE_URL === '' ||
+  COGNITO_CLIENT_ID === '' ||
+  COGNITO_DOMAIN_URL === '';
+
+/** Why live mode was refused, for the settings screen and the console. */
+export function liveModeBlockers(): string[] {
+  const missing: string[] = [];
+  if (API_BASE_URL === '') missing.push('NEXT_PUBLIC_API_BASE_URL');
+  if (COGNITO_CLIENT_ID === '') missing.push('NEXT_PUBLIC_COGNITO_CLIENT_ID');
+  if (COGNITO_DOMAIN_URL === '') missing.push('NEXT_PUBLIC_COGNITO_DOMAIN');
+  return missing;
+}
