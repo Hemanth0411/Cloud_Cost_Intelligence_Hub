@@ -27,7 +27,27 @@ BUNDLE="$DIST/lambda.zip"
 BACKUPS="backups"
 # Absolute, not relative: `db_url` is called from inside `cd backend`
 # subshells, where a relative -chdir would resolve to backend/terraform.
-TF="terraform -chdir=$ROOT/terraform"
+# The path handed to terraform.exe must be a WINDOWS path.
+#
+# Git Bash normally rewrites a POSIX argument like /c/DFIQ/... into
+# C:/DFIQ/... on the way to a native binary. `MSYS_NO_PATHCONV=1`
+# switches that off -- and it has to be set for some aws commands
+# (an IAM --path-prefix of "/costhub/" would otherwise become
+# "C:/Program Files/Git/costhub/"), which this script sets per-call.
+#
+# But a user who exports it for their whole shell broke every terraform
+# call here:
+#
+#   Error handling -chdir option: chdir /c/DFIQ/.../terraform:
+#   The system cannot find the path specified.
+#
+# cygpath -m resolves it explicitly instead of relying on the
+# conversion, so the script behaves the same either way.
+TF_DIR="$ROOT/terraform"
+if command -v cygpath >/dev/null 2>&1; then
+  TF_DIR="$(cygpath -m "$TF_DIR")"
+fi
+TF="terraform -chdir=$TF_DIR"
 REGION="us-east-1"
 
 # State a human created. Facts are NOT backed up: they are re-ingested
