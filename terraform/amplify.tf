@@ -14,18 +14,44 @@ resource "aws_amplify_app" "main" {
   repository   = var.amplify_repository != "" ? var.amplify_repository : null
   access_token = var.amplify_access_token != "" ? var.amplify_access_token : null
 
-  platform = "WEB"
+  # WEB_COMPUTE, not WEB. The frontend on the cloudlens-frontend branch
+  # is Next.js 15 with the app router, and "WEB" is static-hosting only --
+  # an Amplify build of a Next app on that platform either fails or
+  # serves a broken tree. WEB_COMPUTE is what Amplify Hosting uses for
+  # Next.js SSR.
+  #
+  # This said "WEB" because the build spec called for Vite + React. The
+  # frontend that actually got written is Next, so the infrastructure
+  # follows it rather than the other way round.
+  platform = "WEB_COMPUTE"
 
-  # Single-page app: unknown paths must serve index.html, or a refresh on
-  # /explore returns 404.
-  custom_rule {
-    source = "/<*>"
-    status = "404-200"
-    target = "/index.html"
-  }
+  # NO SPA rewrite rule. That `/<*>` -> /index.html 404-200 rule is the
+  # right fix for a Vite single-page app and actively wrong for Next on
+  # WEB_COMPUTE: Next owns its own routing, and rewriting every unknown
+  # path to /index.html would shadow its server routes. Amplify applies
+  # the correct Next rules itself when the platform is WEB_COMPUTE.
 
+  # NEXT_PUBLIC_ prefix, not VITE_. Next only exposes a variable to the
+  # browser when its name starts with NEXT_PUBLIC_, so the old VITE_
+  # name was being set and silently ignored by the app.
+  #
+  # ONLY values that depend on nothing else live here. The API URL and
+  # the Cognito ids deliberately do NOT, because adding them creates a
+  # dependency cycle:
+  #
+  #   amplify_app -> cognito_client -> (callback_urls) -> amplify_branch
+  #   amplify_app -> lambda_function_url -> (cors) -> amplify_branch
+  #
+  # Amplify's domain is already an input to the Cognito callback URLs and
+  # the Lambda CORS origins, so Amplify has to stay a leaf. Terraform
+  # catches this as "Cycle:" at validate time.
+  #
+  # Those values reach the frontend through `./do.sh outputs <env>`,
+  # which writes frontend/.env.<env> from the Terraform outputs. For an
+  # Amplify build, set them once in the Amplify console (or pass them to
+  # the manual deploy) -- they only change if the stack is rebuilt.
   environment_variables = {
-    VITE_AWS_REGION           = var.aws_region
+    NEXT_PUBLIC_AWS_REGION    = var.aws_region
     AMPLIFY_MONOREPO_APP_ROOT = "frontend"
   }
 }
@@ -33,7 +59,7 @@ resource "aws_amplify_app" "main" {
 resource "aws_amplify_branch" "main" {
   app_id      = aws_amplify_app.main.id
   branch_name = local.env
-  framework   = "React"
+  framework   = "Next.js - SSR"
   stage       = local.env == "main" ? "PRODUCTION" : "DEVELOPMENT"
 
   # How stakeholders see the demo before Cognito is finished.
