@@ -93,6 +93,35 @@ flowchart LR
     E --> F["Principal built<br/>from token only"]
 ```
 
+The first box is two writes, and for a while it was only one.
+`rbac.invite_user` wrote the `users` row and stopped; nothing in the
+codebase called `AdminCreateUser`. The docstring described the diagram
+above rather than what the function did, so an invited teammate got a
+database row, Cognito had never heard of them, and no code could ever be
+sent. The only pool user was the superadmin, created declaratively by
+`aws_cognito_user` in Terraform — which is why it was never noticed.
+
+`rbac/pool.py` is the missing half. Both writes happen in one
+transaction: a pool failure rolls the `users` row back, so a failed
+invite leaves nothing behind and can be retried as-is. The IAM policy
+had granted `cognito-idp:AdminCreateUser` the whole time, under a
+statement named `ManageInvitedUsers`.
+
+### Who can actually log in
+
+Four gates, and a chryselys.com address clears only one of them:
+
+| Gate | Enforced by |
+|---|---|
+| Must be **invited** | `allow_admin_create_user_only = true` — there is no self-signup surface at all |
+| Must be **@chryselys.com** | `normalize_email`, *and* the Cognito pre-sign-up trigger |
+| Must be able to **receive the code** | SES sandbox delivers only to verified addresses, so each recipient is verified individually |
+| Must have a **grant** to see anything | the grant predicate — signing in successfully and seeing zero rows is the designed outcome, not a failure |
+
+The last one is the point worth repeating: **logging in is not access.**
+A newly invited user with no grants sees an empty state, and
+`test_no_grants_sees_nothing` is the first test in the suite.
+
 | Property | Choice | Why |
 |---|---|---|
 | Registration | **none** — invite only | no self-signup surface |

@@ -15,6 +15,7 @@ from costhub.api.deps import SuperAdmin
 from costhub.connections import store
 from costhub.db import fetch_all
 from costhub.rbac import admin as rbac
+from costhub.rbac import pool
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -72,6 +73,15 @@ def invite(who: SuperAdmin, body: InviteIn) -> dict:
         )
     except rbac.InvalidEmail as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
+    except pool.PoolError as exc:
+        # The database row was rolled back with it, so nothing was
+        # half-created and the same request can simply be retried. Say
+        # that, because the alternative reading -- "the user exists but
+        # is broken" -- would send someone looking in the wrong place.
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            f"{exc} -- nothing was created; the invite can be retried",
+        )
     return {"id": uid, "email": str(body.email).lower()}
 
 

@@ -12,6 +12,8 @@ from datetime import datetime
 from costhub.audit import log
 from costhub.config import settings
 from costhub.db import connect
+from costhub.rbac import pool
+
 
 def allowed_email_domain() -> str:
     """The one source of truth: config.Settings.
@@ -70,10 +72,26 @@ def invite_user(
     one-time code, and the user signs in. That is why no password ever
     exists in this system -- and why migrating accounts later needs no
     credential export.
+
+    BOTH HALVES, or neither. This used to write the `users` row alone,
+    which made the sentence above false: with no pool user, Cognito had
+    nobody to send a code to, so an invited teammate simply could not
+    log in. The pool write happens inside this transaction, so if it
+    fails there is no database row either and the invite can just be
+    retried -- both halves are idempotent.
+
+    The ordering is deliberate. A pool user without a `users` row is
+    refused by the API (`_load_user` finds nothing), which is
+    fail-closed; a `users` row without a pool user is silently
+    unusable, which is the bug this replaces.
     """
     _require_superadmin(actor_role)
     normalized = normalize_email(email)
 
+    # normalize_email has already rejected a non-permitted domain, so
+    # the pool write below cannot trip the pre-sign-up trigger on the
+    # one rule it enforces. Both checks stay: either alone is a single
+    # point of failure.
     with connect() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -88,13 +106,23 @@ def invite_user(
         )
         row = cur.fetchone()
         assert row is not None
+
+        # Inside the transaction on purpose: a PoolError here rolls the
+        # users row back, so a failed invite leaves nothing behind and
+        # can be retried as-is.
+        pool_result = pool.create_user(normalized)
+
         log(
             cur,
             actor=actor,
             action="user.invite",
             entity_type="user",
             entity_id=row["id"],
-            after={"email": normalized, "status": row["status"]},
+            after={
+                "email": normalized,
+                "status": row["status"],
+                "pool": pool_result,
+            },
         )
         return str(row["id"])
 

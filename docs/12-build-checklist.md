@@ -232,7 +232,7 @@ grep -c '^| \[x\]' docs/12-build-checklist.md   # done
 grep -c '^| \[ \]' docs/12-build-checklist.md   # outstanding
 ```
 
-**Backend and infrastructure are complete** (132 tests green). What remains
+**Backend and infrastructure are complete** (139 tests green). What remains
 is the frontend, the live deploy, and the external prerequisites in §0.
 
 ## Critical path

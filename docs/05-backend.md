@@ -68,7 +68,7 @@ module reading `os.environ` — `lambda_handlers.py` also reads
 `INGEST_DAYS` and `ALLOWED_EMAIL_DOMAIN` directly, because a Lambda
 entry point runs before Settings is useful. The claim used to say
 "ONLY", which was false.
-132 tests green. `azure_cm.py` is unit-tested against recorded response
+139 tests green. `azure_cm.py` is unit-tested against recorded response
 shapes but has no subscription to verify against -- see TODO-16b.
 
 ---
