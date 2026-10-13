@@ -14,6 +14,7 @@ import { ApiError } from '@/lib/api/client';
 import { formatDateTime } from '@/lib/format';
 import {
   CONNECTION_CAPABILITIES,
+  importNow,
   testConnection,
   type ProbeOutcome,
   ingestVerdict,
@@ -40,11 +41,17 @@ import { AdminState } from './admin-state';
  * a value it does not have. It now reads `GET /admin/connections` and
  * prints the `credential_mode` the row actually carries.
  *
- * THERE IS NO SYNC BUTTON, in either mode, and its absence is the
- * honest answer: ingest runs on an EventBridge schedule over
- * `cloud_connections` and no endpoint triggers it. The old button
- * animated a spinner and changed nothing. Enable and disable are the
- * two controls that do exist (FR-13), so they are the two offered.
+ * THE OLD SYNC BUTTON WAS REMOVED because it animated a spinner and
+ * changed nothing -- no endpoint triggered ingest. "Import now" is its
+ * honest replacement: it calls
+ * `POST /admin/connections/{id}/import`, which runs the real ingest for
+ * that one account and returns how many rows landed. It is offered in
+ * live mode only, because an import that fetched nothing real would be
+ * a lie about the one thing the button exists to prove.
+ *
+ * "Test" is the other new control, and the two answer different
+ * questions: Test says whether access works and which prerequisite is
+ * missing; Import says whether any data arrived.
  *
  * EVERY VALUE HERE IS A STORED ONE. "Last import" is
  * `last_ingest_at` / `last_ingest_status`, not a health probe -- nothing
@@ -92,6 +99,7 @@ export function AdminConnectionsView() {
   const [adding, setAdding] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
+  const [importingId, setImportingId] = useState<string | null>(null);
   const [outcomes, setOutcomes] = useState<Record<string, ProbeOutcome>>({});
   const state = useAsyncData(`connections:${reloadKey}`, loadConnections);
 
@@ -136,6 +144,33 @@ export function AdminConnectionsView() {
         toast({ tone: 'warning', title: 'Could not run the test', description: message });
       })
       .finally(() => setTestingId(null));
+  }
+
+  function runImport(row: ConnectionRow): void {
+    setImportingId(row.id);
+    importNow(row.id)
+      .then((outcome) => {
+        toast({
+          tone: outcome.ok ? 'success' : 'warning',
+          title: outcome.ok
+            ? `${row.displayName}: imported ${outcome.rows} row(s)`
+            : `${row.displayName}: import failed`,
+          description: outcome.detail,
+        });
+        // Re-read so "last import" and the run list reflect what just
+        // happened, rather than the previous scheduled run.
+        reload();
+      })
+      .catch((cause: unknown) => {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        toast({
+          tone: 'warning',
+          title: 'Could not run the import',
+          description: `${message} If this timed out, the run may still be recorded below as "running".`,
+        });
+        reload();
+      })
+      .finally(() => setImportingId(null));
   }
 
   function toggle(row: ConnectionRow): void {
@@ -205,8 +240,9 @@ export function AdminConnectionsView() {
         <CardHeader>
           <CardTitle>Registered connections</CardTitle>
           <CardDescription>
-            Imports run on a schedule; there is no on-demand trigger, so &ldquo;last import&rdquo; is
-            the stored outcome of the last scheduled run and not a live check.
+            Imports run on a schedule at 06:00 UTC, and &ldquo;Import now&rdquo; runs one
+            immediately for a single account. &ldquo;Last import&rdquo; is the stored outcome of
+            whichever ran most recently &mdash; not a live health check.
           </CardDescription>
         </CardHeader>
         <CardContent className="px-0 pb-0">
@@ -297,6 +333,21 @@ export function AdminConnectionsView() {
                       {CONNECTION_CAPABILITIES.canToggleEnabled && (
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
+                            {CONNECTION_CAPABILITIES.canImport && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={importingId === row.id || !row.enabled}
+                                onClick={() => runImport(row)}
+                                title={
+                                  row.enabled
+                                    ? 'Fetch the last 7 days from this account now'
+                                    : 'Disabled connections are skipped by imports'
+                                }
+                              >
+                                {importingId === row.id ? 'Importing…' : 'Import now'}
+                              </Button>
+                            )}
                             {CONNECTION_CAPABILITIES.canTest && (
                               <Button
                                 variant="outline"

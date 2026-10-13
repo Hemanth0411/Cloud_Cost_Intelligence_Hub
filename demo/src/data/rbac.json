@@ -1,0 +1,58 @@
+{
+  "capturedAt": "2026-10-13T16:16:57+05:30",
+  "source": "costhub/query/scoped.py GRANT_PREDICATE, run against deployed RDS",
+  "window": {
+    "start": "2026-01-01",
+    "end": "2026-12-31"
+  },
+  "predicate": "EXISTS (\n  SELECT 1\n  FROM access_grants g\n  WHERE g.user_id      = %(user_id)s\n    AND g.revoked_at  IS NULL\n    AND g.deleted_at  IS NULL\n    AND g.provider     = f.provider\n    AND g.account_id   = f.account_id\n    AND (g.service_name IS NULL OR g.service_name = f.service_name)\n    AND now() >= g.valid_from\n    AND (g.valid_until IS NULL OR now() < g.valid_until)\n)",
+  "cases": [
+    {
+      "label": "superadmin (bypass, audited)",
+      "principal": "hemanth.reddy@chryselys.com",
+      "rows": 27,
+      "accounts": 1,
+      "services": 6,
+      "cost": 0.0
+    },
+    {
+      "label": "user, granted the whole account",
+      "principal": "rbac.proof@costhub.demo",
+      "rows": 27,
+      "accounts": 1,
+      "services": 6,
+      "cost": 0.0
+    },
+    {
+      "label": "same user, grant narrowed to one service",
+      "principal": "rbac.proof@costhub.demo",
+      "rows": 10,
+      "accounts": 1,
+      "services": 1,
+      "cost": 0.0
+    },
+    {
+      "label": "same user, grant revoked",
+      "principal": "rbac.proof@costhub.demo",
+      "rows": 0,
+      "accounts": 0,
+      "services": 0,
+      "cost": 0.0
+    },
+    {
+      "label": "user with no grant at all",
+      "principal": "no.grant@costhub.demo",
+      "rows": 0,
+      "accounts": 0,
+      "services": 0,
+      "cost": 0.0
+    }
+  ],
+  "rolledBack": {
+    "usersBefore": 2,
+    "usersAfter": 2,
+    "grantsBefore": 0,
+    "grantsAfter": 0,
+    "clean": true
+  }
+}

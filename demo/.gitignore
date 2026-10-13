@@ -1,0 +1,16 @@
+# Render output and intermediates: regenerate with `npx remotion render`.
+out/
+node_modules/
+
+# The Kokoro voice model (62 MB) and its venv. tools/make-audio.py needs
+# only numpy + soundfile; see README.
+tts/venv/
+tts/*.onnx
+tts/*.bin
+tts/*.log
+
+# The raw bed is an intermediate; bed.wav is the one the video uses.
+public/audio/bed-raw.wav
+
+# Screenshots are captured from a running dev server, not committed.
+public/shots/

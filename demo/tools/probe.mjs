@@ -1,0 +1,17 @@
+import puppeteer from 'puppeteer';
+const b = await puppeteer.launch({ headless: true });
+const p = await b.newPage();
+await p.setViewport({ width: 1400, height: 900 });
+const errs = [];
+p.on('console', (m) => { if (m.type() === 'error') errs.push(m.text().slice(0, 200)); });
+p.on('requestfailed', (r) => errs.push('failed: ' + r.url()));
+p.on('response', (r) => { if (r.status() >= 400) errs.push(r.status() + ' ' + r.url()); });
+p.on('pageerror', (e) => errs.push('pageerror: ' + String(e).slice(0, 300)));
+await p.goto('http://localhost:3000/login?mock=1', { waitUntil: 'networkidle2' });
+await new Promise(r => setTimeout(r, 4000));
+console.log('url:', p.url());
+console.log('text:', (await p.evaluate(() => document.body.innerText)).slice(0, 700));
+console.log('inputs:', await p.evaluate(() => [...document.querySelectorAll('input')].map(i => i.type + '/' + i.name)));
+console.log('errors:', errs.slice(0, 6));
+await p.screenshot({ path: '/tmp/probe.png' });
+await b.close();

@@ -1,0 +1,17 @@
+{
+  "_comment": "Single source of truth for scene length, read by src/Root.tsx AND tools/make-audio.py so the audio bed and the cuts cannot drift. Bars are at the bpm below; keep them multiples of 0.5 so every cut lands on a beat.",
+  "bpm": 100,
+  "fps": 30,
+  "scenes": [
+    { "id": "Hook", "bars": 2.5 },
+    { "id": "Problem", "bars": 3 },
+    { "id": "Product", "bars": 3.5 },
+    { "id": "Rbac", "bars": 3.5 },
+    { "id": "Predicate", "bars": 4 },
+    { "id": "Proof", "bars": 4 },
+    { "id": "Cost", "bars": 3 },
+    { "id": "Deploy", "bars": 3 },
+    { "id": "Scale", "bars": 3 },
+    { "id": "Close", "bars": 2.5 }
+  ]
+}

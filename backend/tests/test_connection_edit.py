@@ -14,7 +14,7 @@ the credential it was not editing.
 """
 from __future__ import annotations
 
-from costhub.connections import store
+from costhub.connections import edits, store
 from costhub.db import fetch_all
 
 BODY = {
@@ -102,8 +102,8 @@ def test_the_natural_key_cannot_be_edited(as_superadmin):
     row = _row()
     assert row["account_id"] == "222233334444"
     assert row["provider"] == "aws"
-    assert "account_id" not in store.EDITABLE
-    assert "provider" not in store.EDITABLE
+    assert "account_id" not in edits.EDITABLE
+    assert "provider" not in edits.EDITABLE
 
 
 def test_patching_something_that_does_not_exist_is_404(as_superadmin):

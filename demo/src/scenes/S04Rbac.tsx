@@ -1,0 +1,150 @@
+import React from 'react';
+import { useCurrentFrame } from 'remotion';
+import { Caption, Eyebrow, Headline, Pill, Stage } from '../components/chrome';
+import { BarsKeyed } from '../components/data';
+import mock from '../data/mock.json';
+import { C, F } from '../theme';
+import { compactUsd, enter, sceneFade, springs, usd } from '../anim';
+
+/**
+ * Scene 4 -- the differentiator, shown rather than described.
+ *
+ * ONE panel, not two side by side, and the grant is applied mid-shot:
+ * the four accounts the user was not granted collapse to zero and the
+ * total follows them down. Two static panels would let a viewer assume
+ * two different screens; one panel changing makes it the same screen
+ * under a different identity.
+ *
+ * The collapse is the sum-of-springs case from anim.ts -- the bars are
+ * still settling from their entrance when the target changes, and they
+ * have to bend, not jump.
+ */
+const GRANT_AT = 108;
+
+export const S04Rbac: React.FC<{ duration: number }> = ({ duration }) => {
+  const frame = useCurrentFrame();
+  const accounts = mock.all.accounts;
+  const grantedId = mock.granted.accountId;
+  const max = Math.max(...accounts.map((a) => a.cost));
+
+  const bars = accounts.map((a, i) => {
+    const kept = a.id === grantedId;
+    const appear = 18 + i * 3;
+    return {
+      label: a.name,
+      keys: [
+        { at: appear, value: 0 },
+        { at: appear, value: a.cost },
+        ...(kept ? [] : [{ at: GRANT_AT + i * 2, value: 0 }]),
+      ],
+      dimAt: kept ? undefined : GRANT_AT + i * 2,
+      dimNote: 'not granted',
+    };
+  });
+
+  const switched = frame >= GRANT_AT;
+  return (
+    <Stage opacity={sceneFade(frame, duration, 6, 6)}>
+      <Eyebrow frame={frame}>The difference that matters</Eyebrow>
+      <Headline frame={frame} size={70}>
+        The same screen. A different identity.
+      </Headline>
+
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 24,
+          marginTop: 38,
+          ...enter(frame, 12),
+        }}
+      >
+        <span style={{ fontFamily: F.mono, fontSize: 32, color: C.ateneo }}>
+          {switched ? 'finance.lead@chryselys.com' : 'hemanth.reddy@chryselys.com'}
+        </span>
+        <Pill color={switched ? C.bronze : C.ateneo}>
+          {switched ? '1 grant: Data Lake' : 'superadmin'}
+        </Pill>
+        <span style={{ fontSize: 28, color: C.slate }}>
+          {switched ? 'one account, every service in it' : 'every account, audited on each read'}
+        </span>
+      </div>
+
+      <div style={{ display: 'flex', gap: 70, marginTop: 36, alignItems: 'flex-start' }}>
+        <BarsKeyed
+          frame={frame}
+          bars={bars}
+          scaleMax={max}
+          width={1080}
+          format={compactUsd}
+          rowHeight={62}
+          labelWidth={330}
+        />
+        <div style={{ paddingTop: 10 }}>
+          <div
+            style={{
+              fontFamily: F.mono,
+              fontSize: 24,
+              letterSpacing: 1.8,
+              textTransform: 'uppercase',
+              color: C.slate,
+            }}
+          >
+            Visible spend
+          </div>
+          <VisibleSpend frame={frame} />
+        </div>
+      </div>
+
+      <Caption frame={frame} start={26}>
+        Mock estate, AWS accounts only. The narrowing itself is measured against the deployed
+        database in the next scene.
+      </Caption>
+    </Stage>
+  );
+};
+
+/**
+ * Visible spend and the account count, both keyframed.
+ *
+ * Conditional values would CUT when the grant lands, and a cut in a
+ * number is indistinguishable from a glitch. Keyframed, they fall --
+ * which is also the honest picture of what a grant does.
+ */
+const VisibleSpend: React.FC<{ frame: number }> = ({ frame }) => {
+  const shownTotal = springs(frame, [
+    { at: 18, value: 0 },
+    { at: 18, value: mock.all.total },
+    { at: GRANT_AT, value: mock.granted.total },
+  ]);
+  const shownAccounts = springs(frame, [
+    { at: 20, value: 0 },
+    { at: 20, value: mock.all.accounts.length },
+    { at: GRANT_AT, value: 1 },
+  ]);
+  return (
+    <>
+      <div
+        style={{
+          fontFamily: F.slab,
+          fontWeight: 700,
+          fontSize: 76,
+          color: C.ateneo,
+          letterSpacing: -1.5,
+          lineHeight: 1.1,
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      >
+        {usd(shownTotal)}
+      </div>
+      <div style={{ fontSize: 30, color: C.slate, paddingTop: 10 }}>
+        {Math.round(shownAccounts)} of {mock.all.accounts.length} accounts visible
+      </div>
+      <div style={{ fontSize: 28, color: C.slate, paddingTop: 22, maxWidth: 420, lineHeight: 1.4 }}>
+        {frame >= GRANT_AT + 10
+          ? 'Four accounts did not disappear from the UI. They were never returned.'
+          : ''}
+      </div>
+    </>
+  );
+};

@@ -90,6 +90,13 @@ export const CONNECTION_CAPABILITIES = {
    * opposite of what this button is for.
    */
   canTest: !isMock(),
+  /**
+   * `POST /admin/connections/{id}/import` actually calls Cost
+   * Explorer and writes rows, so there is nothing honest to
+   * simulate: a mock 'imported 11 rows' would be a lie about the
+   * one thing the button exists to prove.
+   */
+  canImport: !isMock(),
 } as const;
 
 // ------------------------------------------------------------- reads
@@ -194,6 +201,27 @@ export async function setConnectionEnabled(id: string, value: boolean): Promise<
   if (isMock()) return;
   await post(`/admin/connections/${encodeURIComponent(id)}/enabled`, undefined, {
     query: { value },
+  });
+}
+
+export interface ImportOutcome {
+  ok: boolean;
+  rows: number;
+  window: [string, string];
+  detail: string;
+}
+
+/**
+ * Import from one account now, rather than waiting for 06:00 UTC.
+ *
+ * Runs inline on the server, so this can take several seconds and the
+ * caller must show that it is working. It answers 200 with ok=false for
+ * a failed import -- same contract as the test endpoint: the status says
+ * the request ran, the body says what happened.
+ */
+export async function importNow(id: string, days = 7): Promise<ImportOutcome> {
+  return post<ImportOutcome>(`/admin/connections/${encodeURIComponent(id)}/import`, undefined, {
+    query: { days },
   });
 }
 

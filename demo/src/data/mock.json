@@ -1,0 +1,395 @@
+{
+  "generatedAt": "2026-10-13T10:42:06.237Z",
+  "source": "frontend/src/lib/mock -- audited by `npm run verify:data` (3,940 checks)",
+  "datasetStart": "2024-01-01",
+  "datasetEnd": "2026-10-11",
+  "range": {
+    "preset": "12m",
+    "from": "2025-10-12",
+    "to": "2026-10-11",
+    "days": 365,
+    "prevFrom": "2024-10-12",
+    "prevTo": "2025-10-11",
+    "hasPrevious": true
+  },
+  "awsAccountCount": 5,
+  "all": {
+    "total": 3479523.12,
+    "avgDaily": 9532.94,
+    "deltaPct": 20.433820957906285,
+    "servicesInUse": 10,
+    "monthly": [
+      {
+        "start": "2025-11-01",
+        "aws": 255910.57,
+        "total": 255910.57,
+        "partial": false
+      },
+      {
+        "start": "2025-12-01",
+        "aws": 274858.88,
+        "total": 274858.88,
+        "partial": false
+      },
+      {
+        "start": "2026-01-01",
+        "aws": 280019.79,
+        "total": 280019.79,
+        "partial": false
+      },
+      {
+        "start": "2026-02-01",
+        "aws": 253911.72,
+        "total": 253911.72,
+        "partial": false
+      },
+      {
+        "start": "2026-03-01",
+        "aws": 286339.8,
+        "total": 286339.8,
+        "partial": false
+      },
+      {
+        "start": "2026-04-01",
+        "aws": 281331.7,
+        "total": 281331.7,
+        "partial": false
+      },
+      {
+        "start": "2026-05-01",
+        "aws": 293020.83,
+        "total": 293020.83,
+        "partial": false
+      },
+      {
+        "start": "2026-06-01",
+        "aws": 296629.66,
+        "total": 296629.66,
+        "partial": false
+      },
+      {
+        "start": "2026-07-01",
+        "aws": 325698.48,
+        "total": 325698.48,
+        "partial": false
+      },
+      {
+        "start": "2026-08-01",
+        "aws": 318700.7,
+        "total": 318700.7,
+        "partial": false
+      },
+      {
+        "start": "2026-09-01",
+        "aws": 317800.41,
+        "total": 317800.41,
+        "partial": false
+      },
+      {
+        "start": "2026-10-01",
+        "aws": 123545.46,
+        "total": 123545.46,
+        "partial": true
+      }
+    ],
+    "accounts": [
+      {
+        "id": "aws-prod-core",
+        "name": "Prod Core Platform",
+        "environment": "production",
+        "team": "Platform Engineering",
+        "region": "us-east-1",
+        "externalId": "4821-7730-1159",
+        "cost": 1436790.16,
+        "sharePct": 41.29,
+        "monthlyBudget": 172000
+      },
+      {
+        "id": "aws-data-lake",
+        "name": "Data Lake",
+        "environment": "production",
+        "team": "Data Engineering",
+        "region": "us-west-2",
+        "externalId": "9034-2216-8842",
+        "cost": 830632.38,
+        "sharePct": 23.87,
+        "monthlyBudget": 96000
+      },
+      {
+        "id": "aws-ml-research",
+        "name": "ML Research",
+        "environment": "development",
+        "team": "Applied ML",
+        "region": "us-east-2",
+        "externalId": "3377-5509-4421",
+        "cost": 757229.15,
+        "sharePct": 21.76,
+        "monthlyBudget": 60000
+      },
+      {
+        "id": "aws-staging",
+        "name": "Staging",
+        "environment": "staging",
+        "team": "Platform Engineering",
+        "region": "us-east-1",
+        "externalId": "6150-9983-0217",
+        "cost": 296607.36,
+        "sharePct": 8.52,
+        "monthlyBudget": 30000
+      },
+      {
+        "id": "aws-sandbox",
+        "name": "Developer Sandbox",
+        "environment": "development",
+        "team": "Developer Experience",
+        "region": "eu-west-1",
+        "externalId": "7712-0043-6628",
+        "cost": 158264.07,
+        "sharePct": 4.55,
+        "monthlyBudget": 14000
+      }
+    ],
+    "services": [
+      {
+        "label": "Amazon Elastic Compute Cloud - Compute",
+        "cost": 1476368.23,
+        "sharePct": 42.43,
+        "deltaPct": 21.368275236748836
+      },
+      {
+        "label": "Amazon Relational Database Service",
+        "cost": 748408.62,
+        "sharePct": 21.51,
+        "deltaPct": 16.889793342662134
+      },
+      {
+        "label": "Amazon Simple Storage Service",
+        "cost": 438689.3,
+        "sharePct": 12.61,
+        "deltaPct": 20.749550680706207
+      },
+      {
+        "label": "AWS Data Transfer",
+        "cost": 185727.98,
+        "sharePct": 5.34,
+        "deltaPct": 13.510180854921227
+      },
+      {
+        "label": "Amazon Redshift",
+        "cost": 170101.12,
+        "sharePct": 4.89,
+        "deltaPct": 55.774821240183016
+      },
+      {
+        "label": "AWS Lambda",
+        "cost": 144500.67,
+        "sharePct": 4.15,
+        "deltaPct": 23.15745791230587
+      },
+      {
+        "label": "Amazon SageMaker",
+        "cost": 110839.08,
+        "sharePct": 3.19,
+        "deltaPct": 14.986481403137219
+      },
+      {
+        "label": "AWS Glue",
+        "cost": 102726.09,
+        "sharePct": 2.95,
+        "deltaPct": 7.8457997275668045
+      },
+      {
+        "label": "Amazon CloudFront",
+        "cost": 90176.99,
+        "sharePct": 2.59,
+        "deltaPct": 17.15280598000718
+      },
+      {
+        "label": "Amazon Elastic Kubernetes Service",
+        "cost": 11985.04,
+        "sharePct": 0.34,
+        "deltaPct": 15.478833287084036
+      }
+    ]
+  },
+  "granted": {
+    "accountId": "aws-data-lake",
+    "accountName": "Data Lake",
+    "total": 830632.38,
+    "servicesInUse": 6,
+    "monthly": [
+      {
+        "start": "2025-11-01",
+        "aws": 59708.25,
+        "total": 59708.25,
+        "partial": false
+      },
+      {
+        "start": "2025-12-01",
+        "aws": 66222.28,
+        "total": 66222.28,
+        "partial": false
+      },
+      {
+        "start": "2026-01-01",
+        "aws": 67888.69,
+        "total": 67888.69,
+        "partial": false
+      },
+      {
+        "start": "2026-02-01",
+        "aws": 63327.06,
+        "total": 63327.06,
+        "partial": false
+      },
+      {
+        "start": "2026-03-01",
+        "aws": 69652.31,
+        "total": 69652.31,
+        "partial": false
+      },
+      {
+        "start": "2026-04-01",
+        "aws": 70973.31,
+        "total": 70973.31,
+        "partial": false
+      },
+      {
+        "start": "2026-05-01",
+        "aws": 71410.2,
+        "total": 71410.2,
+        "partial": false
+      },
+      {
+        "start": "2026-06-01",
+        "aws": 71056.76,
+        "total": 71056.76,
+        "partial": false
+      },
+      {
+        "start": "2026-07-01",
+        "aws": 73829.46,
+        "total": 73829.46,
+        "partial": false
+      },
+      {
+        "start": "2026-08-01",
+        "aws": 74964.62,
+        "total": 74964.62,
+        "partial": false
+      },
+      {
+        "start": "2026-09-01",
+        "aws": 73815.78,
+        "total": 73815.78,
+        "partial": false
+      },
+      {
+        "start": "2026-10-01",
+        "aws": 27225.83,
+        "total": 27225.83,
+        "partial": true
+      }
+    ],
+    "services": [
+      {
+        "label": "Amazon Relational Database Service",
+        "cost": 293710.19,
+        "sharePct": 35.36
+      },
+      {
+        "label": "Amazon Redshift",
+        "cost": 170101.12,
+        "sharePct": 20.48
+      },
+      {
+        "label": "Amazon Simple Storage Service",
+        "cost": 125397.57,
+        "sharePct": 15.1
+      },
+      {
+        "label": "AWS Glue",
+        "cost": 102726.09,
+        "sharePct": 12.37
+      },
+      {
+        "label": "AWS Data Transfer",
+        "cost": 98920.12,
+        "sharePct": 11.91
+      },
+      {
+        "label": "AWS Lambda",
+        "cost": 39777.29,
+        "sharePct": 4.79
+      }
+    ]
+  },
+  "admin": {
+    "users": [
+      {
+        "email": "hemanth.reddy@chryselys.com",
+        "role": "superadmin",
+        "status": "active"
+      },
+      {
+        "email": "finance.lead@chryselys.com",
+        "role": "user",
+        "status": "active"
+      },
+      {
+        "email": "platform.eng@chryselys.com",
+        "role": "user",
+        "status": "active"
+      },
+      {
+        "email": "new.joiner@chryselys.com",
+        "role": "user",
+        "status": "invited"
+      },
+      {
+        "email": "former.contractor@chryselys.com",
+        "role": "user",
+        "status": "disabled"
+      }
+    ],
+    "grants": [
+      {
+        "user": "finance.lead@chryselys.com",
+        "provider": "aws",
+        "account": "Prod Core Platform",
+        "service": null,
+        "validUntil": null,
+        "revokedAt": null,
+        "reason": "Monthly cost reporting"
+      },
+      {
+        "user": "platform.eng@chryselys.com",
+        "provider": "gcp",
+        "account": "BigQuery Warehouse",
+        "service": "Amazon Elastic Compute Cloud",
+        "validUntil": null,
+        "revokedAt": null,
+        "reason": "Owns the compute footprint"
+      },
+      {
+        "user": "platform.eng@chryselys.com",
+        "provider": "azure",
+        "account": "Analytics Hub",
+        "service": null,
+        "validUntil": "2026-10-15T09:00:00.000Z",
+        "revokedAt": null,
+        "reason": "Temporary migration review"
+      },
+      {
+        "user": "former.contractor@chryselys.com",
+        "provider": "azure",
+        "account": "AI Services",
+        "service": null,
+        "validUntil": null,
+        "revokedAt": "2026-09-24T09:00:00.000Z",
+        "reason": "Contract ended"
+      }
+    ],
+    "auditActions": 12
+  }
+}

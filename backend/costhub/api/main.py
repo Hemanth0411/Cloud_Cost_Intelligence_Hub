@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from costhub.api import deps
-from costhub.api.routes import admin, alerts, anomalies, cost, meta
+from costhub.api.routes import admin, alerts, anomalies, connections, cost, meta
 from costhub.config import settings
 from costhub.db import fetch_one
 
@@ -132,6 +132,7 @@ app.include_router(meta.router)
 app.include_router(anomalies.router)
 app.include_router(alerts.router)
 app.include_router(admin.router)
+app.include_router(connections.router)
 
 
 @app.get("/health", tags=["ops"], summary="Liveness and configuration")

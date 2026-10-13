@@ -1,0 +1,146 @@
+{
+  "capturedAt": "2026-10-13T16:13:32+05:30",
+  "source": "deployed RDS (costhub-dev-db, AWS account 997916278551, us-east-1)",
+  "totals": {
+    "row_count": 27,
+    "total_cost": 0.0,
+    "first_day": "2026-07-01",
+    "last_day": "2026-10-13",
+    "services": 6,
+    "accounts": 1
+  },
+  "services": [
+    {
+      "service_name": "AWS CloudShell",
+      "cost": 2e-06,
+      "days": 1
+    },
+    {
+      "service_name": "Amazon Relational Database Service",
+      "cost": 0.0,
+      "days": 1
+    },
+    {
+      "service_name": "Amazon Simple Storage Service",
+      "cost": 0.0,
+      "days": 10
+    },
+    {
+      "service_name": "AWS Amplify",
+      "cost": 0.0,
+      "days": 2
+    },
+    {
+      "service_name": "AWS Secrets Manager",
+      "cost": 0.0,
+      "days": 2
+    },
+    {
+      "service_name": "AWS Data Transfer",
+      "cost": -2e-06,
+      "days": 11
+    }
+  ],
+  "ingestRuns": [
+    {
+      "account_id": "self",
+      "status": "success",
+      "rows_written": 11,
+      "error": null,
+      "started_at": "2026-10-13T10:33:28.275445+00:00"
+    },
+    {
+      "account_id": "881953306582",
+      "status": "failed",
+      "rows_written": 0,
+      "error": "Stemline (881953306582): Cost Explorer access denied. Check that the root user has enabled IAM access to billing information, and that the principal has ce:GetCostAndUsage.",
+      "started_at": "2026-10-13T10:33:12.607764+00:00"
+    },
+    {
+      "account_id": "self",
+      "status": "success",
+      "rows_written": 9,
+      "error": null,
+      "started_at": "2026-10-13T06:00:11.317553+00:00"
+    },
+    {
+      "account_id": "self",
+      "status": "success",
+      "rows_written": 25,
+      "error": null,
+      "started_at": "2026-10-13T04:27:11.303485+00:00"
+    }
+  ],
+  "connectionTests": [
+    {
+      "at": "2026-10-13T09:30:52.043315+00:00",
+      "actor": "hemanth.reddy@chryselys.com",
+      "action": "connection.test",
+      "after": {
+        "ok": false,
+        "stage": "assume_role"
+      }
+    },
+    {
+      "at": "2026-10-13T09:30:52.945591+00:00",
+      "actor": "hemanth.reddy@chryselys.com",
+      "action": "connection.test",
+      "after": {
+        "ok": false,
+        "stage": "assume_role"
+      }
+    },
+    {
+      "at": "2026-10-13T09:30:54.330412+00:00",
+      "actor": "hemanth.reddy@chryselys.com",
+      "action": "connection.test",
+      "after": {
+        "ok": true,
+        "stage": "ok"
+      }
+    },
+    {
+      "at": "2026-10-13T09:30:56.202854+00:00",
+      "actor": "hemanth.reddy@chryselys.com",
+      "action": "connection.test",
+      "after": {
+        "ok": true,
+        "stage": "ok"
+      }
+    }
+  ],
+  "auditMix": [
+    {
+      "action": "access.superadmin_bypass",
+      "n": 63
+    },
+    {
+      "action": "connection.test",
+      "n": 4
+    },
+    {
+      "action": "connection.create",
+      "n": 2
+    },
+    {
+      "action": "anomaly.scan",
+      "n": 1
+    },
+    {
+      "action": "connection.rename",
+      "n": 1
+    },
+    {
+      "action": "user.invite",
+      "n": 1
+    },
+    {
+      "action": "connection.disable",
+      "n": 1
+    },
+    {
+      "action": "connection.enable",
+      "n": 1
+    }
+  ]
+}
