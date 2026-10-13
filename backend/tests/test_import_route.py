@@ -192,3 +192,79 @@ def test_edits_update_is_still_the_only_writer_of_editable_columns():
         "a patchable field is missing from edits.EDITABLE, so it would be "
         "silently ignored rather than applied"
     )
+
+
+def test_a_successful_import_also_runs_detection_for_that_account(
+    as_superadmin, no_real_aws, monkeypatch
+):
+    """The schedule runs ingest at 06:00 and detection at 06:30, so a
+    newly connected account showed no anomalies until the next morning
+    even though its history had just arrived."""
+    seen: list[dict] = []
+
+    class _Result:
+        findings = 2
+
+    from costhub.anomaly import runner as anomaly_runner
+
+    def fake_scan(*, actor, account_id=None, **kw):
+        seen.append({"actor": actor, "account_id": account_id})
+        return _Result()
+
+    monkeypatch.setattr(anomaly_runner, "scan", fake_scan)
+
+    cid = as_superadmin.post("/admin/connections", json=BODY).json()["id"]
+    body = as_superadmin.post(f"/admin/connections/{cid}/import?days=3").json()
+
+    assert body["findings"] == 2
+    # Scoped to the imported account, not a full re-scan of everything.
+    assert seen == [{"actor": "root@costhub.test", "account_id": "333344445555"}]
+
+
+def test_detection_is_skipped_when_nothing_was_imported(
+    as_superadmin, no_real_aws, monkeypatch
+):
+    """`findings: null` means detection did not run -- distinct from 0,
+    which means it ran and found nothing."""
+    from costhub.anomaly import runner as anomaly_runner
+    from costhub.ingest import ports
+
+    class _Empty:
+        name = "faked-empty"
+
+        def fetch(self, *, account_id, start, end):
+            return iter(())
+
+    monkeypatch.setattr("costhub.ingest.sources.source_for", lambda c: _Empty())
+    called = []
+    monkeypatch.setattr(anomaly_runner, "scan", lambda **kw: called.append(kw))
+
+    cid = as_superadmin.post("/admin/connections", json=BODY).json()["id"]
+    body = as_superadmin.post(f"/admin/connections/{cid}/import?days=3").json()
+
+    assert body["rows"] == 0
+    assert body["findings"] is None
+    assert called == [], "no rows means nothing new to detect on"
+    assert ports  # keep the import meaningful to linters
+
+
+def test_a_detection_failure_does_not_fail_the_import(
+    as_superadmin, no_real_aws, monkeypatch
+):
+    """The rows are already committed and useful, and the 06:30 run will
+    pick the series up anyway. Losing the import over it would be worse."""
+    from costhub.anomaly import runner as anomaly_runner
+
+    def boom(**kw):
+        raise RuntimeError("detector exploded")
+
+    monkeypatch.setattr(anomaly_runner, "scan", boom)
+
+    cid = as_superadmin.post("/admin/connections", json=BODY).json()["id"]
+    response = as_superadmin.post(f"/admin/connections/{cid}/import?days=3")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True and body["rows"] == 1
+    assert body["findings"] is None
+    assert fetch_all("SELECT 1 FROM fact_cost_daily WHERE account_id = '333344445555'")

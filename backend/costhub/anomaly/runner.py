@@ -82,7 +82,9 @@ class ScanResult:
         )
 
 
-def _load(start: date, end: date) -> dict[Key, list[tuple[date, Decimal]]]:
+def _load(
+    start: date, end: date, account_id: str | None = None
+) -> dict[Key, list[tuple[date, Decimal]]]:
     """Every daily series in the window, via the scoped reader.
 
     Detection has to see every account by design -- an anomaly in an
@@ -93,6 +95,12 @@ def _load(start: date, end: date) -> dict[Key, list[tuple[date, Decimal]]]:
     rows = scoped.all_series(scoped.system_principal(), start=start, end=end)
     grouped: dict[Key, list[tuple[date, Decimal]]] = {}
     for r in rows:
+        # Filtered here rather than in SQL on purpose: `all_series` is the
+        # sanctioned reader and widening its signature for one caller
+        # would mean another query shape to keep honest. The series count
+        # is in the tens, so the saving is not worth it.
+        if account_id is not None and r["account_id"] != account_id:
+            continue
         key: Key = (r["provider"], r["account_id"], r["service_name"])
         grouped.setdefault(key, []).append((r["usage_date"], r["cost"]))
     return grouped
@@ -103,13 +111,21 @@ def scan(
     detector: Detector | None = None,
     lookback_days: int = 120,
     actor: str = SYSTEM_EMAIL,
+    account_id: str | None = None,
 ) -> ScanResult:
-    """Detect across all series and persist the findings."""
+    """Detect across all series and persist the findings.
+
+    `account_id` narrows the scan to one account, which is what an
+    on-demand import uses: having just fetched new cost for one account,
+    re-scanning the other accounts' unchanged series is work nobody
+    asked for, and the API has a 29-second budget to fit in. The
+    scheduled run leaves it None and scans everything.
+    """
     det = detector or MadDetector()
     end = date.today()
     start = end - timedelta(days=lookback_days)
 
-    grouped = _load(start, end)
+    grouped = _load(start, end, account_id)
     result = ScanResult(by_kind={})
 
     with connect() as conn, conn.cursor() as cur:

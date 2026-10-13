@@ -12,6 +12,8 @@ are different facts and the operator needs to tell them apart.
 """
 from __future__ import annotations
 
+import logging
+
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -23,6 +25,9 @@ from costhub.audit import log as audit_log
 from costhub.connections import edits, store
 from costhub.connections.probe import probe
 from costhub.db import connect
+from costhub.ingest.stale import reap_stale_runs
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -91,6 +96,7 @@ class ConnectionPatch(BaseModel):
 # value is a UUID.
 @router.get("/connections", summary="Registered cloud accounts")
 def list_connections(_: SuperAdmin) -> dict:
+    reap_stale_runs()  # or a timed-out import keeps showing the prior success
     rows = store.list_connections()
     return {"data": rows, "row_count": len(rows)}
 
@@ -144,13 +150,13 @@ def import_now(
     role, so this function already holds the `ce:*` and `sts:AssumeRole`
     it needs.
 
-    THE TIMEOUT IS REAL and `days` is capped at 31 because of it. API
-    Gateway cuts the request at 29 seconds. One connection over a window
-    inside a single month is one Cost Explorer call and returns in a few
-    seconds; a long backfill would not, which is what `cli backfill` is
-    for. If it does time out the work is not lost or invisible: the
-    `ingest_runs` row is written BEFORE fetching, so the run is visible
-    on this screen as `running` rather than silently absent.
+    THE TIMEOUT IS REAL: API Gateway cuts the request at 29s, the Lambda
+    dies at 30. `days` <= 31 bounds this at THREE Cost Explorer calls
+    plus pagination, not one -- one call per calendar month touched, and
+    31 always touches two, sometimes three (arithmetic: `default_window`).
+    At a measured ~3.4s a call that is about 10s: fine, not guaranteed.
+    On a timeout no cost rows are half-written, and the `running` row is
+    later closed as failed by `reap_stale_runs` (ingest/stale.py).
     """
     from costhub.ingest import runner
     from costhub.ingest.cost_explorer import default_window
@@ -188,6 +194,34 @@ def import_now(
     # could never run, because `ingest` only returns an empty list when
     # it had to consult `store.enabled()` itself.
     result = results[0]
+
+    # DETECT ON WHAT WE JUST IMPORTED, scoped to this account.
+    #
+    # The schedule runs ingest at 06:00 and detection at 06:30, so a
+    # newly connected account showed no anomalies until the following
+    # morning even though its history had just arrived. Running it here
+    # closes that gap.
+    #
+    # Scoped to the one account, and only when rows actually landed:
+    # re-scanning untouched series would be work nobody asked for, and
+    # this has to fit the same 29-second budget as the import. Measured
+    # locally at ~3s to load 28 series; a warm Lambda reads RDS in-region
+    # and pays neither interpreter start-up nor a cross-continent hop.
+    #
+    # A detection failure must NOT fail the import. The rows are already
+    # committed and useful; the scheduled 06:30 run will pick the series
+    # up regardless, so the honest answer is to report the import and say
+    # detection did not run.
+    findings: int | None = None
+    if result.ok and result.rows:
+        try:
+            from costhub.anomaly import runner as anomaly_runner
+
+            scan = anomaly_runner.scan(actor=who.email, account_id=conn.account_id)
+            findings = scan.findings
+        except Exception:
+            log.exception("detection after import failed for %s", conn.account_id)
+
     with connect() as db, db.cursor() as cur:
         audit_log(
             cur,
@@ -195,12 +229,17 @@ def import_now(
             action="connection.import",
             entity_type="cloud_connection",
             entity_id=connection_id,
-            after={"ok": result.ok, "rows": result.rows, "days": days},
+            after={"ok": result.ok, "rows": result.rows, "days": days,
+                   "findings": findings},
         )
 
     return {
         "ok": result.ok,
         "rows": result.rows,
+        # null means detection did not run (import failed, no new rows,
+        # or the scan itself errored) -- distinct from 0, which means it
+        # ran and found nothing.
+        "findings": findings,
         "window": [start.isoformat(), end.isoformat()],
         # On failure, point at Test connection. The ingest path cannot
         # tell the two AccessDenied cases apart -- a failed AssumeRole
