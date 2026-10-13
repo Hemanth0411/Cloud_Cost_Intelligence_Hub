@@ -9,6 +9,8 @@ from __future__ import annotations
 import logging
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -115,6 +117,7 @@ class _UnhandledErrors(BaseHTTPMiddleware):
 
 app.add_middleware(_UnhandledErrors)
 
+
 # Never `origins or ["*"]`: an unset CORS_ORIGINS used to serve a
 # wildcard WITH credentials enabled. No origins configured means no
 # cross-origin access, which is the safe reading of "unconfigured".
@@ -126,6 +129,62 @@ app.add_middleware(
     allow_headers=["authorization", "content-type"]
     + (["x-dev-user"] if deps.dev_mode() else []),
 )
+
+# A 422 MUST NOT ECHO A CREDENTIAL BACK, and by default it does.
+#
+# FastAPI's built-in validation handler returns `exc.errors()` verbatim,
+# and pydantic v2 puts the offending `input` in every entry. For a
+# `missing` error that input is the WHOLE parent object -- so
+# `POST /admin/connections` carrying an access key but missing
+# `display_name` answered 422 with the entire body, key included, in the
+# response. Nothing was stored and nothing was logged; it came straight
+# back out of the validator, before any route ran.
+#
+# So the two credential inputs are blanked wherever they appear in an
+# error: as the value of a key in an echoed object, and as the `input` of
+# an error located ON one of them. Everything else is passed through
+# untouched, because the point of a 422 is to say which field was wrong.
+#
+# Registered as a handler rather than done in the models: pydantic
+# `SecretStr` masks a value it has successfully parsed, and an error is
+# by definition the case where it did not.
+CREDENTIAL_FIELDS = frozenset({"access_key_id", "secret_access_key"})
+REDACTED = "<redacted>"
+
+
+def _scrub(value):
+    """Blank any credential field inside an echoed input value."""
+    if isinstance(value, dict):
+        return {
+            k: (REDACTED if k in CREDENTIAL_FIELDS else _scrub(v))
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_scrub(v) for v in value]
+    return value
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request: Request, exc: RequestValidationError):
+    errors = []
+    for error in exc.errors():
+        item = dict(error)
+        if "input" in item:
+            item["input"] = (
+                REDACTED
+                if any(part in CREDENTIAL_FIELDS for part in item.get("loc", ()))
+                else _scrub(item["input"])
+            )
+        # `ctx` can carry the value too, for a constraint failure. It is
+        # only ever diagnostic, so dropping it on these fields costs
+        # nothing a caller needs.
+        if "ctx" in item and any(
+            part in CREDENTIAL_FIELDS for part in item.get("loc", ())
+        ):
+            item.pop("ctx")
+        errors.append(item)
+    return JSONResponse(status_code=422, content=jsonable_encoder({"detail": errors}))
+
 
 app.include_router(cost.router)
 app.include_router(meta.router)

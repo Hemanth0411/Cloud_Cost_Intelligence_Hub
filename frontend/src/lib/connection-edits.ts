@@ -42,6 +42,18 @@ export interface ConnectionEditDraft {
   externalId: string;
   profileName: string;
   secretArn: string;
+  /**
+   * A REPLACEMENT access key, and the only two fields here that are not
+   * a diff against the row.
+   *
+   * They cannot be. The key is in Secrets Manager and no endpoint
+   * returns it, so there is no stored value to compare a draft against
+   * -- which also means they start empty on every open and a non-empty
+   * one is, by construction, something the user just typed. `editDraftFrom`
+   * sets them to `''` for that reason, not for want of a source.
+   */
+  accessKeyId: string;
+  secretAccessKey: string;
 }
 
 /**
@@ -60,6 +72,19 @@ export interface ConnectionPatchBody {
   external_id?: string | null;
   profile_name?: string | null;
   secret_arn?: string | null;
+  /**
+   * Inputs, not columns. The API pops both off the body before anything
+   * reaches the SQL, writes the pair to Secrets Manager and puts the
+   * resulting ARN in `secret_arn` -- so what `changed` comes back
+   * naming is `secret_arn`, never these.
+   *
+   * NOT nullable, unlike every other key here. `null` means "clear the
+   * column" for a column, and these are not columns: there is nothing
+   * for a null to clear, and sending one would only be a request to
+   * store an empty credential. Emitted only when non-empty.
+   */
+  access_key_id?: string;
+  secret_access_key?: string;
 }
 
 /** The row as the form starts out: a null column is an empty input. */
@@ -71,6 +96,10 @@ export function editDraftFrom(row: ConnectionRow): ConnectionEditDraft {
     externalId: row.externalId ?? '',
     profileName: row.profileName ?? '',
     secretArn: row.secretArn ?? '',
+    // Always empty: the stored key is unreadable, so there is no current
+    // value and anything here is a replacement the user typed.
+    accessKeyId: '',
+    secretAccessKey: '',
   };
 }
 
@@ -136,6 +165,18 @@ export function connectionPatch(
   const secretArn = nullable(draft.secretArn);
   if (secretArn !== nullable(row.secretArn)) body.secret_arn = secretArn;
 
+  // NOT diffed, because there is nothing to diff against: the stored key
+  // is unreadable by anything, including this application. A non-empty
+  // field is therefore a replacement, and an empty one is the ordinary
+  // case of an edit that is not about the credential -- which is why
+  // neither is ever sent as null. Sending a null would read as "clear
+  // it", and the way to remove a stored key is to change the credential
+  // mode or remove the connection, both of which delete the secret.
+  const accessKeyId = draft.accessKeyId.trim();
+  const secretAccessKey = draft.secretAccessKey.trim();
+  if (accessKeyId !== '') body.access_key_id = accessKeyId;
+  if (secretAccessKey !== '') body.secret_access_key = secretAccessKey;
+
   return body;
 }
 
@@ -169,8 +210,18 @@ export const FIELD_LABEL: Record<keyof ConnectionPatchBody, string> = {
   external_id: 'ExternalId',
   profile_name: 'CLI profile',
   secret_arn: 'Secret ARN',
+  access_key_id: 'Access key id',
+  secret_access_key: 'Secret access key',
 };
 
+/**
+ * What is about to be sent, as a list of FIELD NAMES.
+ *
+ * Labels only, never values, which matters more here than it reads: the
+ * footer renders this string, and one of the fields it can name holds a
+ * credential. Printing "Name: Finance-AWS" would have been a friendlier
+ * design and an unprintable one.
+ */
 export function describeChanges(body: ConnectionPatchBody): string {
   return changedFields(body)
     .map((key) => {

@@ -5,7 +5,9 @@ import { useRef, useState, type ReactNode } from 'react';
 import {
   ConnectionField,
   FailureNotice,
+  ModeRecommendation,
   ProfileModeNotice,
+  StoredKeyNotice,
   editModes,
 } from '@/components/accounts/connection-form';
 import { CrossAccountHandoff } from '@/components/accounts/cross-account-handoff';
@@ -13,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { ApiError } from '@/lib/api/client';
-import { costReaderArn, newExternalId, type StoredCredentialMode } from '@/lib/aws-onboarding';
+import { costReaderArn, newExternalId } from '@/lib/aws-onboarding';
 import {
   changedFields,
   connectionPatch,
@@ -59,6 +61,14 @@ import {
  * of a database constraint is a second place for it to be written, and
  * it will eventually disagree with the first. The server is the
  * authority; this dialog is honest about what it is about to try.
+ *
+ * THE ACCESS KEY IS THE ONE FIELD THAT IS NOT A DIFF, because it cannot
+ * be. A stored key lives in Secrets Manager and no endpoint returns it,
+ * so there is no current value to compare against and nothing to
+ * prefill: the two fields start empty every time and a non-empty one is
+ * by construction a replacement. That makes this a replace-only control,
+ * which is the point -- a key that cannot be replaced is a key nobody
+ * will replace.
  *
  * `provider` and `account_id` are not editable, here or in the API.
  * They are the natural key and `fact_cost_daily` is keyed by
@@ -125,6 +135,14 @@ export function ConnectionEditDialog({ connection, onClose, onSaved, onVanished 
   // itself, over an edit the user had not made.
   const externalIdRotated =
     draft.externalId.trim() !== (base.externalId ?? '').trim() && draft.externalId.trim() !== '';
+
+  // A key is being replaced only when BOTH halves are present. One on
+  // its own is the half-filled form the API refuses, and is called out
+  // rather than silently treated as either.
+  const keyIdTyped = draft.accessKeyId.trim() !== '';
+  const keySecretTyped = draft.secretAccessKey.trim() !== '';
+  const rotating = keyIdTyped && keySecretTyped;
+  const halfAKey = keyIdTyped !== keySecretTyped;
 
   /**
    * Rotate the ExternalId -- or say why it could not be.
@@ -243,7 +261,7 @@ export function ConnectionEditDialog({ connection, onClose, onSaved, onVanished 
         <div className="space-y-2">
           <p className="text-xs font-medium">Credential mode</p>
           <SegmentedControl
-            options={editModes(base.credentialMode as StoredCredentialMode)}
+            options={editModes()}
             value={mode}
             onChange={(v) => set('credentialMode', v)}
             ariaLabel="Credential mode"
@@ -276,7 +294,63 @@ export function ConnectionEditDialog({ connection, onClose, onSaved, onVanished 
           )}
         </div>
 
+        {(mode === 'assume_role' || mode === 'secret') && <ModeRecommendation />}
+
         {mode === 'profile' && <ProfileModeNotice profileName={draft.profileName} />}
+
+        {mode === 'secret' && base.provider === 'aws' && (
+          <>
+            <StoredKeyNotice rotating={base.credentialMode === 'secret'} />
+            {/* THE FIELDS ARE EMPTY AND STAY EMPTY unless the user
+                types. There is no stored value to prefill: the key is
+                in Secrets Manager and no endpoint returns it, so this
+                is a replace-only control -- `connectionPatch` emits the
+                pair only when non-empty, and an untouched pair sends
+                nothing at all. */}
+            <ConnectionField
+              id="edit-access-key-id"
+              label="New access key id"
+              value={draft.accessKeyId}
+              onChange={(v) => set('accessKeyId', v)}
+              placeholder="AKIA…"
+              mono
+              hint="Leave both fields empty to keep the key that is already stored."
+            />
+            <ConnectionField
+              id="edit-secret-access-key"
+              label="New secret access key"
+              value={draft.secretAccessKey}
+              onChange={(v) => set('secretAccessKey', v)}
+              placeholder="Shown once by IAM when the key is created"
+              mono
+              secret
+              hint="Sent once, to Secrets Manager. Never stored in the database, never logged, never returned."
+            />
+            {halfAKey && (
+              <Advisory>
+                An access key needs both halves. The API refuses half a pair with a 400 and
+                stores nothing, so saving now changes the other fields and leaves the stored key
+                alone.
+              </Advisory>
+            )}
+            {base.credentialMode !== 'secret' && !rotating && (
+              <Advisory>
+                This connection has no stored key, and switching to this mode without typing one
+                leaves it with nothing to authenticate with &mdash; the API refuses that, so the
+                save will come back as a 400 and nothing will change. Type a key above, or pick
+                another mode.
+              </Advisory>
+            )}
+          </>
+        )}
+
+        {mode === 'secret' && base.provider !== 'aws' && (
+          <Advisory>
+            A {base.provider} connection in this mode holds a service principal, which is written
+            to Secrets Manager by hand and referenced below by ARN. CostHub cannot store one for
+            you, and the API refuses an AWS access key on a {base.provider} connection.
+          </Advisory>
+        )}
 
         <ConnectionField
           id="edit-role-arn"
@@ -386,11 +460,10 @@ export function ConnectionEditDialog({ connection, onClose, onSaved, onVanished 
 
         {/* Gated on the ROW, never on the draft. Gating on the draft's
             mode let the field unmount while its value stayed in the
-            draft, so switching away from "Service principal" after
-            typing an ARN still sent `secret_arn` -- a value written to
-            a column the user could no longer see. Keyed on the row, the
-            field is either present for the whole session or absent for
-            it. */}
+            draft, so switching away from this mode after typing an ARN
+            still sent `secret_arn` -- a value written to a column the
+            user could no longer see. Keyed on the row, the field is
+            either present for the whole session or absent for it. */}
         {(base.credentialMode === 'secret' || base.secretArn !== null) && (
           <ConnectionField
             id="edit-secret-arn"
@@ -399,8 +472,22 @@ export function ConnectionEditDialog({ connection, onClose, onSaved, onVanished 
             onChange={(v) => set('secretArn', v)}
             placeholder="arn:aws:secretsmanager:us-east-1:…:secret:costhub/…"
             mono
-            hint="A Secrets Manager ARN, never a credential value. Used by Azure service-principal connections."
+            hint="A Secrets Manager ARN, never a credential value. Set for you when CostHub stores an AWS access key; typed by hand for an Azure service principal."
           />
+        )}
+        {base.credentialMode === 'secret' && mode !== 'secret' && (
+          /* The one consequence of a mode change that is not reversible
+             by changing it back. The API clears `secret_arn` and
+             deletes the secret -- deliberately, because a key nothing
+             reads is a live credential with nothing on screen to say it
+             exists -- and it only does so for secrets CostHub itself
+             created. */
+          <Advisory>
+            Moving off this mode <strong className="font-medium">deletes the stored key</strong>{' '}
+            from Secrets Manager and clears the ARN, because nothing would read it any more.
+            That cannot be undone by switching back &mdash; you would have to enter a key again.
+            A secret CostHub did not create is left alone, and the response says which happened.
+          </Advisory>
         )}
 
         {failure !== null && <FailureNotice message={failure} />}

@@ -173,3 +173,72 @@ resource "aws_iam_role_policy" "insights_bedrock" {
   role   = aws_iam_role.lambda.id
   policy = data.aws_iam_policy_document.insights_bedrock.json
 }
+
+# Connection credentials written from the UI
+# (backend/costhub/connections/key_store.py).
+#
+# This is the first WRITE path to Secrets Manager in the stack. Before
+# it, this role could read exactly one secret -- the database password,
+# by ARN, in the `lambda` policy above -- and could not create any. An
+# AWS connection in `credential_mode = "secret"` needs the API to put a
+# user's access key somewhere that is not Postgres, so the role needs
+# CreateSecret, PutSecretValue, GetSecretValue and DeleteSecret.
+#
+# SCOPED TO A DEDICATED PREFIX, which is the whole reason this is
+# acceptable. The resource is one name pattern:
+#
+#   costhub/<env>/connections/*
+#
+# and NOT "*". That matters in both directions. It keeps this role away
+# from every other secret in the account, and -- because the API will
+# only ever DELETE something matching this prefix (`key_store.owned`) --
+# it means a bug in the delete path cannot reach the database password,
+# which lives at `costhub/<env>/database-url`, one segment short of the
+# wildcard. The two controls are deliberately the same shape in IAM and
+# in the code, so neither is the only thing standing between a delete
+# and the wrong secret.
+#
+# The trailing `*` also covers the six random characters Secrets Manager
+# appends to every secret ARN; a pattern without it matches nothing.
+#
+# TagResource is here because CreateSecret with Tags is authorized as
+# both actions, and the tags are not decoration: `./do.sh sweep` proves
+# a teardown by listing resources tagged Project/Environment, Terraform's
+# default_tags cannot reach a secret this API creates, and `destroy` will
+# not remove it. Untagged, a live credential would survive a teardown
+# with nothing to reveal it.
+#
+# DescribeSecret is deliberately absent -- nothing calls it. So is
+# RotateSecret: rotation here means a human supplying a new key, not
+# Secrets Manager invoking a rotation Lambda.
+#
+# Its own policy, like the Bedrock one above, so adding or removing this
+# never rewrites the policy the rest of the stack depends on. The role is
+# shared by every function in lambda.tf, so the job Lambdas can read
+# these secrets too -- which is required, since the 06:00 ingest is what
+# reads them -- but only the API can write or delete one.
+data "aws_iam_policy_document" "connection_secrets" {
+  statement {
+    sid = "ManageConnectionCredentials"
+    actions = [
+      "secretsmanager:CreateSecret",
+      "secretsmanager:PutSecretValue",
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:DeleteSecret",
+      "secretsmanager:TagResource",
+    ]
+    resources = [
+      join("", [
+        "arn:aws:secretsmanager:${var.aws_region}:",
+        "${data.aws_caller_identity.current.account_id}:secret:",
+        "${var.name_prefix}/${local.env}/connections/*",
+      ])
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "connection_secrets" {
+  name   = "${local.prefix}-connection-secrets"
+  role   = aws_iam_role.lambda.id
+  policy = data.aws_iam_policy_document.connection_secrets.json
+}

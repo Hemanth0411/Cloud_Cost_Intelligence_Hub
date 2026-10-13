@@ -54,7 +54,7 @@ regular users — with the API enforcing it regardless of what the UI shows.
 | `AlertRuleForm` | type, scope, threshold, window, channels | FR-31–FR-33 |
 | `AlertFeed` | in-app notification list | FR-33 |
 | `GrantForm` / `GrantTable` | grant CRUD; account dropdown from data | FR-5–FR-7 |
-| `ConnectionForm` | account id, role ARN, external id — **no credential fields** | FR-12 |
+| `ConnectionForm` | account id, role ARN, external id; for `secret` mode an access key pair, **sent once and never read back** | FR-12 |
 | `AuditTable` | actor, action, before/after diff | FR-36 |
 | `EmptyState` | "no accounts have been shared with you yet" | FR-8 — a no-grant user must see this, never an error and never all data |
 | `AsOfLabel` | data freshness | NFR-10 |

@@ -5,10 +5,21 @@ Four credential modes, in decreasing order of preference:
   self         the deploy account -- the Lambda's own role, nothing to hold
   assume_role  another AWS account -- short-lived credentials via STS
   profile      local development only
-  secret       a Secrets Manager ARN (Azure needs this; AWS should not)
+  secret       a static credential in Secrets Manager, read at call time
 
-Nothing here ever stores or returns a long-lived credential. `secret` holds
-an ARN and resolves it at call time.
+`secret` IS NOW AVAILABLE TO AWS, and that is a change. It used to be
+Azure's alone, because Azure has no equivalent of AssumeRole and an AWS
+connection had a better answer available. It still has: `assume_role`
+yields credentials that expire in an hour and leaves nothing long-lived
+anywhere, and it remains the default. But it needs an IAM role created
+in the target account, and the common case this deployment actually hit
+was somebody who already holds their own key with Cost Explorer access
+and nobody in that account who will create a role for them -- so the
+alternative was not AssumeRole, it was `profile`, which cannot run in
+Lambda at all.
+
+Nothing here stores or returns a long-lived credential. The database
+holds an ARN; `key_store.py` owns the secret the ARN points at.
 """
 from __future__ import annotations
 
@@ -20,6 +31,7 @@ import boto3
 from botocore.exceptions import BotoCoreError
 
 from costhub.config import settings
+from costhub.connections import key_store
 
 SESSION_NAME = "costhub-ingest"
 SESSION_SECONDS = 3600
@@ -58,8 +70,9 @@ class Connection:
 def own_session(conn: Connection) -> boto3.Session:
     """OUR side of the credential chain, with no call to the target account.
 
-    `self` and `profile` read with this session directly; `assume_role`
-    uses it only to sign the STS call. Separate from `assume_role` below
+    `self`, `profile` and `secret` read with this session directly;
+    `assume_role` uses it only to sign the STS call. Separate from
+    `assume_role` below
     because the two fail for opposite reasons and different people fix
     them: a failure HERE is this deployment's own configuration (a
     profile that does not exist on this machine, no credentials in the
@@ -77,6 +90,12 @@ def own_session(conn: Connection) -> boto3.Session:
         raise CredentialError(f"not an AWS connection: {conn.provider}")
 
     region = settings().aws_region
+
+    if conn.credential_mode == "secret":
+        # Returns early: this mode builds a session from explicit keys
+        # rather than from a profile, so it shares none of the chain
+        # below.
+        return _stored_key_session(conn, region)
 
     if conn.credential_mode in ("self", "assume_role"):
         # The deploy account. In Lambda this is the execution role; locally
@@ -125,6 +144,47 @@ def own_session(conn: Connection) -> boto3.Session:
     return session
 
 
+def _stored_key_session(conn: Connection, region: str) -> boto3.Session:
+    """A session built from the access key this connection owns.
+
+    Still "our side", for the reason `own_session` is split from
+    `assume_role`: the only call made here is to OUR Secrets Manager, so
+    a failure is this deployment's own configuration -- a missing ARN, a
+    policy that has not been applied, a secret somebody removed -- and
+    nothing has been sent to the target account. The probe reports that
+    as stage "credentials", which is the stage whose advice is "look on
+    this side", and that is the correct advice for every failure below.
+
+    `SecretError` is translated rather than propagated for exactly that
+    reason: `probe` catches `CredentialError` at stage 0, and a
+    botocore error escaping from here would arrive as an unhandled 500
+    on an endpoint whose entire job is to name the broken prerequisite.
+    """
+    if not conn.secret_arn:
+        raise CredentialError(
+            f"{conn.display_name}: secret_arn missing. This connection is set "
+            "to use a stored access key but no secret is attached to it -- "
+            "store the key again from the connections screen."
+        )
+    try:
+        pair = key_store.read_access_key(conn.secret_arn)
+    except key_store.SecretError as exc:
+        raise CredentialError(
+            f"{conn.display_name}: this deployment could not read the stored "
+            f"access key. {exc} Nothing was sent to AWS, and the target "
+            "account was not tested."
+        ) from exc
+
+    # No session token: these are long-lived user credentials, not the
+    # output of an STS call. Passing aws_session_token=None is the same
+    # as omitting it, but omitting it says so.
+    return boto3.Session(
+        aws_access_key_id=pair[key_store.ACCESS_KEY_ID],
+        aws_secret_access_key=pair[key_store.SECRET_ACCESS_KEY],
+        region_name=region,
+    )
+
+
 def assume_role(own: boto3.Session, conn: Connection) -> boto3.Session:
     """Exchange our identity for short-lived credentials in `conn`'s account.
 
@@ -154,7 +214,14 @@ def assume_role(own: boto3.Session, conn: Connection) -> boto3.Session:
 
 
 def aws_session(conn: Connection) -> boto3.Session:
-    """A boto3 session scoped to `conn`'s account."""
+    """A boto3 session scoped to `conn`'s account.
+
+    Only `assume_role` makes a second hop. `self` reads the deploy
+    account directly, and `profile` and `secret` are already the target
+    account's own credentials -- assuming a role on top of either would
+    look for a CostHubCostReader that the whole point of those modes is
+    not needing.
+    """
     own = own_session(conn)
     if conn.credential_mode == "assume_role":
         return assume_role(own, conn)

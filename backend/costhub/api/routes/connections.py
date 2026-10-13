@@ -4,6 +4,11 @@ Split out of routes/admin.py on the 300-line limit. These were already
 the most self-contained group there -- their own request models, their
 own store module, and the only routes that talk to another AWS account.
 
+Registering and reading them is here. Correcting and removing one is
+routes/connection_edits.py, and importing from one is
+routes/connection_import.py; both are mounted at the bottom of this
+file, so the paths do not change.
+
 The two verbs worth distinguishing: `test` says whether access works and
 which prerequisite is missing; `import` says whether any data arrived.
 Both answer 200 with a verdict in the body rather than a 4xx, because
@@ -15,13 +20,13 @@ from __future__ import annotations
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, status
-from psycopg.errors import IntegrityError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
+from costhub.api import connection_keys
 from costhub.api.deps import SuperAdmin
-from costhub.api.routes import connection_import
+from costhub.api.routes import connection_edits, connection_import
 from costhub.audit import log as audit_log
-from costhub.connections import edits, store
+from costhub.connections import store
 from costhub.connections.probe import probe
 from costhub.db import connect
 from costhub.ingest.stale import reap_stale_runs
@@ -41,32 +46,29 @@ class ConnectionIn(BaseModel):
         None, description="A Secrets Manager ARN. Never a credential value."
     )
 
-
-class ConnectionPatch(BaseModel):
-    """Every field optional: absent means "leave it alone".
-
-    Separate from ConnectionIn rather than reusing it with defaults,
-    because the two mean different things. ConnectionIn describes a whole
-    connection and its defaults are real values -- `credential_mode`
-    defaults to "assume_role". Here a default of None is the ABSENCE of
-    an instruction, and sending the model through `upsert` would blank
-    every credential column the caller did not re-state.
-
-    `provider` and `account_id` are not editable: they are the natural
-    key, and the imported cost rows are keyed by account_id, so changing
-    either orphans the history rather than editing anything.
-    """
-
-    # NOT nullable, because the columns are NOT NULL. `null` here used
-    # to reach Postgres and come back as a bare 500 through the generic
-    # handler, with no indication of which constraint failed. A 422 from
-    # pydantic names the field.
-    display_name: str | None = Field(None, min_length=1)
-    credential_mode: Literal["self", "assume_role", "profile", "secret"] | None = None
-    role_arn: str | None = None
-    external_id: str | None = None
-    profile_name: str | None = None
-    secret_arn: str | None = None
+    # THE ONLY TWO FIELDS ON THIS API THAT CARRY A CREDENTIAL, and they
+    # are inputs only. Neither is a column: the pair is written to
+    # Secrets Manager and what the row stores is the resulting ARN. See
+    # api/connection_keys.py, which is the one place they are read.
+    #
+    # `SecretStr` so that nothing which repr()s this model -- a log
+    # line, a traceback, a pydantic error -- can print the value. It
+    # masks itself.
+    access_key_id: str | None = Field(
+        None,
+        description=(
+            "With secret_access_key, and only when credential_mode is "
+            "'secret'. Stored in Secrets Manager, never in the database."
+        ),
+    )
+    secret_access_key: SecretStr | None = Field(
+        None,
+        description=(
+            "Written to Secrets Manager. Never stored in the database, "
+            "never written to the audit log, and never returned by any "
+            "endpoint -- including this one."
+        ),
+    )
 
 
 # The ExternalId is RETURNED, not redacted, and that is a reversal.
@@ -100,18 +102,57 @@ def list_connections(_: SuperAdmin) -> dict:
 
 @router.post("/connections", status_code=201, summary="Register a cloud account")
 def create_connection(who: SuperAdmin, body: ConnectionIn) -> dict:
-    cid = store.upsert(
-        actor=who.email,
+    """Register an account, storing any supplied access key out of band.
+
+    The key, if there is one, goes to Secrets Manager BEFORE the row, so
+    the row never names a secret that does not exist. If the row write
+    then fails, the secret this request created is deleted again -- see
+    `connection_keys.undo`, and that module's header for why this order
+    and not the other.
+    """
+    stored = connection_keys.store_from_request(
         provider=body.provider,
         account_id=body.account_id,
-        display_name=body.display_name,
-        credential_mode=body.credential_mode,
-        role_arn=body.role_arn,
-        external_id=body.external_id,
-        profile_name=body.profile_name,
-        secret_arn=body.secret_arn,
+        mode=body.credential_mode,
+        access_key_id=body.access_key_id,
+        secret_access_key=body.secret_access_key,
     )
-    return {"id": cid}
+    # The ARN, and only ever the ARN. `store.upsert` is not handed the
+    # key and has no parameter that could take one.
+    secret_arn = stored.arn if stored is not None else body.secret_arn
+
+    # A `secret` row with nothing to resolve cannot authenticate: the
+    # ingest fails at credential resolution with "secret_arn missing",
+    # which is a connection registered in a state that can never work.
+    # The CHECK in 004 cannot express it -- the column is nullable
+    # because an Azure row may be written before its secret exists -- so
+    # it is refused here.
+    if body.credential_mode == "secret" and not secret_arn:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "A connection in 'secret' mode needs either an access key to "
+            "store or an existing secret_arn. Nothing was created.",
+        )
+
+    try:
+        cid = store.upsert(
+            actor=who.email,
+            provider=body.provider,
+            account_id=body.account_id,
+            display_name=body.display_name,
+            credential_mode=body.credential_mode,
+            role_arn=body.role_arn,
+            external_id=body.external_id,
+            profile_name=body.profile_name,
+            secret_arn=secret_arn,
+        )
+    except Exception:
+        connection_keys.undo(stored)
+        raise
+
+    if stored is not None:
+        connection_keys.audit_set(actor=who.email, connection_id=cid, stored=stored)
+    return {"id": cid, "credential_stored": stored is not None}
 
 
 @router.post("/connections/{connection_id}/enabled", summary="Enable or disable")
@@ -121,52 +162,6 @@ def set_connection_enabled(
     if not store.set_enabled(actor=who.email, connection_id=connection_id, value=value):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such connection")
     return {"id": connection_id, "enabled": value}
-
-
-@router.patch("/connections/{connection_id}", summary="Correct a connection")
-def update_connection(who: SuperAdmin, connection_id: str, body: ConnectionPatch) -> dict:
-    """Change only the fields supplied.
-
-    `exclude_unset` is the whole mechanism: it distinguishes "set this to
-    null" from "do not touch this". Without it, every absent field would
-    arrive as None and clear a column the caller never mentioned -- which
-    is exactly how an edit screen silently destroys an ExternalId.
-    """
-    changes = body.model_dump(exclude_unset=True)
-    if not changes:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "nothing to change")
-
-    # The schema has a CHECK that pydantic cannot express: an
-    # assume_role row must keep a role_arn. Clearing it -- the obvious
-    # first half of "retype the ARN" -- violated it and surfaced as an
-    # unhandled 500. Say which rule was broken instead.
-    try:
-        before = edits.update(actor=who.email, connection_id=connection_id, changes=changes)
-    except IntegrityError as exc:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            "That change is not allowed: an AssumeRole connection must keep a role ARN, "
-            "and display name and credential mode cannot be empty. "
-            f"({type(exc).__name__})",
-        ) from exc
-    if before is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such connection")
-
-    return {"id": connection_id, "changed": sorted(changes)}
-
-
-@router.delete("/connections/{connection_id}", summary="Stop importing from an account")
-def delete_connection(who: SuperAdmin, connection_id: str) -> dict:
-    """Soft delete. Cost data already imported is kept.
-
-    Says so in the response, because "delete" reads as "remove the data"
-    and it does not: `fact_cost_daily` is keyed by provider and
-    account_id rather than by connection, so the history stays readable
-    and re-registering the account picks it back up.
-    """
-    if not edits.soft_delete(actor=who.email, connection_id=connection_id):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such connection")
-    return {"id": connection_id, "deleted": True, "cost_data_kept": True}
 
 
 @router.post("/connections/{connection_id}/test", summary="Test a connection now")
@@ -202,7 +197,9 @@ def test_connection(_: SuperAdmin, connection_id: str) -> dict:
     return result.as_dict()
 
 
-# `POST /connections/{id}/import` lives in routes/connection_import.py.
+# PATCH and DELETE live in routes/connection_edits.py, and
+# `POST /connections/{id}/import` in routes/connection_import.py.
 # Mounted last, once every route above exists, and under this router so
-# it keeps the /admin prefix.
+# they keep the /admin prefix.
+router.include_router(connection_edits.router)
 router.include_router(connection_import.router)

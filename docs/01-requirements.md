@@ -39,7 +39,7 @@ resource-level drill-down, unit economics, AI narration. All recorded in
 | ID | Requirement |
 |---|---|
 | FR-11 | Cloud accounts are registered through the UI: provider, account id, display name, role ARN, external id. |
-| FR-12 | No credential is ever entered into, or stored by, the frontend. Access is by cross-account `sts:AssumeRole`. |
+| FR-12 | Access is by cross-account `sts:AssumeRole` by default, and **no credential is ever stored in the database**. The fallback, for an account where nobody will create the role, is an IAM access key entered once in the UI: it is written to Secrets Manager and `cloud_connections` holds only the ARN. It is never stored in Postgres, never written to the audit log, and never returned by any endpoint. |
 | FR-13 | A connection can be disabled without deleting its history. |
 
 ### Ingestion

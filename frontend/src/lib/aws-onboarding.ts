@@ -44,6 +44,8 @@ export function deployAccountLabel(): string {
 export const DEPLOY_ACCOUNT_KNOWN = DEPLOY_ACCOUNT_ID !== '';
 
 const AWS_ACCOUNT_ID = /^\d{12}$/;
+/** IAM's own bound on an access key id. Mirrors `key_store.py`. */
+const ACCESS_KEY_ID = /^[A-Z0-9]{16,128}$/;
 
 /**
  * A fresh ExternalId.
@@ -201,22 +203,28 @@ export function handoffText(accountId: string, externalId: string): string {
 export type StoredCredentialMode = 'self' | 'assume_role' | 'profile' | 'secret';
 
 /**
- * The subset a browser may REGISTER, which is not the same set.
+ * The subset a browser may REGISTER, which is now all four.
  *
- * `secret` is absent on purpose: it resolves an Azure service principal
- * out of Secrets Manager (`credentials.py:azure_credentials`),
- * `aws_session` rejects it outright for an AWS connection, and the Azure
- * adapter has never been pointed at a real subscription. Offering it
- * here would only produce rows that cannot authenticate. It stays
- * editable on a row that already holds it.
+ * `secret` used to be absent on purpose, and the reason was sound while
+ * it lasted: it resolved an Azure service principal out of Secrets
+ * Manager and `aws_session` rejected it outright for AWS, so offering it
+ * could only produce rows that cannot authenticate. AWS support is
+ * implemented now (`credentials.py:_stored_key_session`), so the field
+ * that would have been a trap is a working mode.
+ *
+ * It is still the LAST RESORT, and `MODE_RECOMMENDATION` says so on
+ * screen. See `STORED_KEY_LIMITS` for what it costs.
  */
-export type CredentialMode = 'self' | 'assume_role' | 'profile';
+export type CredentialMode = StoredCredentialMode;
 
 export const CREDENTIAL_MODE_LABEL: Record<StoredCredentialMode, string> = {
   self: 'Deploy account',
   assume_role: 'AssumeRole',
   profile: 'Local profile',
-  secret: 'Service principal',
+  // Not "Service principal" any more: this mode now covers an AWS
+  // access key as well as an Azure service principal, and a label that
+  // names only one of them mislabels every row of the other kind.
+  secret: 'Stored credential',
 };
 
 export const CREDENTIAL_MODE_HINT: Record<StoredCredentialMode, string> = {
@@ -225,8 +233,37 @@ export const CREDENTIAL_MODE_HINT: Record<StoredCredentialMode, string> = {
     'Short-lived credentials via STS, using an ExternalId. Needs a role in that account.',
   profile:
     'A named AWS CLI profile, read from the machine making the call. The scheduled import runs in a Lambda, which has none, so it cannot use this.',
-  secret: 'Client secret held in a secrets manager and read at call time.',
+  secret:
+    'A long-lived credential held in Secrets Manager and read at call time — an access key for AWS, a service principal for Azure. The database stores only the ARN.',
 };
+
+/**
+ * WHICH MODE THE SCREEN IS RECOMMENDING, in one sentence.
+ *
+ * On screen wherever the two AWS options are presented, because they are
+ * NOT equivalent and a segmented control makes everything in it look
+ * equivalent. AssumeRole gets credentials that expire in an hour and
+ * stores nothing; a stored key is long-lived, sits in Secrets Manager
+ * until someone removes it, and is only the answer when nobody in the
+ * target account will create a role.
+ */
+export const MODE_RECOMMENDATION =
+  'AssumeRole is the one to use if you can: it gets credentials that expire in an hour and nothing long-lived is stored. An access key is the fallback for when nobody in that account will create a role.';
+
+/**
+ * What storing a key actually means, stated where it is chosen.
+ *
+ * The honest counterweight to how easy this mode is to pick. Each line
+ * is a fact about the implementation rather than a general caution:
+ * line 1 is `key_store.py` (Secrets Manager, ARN in the column), line 2
+ * is that the form is the only place the value is ever visible, and
+ * line 3 is `soft_delete` plus the PATCH path that clears the mode.
+ */
+export const STORED_KEY_LIMITS: readonly string[] = [
+  'The key goes to AWS Secrets Manager. The database stores only its ARN — never the key — and so does the audit log.',
+  'It is shown nowhere afterwards. Neither this screen nor the API can read it back, so keep your own copy if you need one; to change it, type a new one over it.',
+  'Removing the connection deletes the secret, and so does switching it to another credential mode. Nothing is left behind to find later.',
+];
 
 /**
  * WHY `profile` IS OFFERED AT ALL, and what it cannot do.
@@ -267,6 +304,17 @@ export interface RegistrationDraft {
   externalId: string;
   /** A named AWS CLI profile. Only read when the mode is `profile`. */
   profileName: string;
+  /**
+   * The access key, for `secret` mode only. TYPED, unlike everything
+   * else on this form, and the only value here that is a credential.
+   *
+   * It lives in component state for as long as the dialog is open and is
+   * sent once. The API writes it to Secrets Manager and stores the ARN;
+   * nothing reads it back, so there is no "current value" for an edit
+   * form to show and no request that could return one.
+   */
+  accessKeyId: string;
+  secretAccessKey: string;
 }
 
 /**
@@ -325,6 +373,30 @@ export function validateRegistration(draft: RegistrationDraft): Record<string, s
     errors.profileName =
       'A profile name is required: without one the connection fails at credential resolution rather than at the cloud API.';
   }
+
+  if (draft.credentialMode === 'secret') {
+    // BOTH HALVES OR NEITHER. The API refuses half a pair with a 400
+    // and stores nothing, so this is not the authority -- but a form
+    // that submits with one field still empty is the likeliest mistake
+    // on this screen and it may as well be caught before the request.
+    //
+    // The id is checked against the same pattern the server uses
+    // (`key_store.ACCESS_KEY_ID_RE`, IAM's own AccessKeyIdType bound),
+    // so a pasted ARN is named here rather than coming back as a 400.
+    // The secret deliberately gets only a length check: there is no
+    // published format, and a stricter guess would reject a valid key.
+    const keyId = draft.accessKeyId.trim();
+    const secret = draft.secretAccessKey.trim();
+    if (keyId === '') errors.accessKeyId = 'An access key id is required.';
+    else if (!ACCESS_KEY_ID.test(keyId)) {
+      errors.accessKeyId =
+        'That does not look like an access key id: 16 to 128 characters of A-Z and 0-9, normally beginning AKIA.';
+    }
+    if (secret === '') errors.secretAccessKey = 'A secret access key is required.';
+    else if (secret.length < 16) {
+      errors.secretAccessKey = 'That is too short to be a secret access key — a real one is 40 characters.';
+    }
+  }
   return errors;
 }
 
@@ -337,13 +409,22 @@ export interface RegistrationBody {
   role_arn: string | null;
   external_id: string | null;
   profile_name: string | null;
+  /**
+   * Present ONLY for `secret` mode, and omitted rather than nulled for
+   * every other one. The API refuses a key sent for a mode that would
+   * never read it (400), which is the correct behaviour and also means
+   * this must not send one just because the field holds a stale value
+   * from before the user switched modes.
+   */
+  access_key_id?: string;
+  secret_access_key?: string;
 }
 
 export function registrationBody(draft: RegistrationDraft): RegistrationBody {
   const self = draft.credentialMode === 'self';
   const crossAccount = draft.credentialMode === 'assume_role';
   const accountId = self ? 'self' : draft.accountId.trim();
-  return {
+  const body: RegistrationBody = {
     provider: 'aws',
     account_id: accountId,
     display_name: draft.displayName.trim(),
@@ -355,4 +436,9 @@ export function registrationBody(draft: RegistrationDraft): RegistrationBody {
     external_id: crossAccount ? draft.externalId : null,
     profile_name: draft.credentialMode === 'profile' ? draft.profileName.trim() : null,
   };
+  if (draft.credentialMode === 'secret') {
+    body.access_key_id = draft.accessKeyId.trim();
+    body.secret_access_key = draft.secretAccessKey.trim();
+  }
+  return body;
 }

@@ -5,8 +5,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ConnectionField,
   FailureNotice,
+  ModeRecommendation,
   ProfileModeNotice,
   REGISTER_MODES,
+  StoredKeyNotice,
 } from '@/components/accounts/connection-form';
 import { CrossAccountHandoff } from '@/components/accounts/cross-account-handoff';
 import { Button } from '@/components/ui/button';
@@ -39,8 +41,8 @@ import { cn } from '@/lib/utils';
  *   2. produce the exact instructions the OTHER account's administrator
  *      has to follow, copy-pasteably, because that is the real blocker.
  *
- * NO CREDENTIAL IS EVER TYPED HERE. There is no field for one, by
- * design. An AssumeRole connection is a role ARN plus an ExternalId,
+ * THE RECOMMENDED MODE TYPES NO CREDENTIAL, and that is still the
+ * default. An AssumeRole connection is a role ARN plus an ExternalId,
  * and neither is a password:
  *
  *   * the role ARN is DERIVED, not entered. `terraform/iam.tf` grants
@@ -55,7 +57,19 @@ import { cn } from '@/lib/utils';
  *     invents on the spot -- it is a shared unguessable string the
  *     target account's trust policy will require us to present.
  *
- * THE THIRD MODE IS LOCAL-ONLY AND SAYS SO. `profile` reads a named AWS
+ * ONE MODE DOES TAKE A REAL CREDENTIAL, and this file used to say in
+ * writing that none ever would. `secret` takes an access key id and a
+ * secret access key, because the gap that left was not theoretical: an
+ * account whose owner already has a key with Cost Explorer access and
+ * nobody who will create a role for them had no usable option at all --
+ * `profile` cannot run in Lambda, so its data only ever moved when
+ * somebody ran the CLI by hand. The key is POSTed once, written to
+ * Secrets Manager by the API, and the row stores only the ARN; nothing
+ * reads it back, so there is no field for it in the edit dialog, only a
+ * replacement. `MODE_RECOMMENDATION` is on screen under the control so
+ * the two AWS options are not presented as equivalent.
+ *
+ * THE LAST MODE IS LOCAL-ONLY AND SAYS SO. `profile` reads a named AWS
  * CLI profile through `boto3.Session(profile_name=...)`, which means
  * `~/.aws/config` on the machine making the call -- and there is no such
  * file in Lambda, where both the 06:00 UTC schedule and this screen's
@@ -100,6 +114,8 @@ export function ConnectDialog({ open, onClose, existing, onRegistered }: Connect
   const [accountId, setAccountId] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [profileName, setProfileName] = useState('');
+  const [accessKeyId, setAccessKeyId] = useState('');
+  const [secretAccessKey, setSecretAccessKey] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [failure, setFailure] = useState<string | null>(null);
   const [step, setStep] = useState<number | null>(null);
@@ -134,10 +150,13 @@ export function ConnectDialog({ open, onClose, existing, onRegistered }: Connect
     displayName,
     externalId,
     profileName,
+    accessKeyId,
+    secretAccessKey,
   };
   const working = saving || step !== null;
   const crossAccount = mode === 'assume_role';
   const localProfile = mode === 'profile';
+  const storedKey = mode === 'secret';
   const targetId = mode === 'self' ? 'self' : accountId.trim();
   const duplicate =
     targetId !== '' && existing.some((c) => c.provider === 'aws' && c.accountId === targetId);
@@ -163,6 +182,11 @@ export function ConnectDialog({ open, onClose, existing, onRegistered }: Connect
   function finishLive(): void {
     setSaving(false);
     setRegistered(true);
+    // Drop the key from component state the moment it is no longer
+    // needed. The request has been made and nothing can read it back, so
+    // keeping it would only widen the window in which it sits in a
+    // React tree -- and the success panel must not be able to show it.
+    setSecretAccessKey('');
     onRegistered?.();
   }
 
@@ -214,7 +238,9 @@ export function ConnectDialog({ open, onClose, existing, onRegistered }: Connect
             ? 'The connection row exists. It cannot import anything until the role below is created in the target account.'
             : localProfile
               ? 'The connection row exists. It will only ever import when someone runs the ingest by hand on a machine that has this profile.'
-              : 'The connection row exists and is read with CostHub’s own execution role.'
+              : storedKey
+                ? 'The connection row exists and the key is in Secrets Manager. Nothing further is needed — test it below.'
+                : 'The connection row exists and is read with CostHub’s own execution role.'
           : simulated
             ? 'Simulated: nothing is sent and no row is written.'
             : 'Writes a connection row. Cost data arrives on the next scheduled import.'
@@ -256,6 +282,18 @@ export function ConnectDialog({ open, onClose, existing, onRegistered }: Connect
               <CrossAccountHandoff accountId={targetId} externalId={externalId} />
             ) : localProfile ? (
               <ProfileModeNotice profileName={profileName} />
+            ) : storedKey ? (
+              /* The key is already out of component state by now
+                 (`finishLive`), so there is nothing here that could
+                 print it even by accident. What is worth saying is
+                 where it went and that this screen will not show it
+                 again. */
+              <p className="text-xs text-muted-foreground">
+                The access key was written to AWS Secrets Manager and this connection stores only
+                its ARN. It is not shown again anywhere in CostHub &mdash; to change it, open Edit
+                and type a new one over it. The first import will run on the 06:00 UTC schedule,
+                or use &ldquo;Import now&rdquo; to run one immediately.
+              </p>
             ) : (
               <p className="text-xs text-muted-foreground">
                 Nothing further is needed: the deploy account is read with CostHub&apos;s own
@@ -312,11 +350,18 @@ export function ConnectDialog({ open, onClose, existing, onRegistered }: Connect
                   ? 'CostHub will call sts:AssumeRole into that account. No key is held by either side.'
                   : localProfile
                     ? 'Credentials come from a named profile in ~/.aws/config on whichever machine makes the call.'
-                    : "Read with CostHub's own execution role. Nothing to configure, and nothing for anyone else to do."}
+                    : storedKey
+                      ? 'An access key you already hold, kept in AWS Secrets Manager and read at import time. Works on the schedule, unlike a local profile.'
+                      : "Read with CostHub's own execution role. Nothing to configure, and nothing for anyone else to do."}
               </p>
+              {/* Under the control, not inside it: a segmented control
+                  makes everything in it look equally advisable, and
+                  these two are not. */}
+              {(crossAccount || storedKey) && <ModeRecommendation />}
             </div>
 
             {localProfile && <ProfileModeNotice profileName={profileName} />}
+            {storedKey && <StoredKeyNotice />}
 
             <ConnectionField
               id="conn-name"
@@ -347,6 +392,34 @@ export function ConnectDialog({ open, onClose, existing, onRegistered }: Connect
               />
             )}
 
+            {storedKey && (
+              <>
+                <ConnectionField
+                  id="conn-access-key-id"
+                  label="Access key id"
+                  value={accessKeyId}
+                  onChange={setAccessKeyId}
+                  error={errors.accessKeyId}
+                  placeholder="AKIA…"
+                  required
+                  mono
+                  hint="From IAM, for a user with ce:GetCostAndUsage and ce:GetDimensionValues in that account."
+                />
+                <ConnectionField
+                  id="conn-secret-access-key"
+                  label="Secret access key"
+                  value={secretAccessKey}
+                  onChange={setSecretAccessKey}
+                  error={errors.secretAccessKey}
+                  placeholder="Shown once by IAM when the key is created"
+                  required
+                  mono
+                  secret
+                  hint="Sent once, to Secrets Manager. It is never stored in the database, never written to the audit log, and no endpoint returns it."
+                />
+              </>
+            )}
+
             {localProfile && (
               <ConnectionField
                 id="conn-profile"
@@ -371,7 +444,9 @@ export function ConnectDialog({ open, onClose, existing, onRegistered }: Connect
                     ? 'That includes issuing a new ExternalId, which breaks the existing trust policy until the one below is applied in the target account.'
                     : localProfile
                       ? 'Its credential mode, role ARN and ExternalId are all overwritten with this form’s values, so an AssumeRole connection on this id would become a local-profile one.'
-                      : 'The deploy account holds no ExternalId, so only its name changes.'}{' '}
+                      : storedKey
+                        ? 'The key below REPLACES whatever is stored for this account — there is one secret per account id, so the previous key stops being used and is not kept.'
+                        : 'The deploy account holds no ExternalId, so only its name changes.'}{' '}
                   Imported cost rows are not affected. A disabled connection is re-enabled, and a
                   removed one comes back — registering an account id is how you undo removing it.
                   To correct a connection without replacing its credentials, use Edit instead.

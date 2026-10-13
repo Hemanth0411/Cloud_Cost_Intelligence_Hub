@@ -1,14 +1,14 @@
 'use client';
 
-import { TerminalSquare, TriangleAlert } from 'lucide-react';
+import { KeyRound, TerminalSquare, TriangleAlert } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { fieldA11y, FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import type { SegmentedOption } from '@/components/ui/segmented-control';
 import {
-  CREDENTIAL_MODE_LABEL,
-  CREDENTIAL_MODE_HINT,
+  MODE_RECOMMENDATION,
   PROFILE_MODE_LIMITS,
+  STORED_KEY_LIMITS,
   type CredentialMode,
   type StoredCredentialMode,
 } from '@/lib/aws-onboarding';
@@ -41,6 +41,7 @@ export function ConnectionField({
   mono = false,
   inputMode,
   after,
+  secret = false,
 }: {
   id: string;
   label: string;
@@ -57,15 +58,23 @@ export function ConnectionField({
   inputMode?: 'numeric' | 'text';
   /** A control that belongs with the field -- "Use the derived ARN". */
   after?: ReactNode;
+  /**
+   * The one field on these forms that holds a credential: masked, and
+   * `new-password` rather than `off` so a browser does not offer to
+   * remember it. `off` is widely ignored for password inputs; this is
+   * the value that is actually honoured.
+   */
+  secret?: boolean;
 }) {
   return (
     <FormField id={id} label={label} error={error} hint={hint}>
       <Input
         id={id}
+        type={secret ? 'password' : undefined}
         value={value}
         placeholder={placeholder}
         inputMode={inputMode}
-        autoComplete="off"
+        autoComplete={secret ? 'new-password' : 'off'}
         spellCheck={false}
         className={mono ? 'font-mono text-xs' : undefined}
         aria-required={required || undefined}
@@ -78,13 +87,20 @@ export function ConnectionField({
 }
 
 /**
- * The modes a browser may REGISTER, in the order they should be tried.
+ * The modes a browser may REGISTER, IN THE ORDER THEY SHOULD BE TRIED,
+ * which is the only thing stopping this control from presenting four
+ * equivalent choices.
  *
- * `secret` is not here: see the type's note in `lib/aws-onboarding.ts`.
+ * `assume_role` is first because it is the right answer: hour-long
+ * credentials, nothing stored. `secret` is third because it works
+ * everywhere AssumeRole does -- including on the 06:00 schedule -- but
+ * at the cost of a long-lived key somebody has to look after.
  * `profile` is last, and its label says "local" rather than naming a
- * cloud, because it is the only one of the three that cannot work on the
- * schedule -- the segmented control is the first place someone decides,
- * so it is the first place that has to be honest about it.
+ * cloud, because it is the only one of the four that cannot work on the
+ * schedule at all.
+ *
+ * Order alone does not say which is recommended, so `MODE_RECOMMENDATION`
+ * is rendered under the control and both dialogs show it.
  */
 export const REGISTER_MODES: readonly SegmentedOption<CredentialMode>[] = [
   {
@@ -99,6 +115,12 @@ export const REGISTER_MODES: readonly SegmentedOption<CredentialMode>[] = [
       "The account CostHub runs in, read with the application's own role. Nothing to configure.",
   },
   {
+    value: 'secret',
+    label: 'Access key',
+    title:
+      'An IAM access key you already hold, kept in Secrets Manager. Works on the schedule, but it is long-lived -- prefer AssumeRole.',
+  },
+  {
     value: 'profile',
     label: 'Local CLI profile',
     title:
@@ -109,24 +131,61 @@ export const REGISTER_MODES: readonly SegmentedOption<CredentialMode>[] = [
 /**
  * The modes the EDIT dialog offers for a given row.
  *
- * The three registerable ones, plus `secret` only when the row already
- * holds it. Switching an AWS row TO `secret` would produce a connection
- * `aws_session` refuses outright ("unsupported credential_mode for
- * AWS"), so it is not offered; an Azure row that already is `secret`
- * still has to be correctable, so it is not taken away either.
+ * All four, now that AWS `secret` is implemented. It used to be the
+ * three registerable ones plus `secret` only when the row already held
+ * it, because switching an AWS row TO `secret` produced a connection
+ * `aws_session` refused outright ("unsupported credential_mode for
+ * AWS"). That is no longer true, so the restriction is gone and the
+ * signature keeps its argument only so the caller does not have to
+ * change.
+ *
+ * Switching INTO `secret` without supplying a key is refused by the API
+ * (a row with no secret to resolve can never authenticate), and the
+ * dialog warns before the save rather than blocking it -- the same way
+ * it treats every other server-side rule.
+ *
+ * Kept as a function rather than collapsed into `REGISTER_MODES` at the
+ * call site: it is the seam where a mode becomes conditional again, and
+ * it returns copies so a caller cannot mutate the shared array.
  */
-export function editModes(
-  current: StoredCredentialMode,
-): readonly SegmentedOption<StoredCredentialMode>[] {
-  const base: SegmentedOption<StoredCredentialMode>[] = REGISTER_MODES.map((m) => ({ ...m }));
-  if (current === 'secret') {
-    base.push({
-      value: 'secret',
-      label: CREDENTIAL_MODE_LABEL.secret,
-      title: CREDENTIAL_MODE_HINT.secret,
-    });
-  }
-  return base;
+export function editModes(): readonly SegmentedOption<StoredCredentialMode>[] {
+  return REGISTER_MODES.map((m) => ({ ...m }));
+}
+
+/**
+ * What storing a key means, shown wherever one can be typed.
+ *
+ * The counterweight to how easy this mode is to pick, and worded only
+ * from what the code does: the lines come from `STORED_KEY_LIMITS`, so
+ * the add dialog and the edit dialog cannot end up claiming different
+ * things about the same mode.
+ */
+export function StoredKeyNotice({ rotating = false }: { rotating?: boolean }) {
+  return (
+    <div className="space-y-2 rounded-md border border-warning/50 bg-warning/10 px-3 py-2.5">
+      <p className="flex items-center gap-1.5 text-xs font-semibold">
+        <KeyRound className="h-3.5 w-3.5 shrink-0 text-warning" aria-hidden />
+        {rotating
+          ? 'Replacing the stored key — the old one stops working immediately'
+          : 'A long-lived credential, stored on your behalf'}
+      </p>
+      <ul className="list-disc space-y-1 pl-4 text-[11px] text-muted-foreground">
+        {STORED_KEY_LIMITS.map((line) => (
+          <li key={line}>{line}</li>
+        ))}
+      </ul>
+      <p className="text-[11px] text-muted-foreground">
+        Give it the least it needs: <code className="font-mono">ce:GetCostAndUsage</code> and{' '}
+        <code className="font-mono">ce:GetDimensionValues</code> are the two calls the import
+        and the connection test actually make.
+      </p>
+    </div>
+  );
+}
+
+/** One sentence on which mode this screen is recommending, and why. */
+export function ModeRecommendation() {
+  return <p className="text-xs text-muted-foreground">{MODE_RECOMMENDATION}</p>;
 }
 
 /**

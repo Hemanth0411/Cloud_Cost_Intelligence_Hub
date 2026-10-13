@@ -185,12 +185,30 @@ def test_an_empty_display_name_is_refused_with_a_reason(as_superadmin):
 
 
 def test_edits_update_is_still_the_only_writer_of_editable_columns():
-    """Guard the allowlist: a column added to the model must be added here."""
-    from costhub.api.routes.connections import ConnectionPatch
+    """Guard the allowlist: a column added to the model must be added here.
 
-    assert set(ConnectionPatch.model_fields) <= set(edits.EDITABLE), (
+    TWO FIELDS ARE DELIBERATELY NOT COLUMNS. The access key pair is
+    popped off in the route and written to Secrets Manager; what reaches
+    the SQL is the `secret_arn` that produced. They are named here rather
+    than skipped by a pattern, so a third one is a decision somebody has
+    to make in this file rather than something a prefix quietly admits.
+    """
+    from costhub.api.routes.connection_edits import ConnectionPatch
+
+    not_columns = {"access_key_id", "secret_access_key"}
+
+    assert set(ConnectionPatch.model_fields) - not_columns <= set(edits.EDITABLE), (
         "a patchable field is missing from edits.EDITABLE, so it would be "
         "silently ignored rather than applied"
+    )
+
+    # The other direction, which is the one that matters now: if either
+    # credential field were ever added to EDITABLE, `edits.update` would
+    # build a SET clause from its name and write the key itself into a
+    # column -- the single thing this feature exists not to do.
+    assert not (not_columns & set(edits.EDITABLE)), (
+        "a credential input is in edits.EDITABLE, so the key would be "
+        "written to a database column"
     )
 
 

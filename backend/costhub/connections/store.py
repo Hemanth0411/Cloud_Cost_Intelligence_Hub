@@ -176,6 +176,12 @@ def upsert(
                 # external_id is a shared secret with the other account;
                 # record that one is set, not its value
                 "external_id_set": external_id is not None,
+                # Same treatment, for the same reason. `secret_arn` is
+                # only a pointer and could be logged in full -- but what
+                # the trail is being asked is "did this connection gain
+                # a stored credential", and a boolean answers it without
+                # anyone having to reason about what an ARN discloses.
+                "secret_arn_set": secret_arn is not None,
             },
         )
         return str(row["id"])
