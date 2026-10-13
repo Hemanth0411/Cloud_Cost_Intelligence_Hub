@@ -2,7 +2,7 @@ import React from 'react';
 import { useCurrentFrame } from 'remotion';
 import { Caption, Card, Eyebrow, Headline, Stage } from '../components/chrome';
 import { C, F } from '../theme';
-import { enter, sceneFade } from '../anim';
+import { enter } from '../anim';
 
 /**
  * Scene 9 -- how it grows, and what it cannot do yet.
@@ -20,8 +20,8 @@ const CARDS: { head: string; value: string; body: string; tone?: 'open' }[] = [
   },
   {
     head: 'Adding a provider',
-    value: 'One adapter entry',
-    body: 'sources.py maps provider to adapter. The runner, the CLI and the Lambda handler never learn the difference.',
+    value: 'An entry and a module',
+    body: 'sources.py maps provider to adapter; the adapter itself is a module to write. The runner, the CLI and the Lambda handler never learn the difference.',
   },
   {
     head: 'Re-running ingest',
@@ -36,10 +36,10 @@ const CARDS: { head: string; value: string; body: string; tone?: 'open' }[] = [
   },
 ];
 
-export const S09Scale: React.FC<{ duration: number }> = ({ duration }) => {
+export const S09Scale: React.FC = () => {
   const frame = useCurrentFrame();
   return (
-    <Stage opacity={sceneFade(frame, duration, 6, 6)}>
+    <Stage>
       <Eyebrow frame={frame}>Scaling it</Eyebrow>
       <Headline frame={frame} size={68}>
         Accounts are independent, so growth is addition.
@@ -85,8 +85,9 @@ export const S09Scale: React.FC<{ duration: number }> = ({ duration }) => {
       </div>
 
       <Caption frame={frame} start={34}>
-        One real account failed its ingest and the other still wrote its rows &mdash; that part is
-        measured. Lambda concurrency on this account is capped at 10, so none of this is a load test.
+        On 2026-10-13 one account's ingest failed and the other still wrote its rows — that part
+        is measured. Lambda concurrency on this account is capped at 10, so none of this is a load
+        test.
       </Caption>
     </Stage>
   );

@@ -4,7 +4,7 @@ import { Caption, Eyebrow, Headline, Stage } from '../components/chrome';
 import { Bars, Columns, Counter } from '../components/data';
 import mock from '../data/mock.json';
 import { C, F } from '../theme';
-import { compactUsd, enter, sceneFade, usd } from '../anim';
+import { compactUsd, enter, usd } from '../anim';
 
 /**
  * Scene 3 -- what the product shows.
@@ -15,21 +15,21 @@ import { compactUsd, enter, sceneFade, usd } from '../anim';
  * has no Google adapter, so they are filtered out rather than captioned
  * away.
  */
-export const S03Product: React.FC<{ duration: number }> = ({ duration }) => {
+export const S03Product: React.FC = () => {
   const frame = useCurrentFrame();
   const accounts = mock.all.accounts;
   const max = Math.max(...accounts.map((a) => a.cost));
   return (
-    <Stage opacity={sceneFade(frame, duration, 6, 6)}>
+    <Stage>
       <Eyebrow frame={frame}>One view over every account</Eyebrow>
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 54, marginTop: 18 }}>
         <div>
           <div style={{ ...enter(frame, 4), fontSize: 30, color: C.slate }}>
-            Twelve months, five independent AWS accounts
+            365 days to {mock.range.to}, five independent AWS accounts
           </div>
           <Counter
             frame={frame}
-            start={8}
+            start={14}
             value={mock.all.total}
             format={(n) => usd(n)}
             size={124}
@@ -40,20 +40,21 @@ export const S03Product: React.FC<{ duration: number }> = ({ duration }) => {
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 60, marginTop: 44 }}>
+      <div style={{ display: 'flex', gap: 48, marginTop: 44 }}>
         <div>
           <SectionLabel frame={frame} start={18}>
-            Monthly spend
+            Monthly spend, last 12 calendar months
           </SectionLabel>
           <Columns
             frame={frame}
-            start={22}
+            start={18}
             points={mock.all.monthly}
-            width={820}
-            height={300}
+            width={780}
+            height={290}
           />
           <div style={{ ...enter(frame, 30), fontSize: 24, color: C.slate, marginTop: 6 }}>
-            The last column is a partial month, drawn in khaki so it is not read as a drop.
+            The columns are calendar months, so they do not sum to the 365-day total beside
+            them. The last one is partial, drawn in khaki so it is not read as a drop.
           </div>
         </div>
         <div>
@@ -62,10 +63,10 @@ export const S03Product: React.FC<{ duration: number }> = ({ duration }) => {
           </SectionLabel>
           <Bars
             frame={frame}
-            start={28}
+            start={18}
             bars={accounts.map((a) => ({ label: a.name, value: a.cost }))}
             scaleMax={max}
-            width={840}
+            width={830}
             format={compactUsd}
             rowHeight={58}
             labelWidth={300}
@@ -73,7 +74,7 @@ export const S03Product: React.FC<{ duration: number }> = ({ duration }) => {
         </div>
       </div>
 
-      <Caption frame={frame} start={34}>
+      <Caption frame={frame} start={12}>
         Audited mock estate (3,940 plausibility checks). Not live spend &mdash; the real account&rsquo;s
         figures are three scenes from now.
       </Caption>

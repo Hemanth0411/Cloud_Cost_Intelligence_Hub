@@ -5,7 +5,7 @@
   "description": "Code-rendered demo video for CostHub (Remotion 4)",
   "scripts": {
     "studio": "remotion studio",
-    "render": "remotion render Costhub out/costhub.mp4 --gl=swangle",
+    "render": "remotion render Costhub out/costhub.mp4 --gl=swangle --timeout=60000 --concurrency=4",
     "still": "remotion still"
   },
   "dependencies": {

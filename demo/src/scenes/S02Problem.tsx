@@ -2,7 +2,7 @@ import React from 'react';
 import { useCurrentFrame } from 'remotion';
 import { Card, Eyebrow, Headline, Stage } from '../components/chrome';
 import { C, F } from '../theme';
-import { enter, sceneFade } from '../anim';
+import { enter } from '../anim';
 
 /**
  * Scene 2 -- why the off-the-shelf answer does not apply.
@@ -20,15 +20,15 @@ const POINTS: { head: string; body: string }[] = [
     body: 'Not everyone may see every account. Finance sees one; an engineer sees one service inside another.',
   },
   {
-    head: 'So the ready-made dashboards do not fit',
-    body: 'AWS Cloud Intelligence Dashboards start from a payer account and an org-wide export. Neither exists here.',
+    head: 'So the ready-made answer does not fit',
+    body: 'The off-the-shelf dashboards are built around a payer account and an org-wide CUR export. We have neither.',
   },
 ];
 
-export const S02Problem: React.FC<{ duration: number }> = ({ duration }) => {
+export const S02Problem: React.FC = () => {
   const frame = useCurrentFrame();
   return (
-    <Stage opacity={sceneFade(frame, duration, 6, 6)}>
+    <Stage>
       <Eyebrow frame={frame}>The constraint</Eyebrow>
       <Headline frame={frame} size={72}>
         Two facts ruled out every shortcut.

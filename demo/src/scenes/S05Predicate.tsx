@@ -4,7 +4,7 @@ import { Caption, Eyebrow, Headline, Stage } from '../components/chrome';
 import { Code } from '../components/data';
 import rbac from '../data/rbac.json';
 import { C, F } from '../theme';
-import { ease, enter, sceneFade, springs } from '../anim';
+import { ease, enter, springs } from '../anim';
 
 /**
  * Scene 5 -- the narrowing, measured.
@@ -23,29 +23,44 @@ import { ease, enter, sceneFade, springs } from '../anim';
  * retyped. `tools/rbac-proof.py` writes `GRANT_PREDICATE` into
  * rbac.json, so if the shipped SQL changes, this scene changes with it.
  */
-const LINES = rbac.predicate.trim().split(/\r?\n/);
+const MAX_COLS = 54;
+
+/**
+ * Wrap at ` OR ` rather than at a column, so a continuation line starts
+ * with a word and the SQL still reads as SQL. Nothing is removed: the
+ * two long lines are the only ones that need it, and at full size they
+ * ran off the card and into the column of numbers beside it.
+ */
+const wrap = (line: string): string[] => {
+  if (line.length <= MAX_COLS || !line.includes(' OR ')) return [line];
+  const [head, ...rest] = line.split(' OR ');
+  const indent = ' '.repeat(line.length - line.trimStart().length + 4);
+  return [head!, ...rest.map((part) => `${indent}OR ${part}`)];
+};
+
+const LINES = rbac.predicate.trim().split(/\r?\n/).flatMap(wrap);
 const HIGHLIGHT = LINES.map((l, i) => (/revoked_at|service_name|valid_until/.test(l) ? i : -1)).filter(
   (i) => i >= 0,
 );
 
-export const S05Predicate: React.FC<{ duration: number }> = ({ duration }) => {
+export const S05Predicate: React.FC = () => {
   const frame = useCurrentFrame();
   const cases = rbac.cases;
   const maxRows = Math.max(...cases.map((c) => c.rows));
   return (
-    <Stage opacity={sceneFade(frame, duration, 6, 6)}>
+    <Stage>
       <Eyebrow frame={frame}>Enforced in SQL</Eyebrow>
       <Headline frame={frame} size={66}>
-        One module reads the cost table. It always adds this.
+        One module answers cost questions. It always adds this.
       </Headline>
 
       <div style={{ display: 'flex', gap: 48, marginTop: 40 }}>
-        <div style={{ width: 820 }}>
-          <Code frame={frame} start={14} lines={LINES} highlight={HIGHLIGHT} size={22} />
-          <div style={{ ...enter(frame, 34), fontSize: 26, color: C.slate, marginTop: 20 }}>
-            <span style={{ fontFamily: F.mono }}>costhub/query/scoped.py</span> &mdash; a test walks
-            the AST and fails if anything else touches{' '}
-            <span style={{ fontFamily: F.mono }}>fact_cost_daily</span>.
+        <div style={{ width: 790 }}>
+          <Code frame={frame} start={14} lines={LINES} highlight={HIGHLIGHT} size={20} />
+          <div style={{ ...enter(frame, 34), fontSize: 25, color: C.slate, marginTop: 16 }}>
+            <span style={{ fontFamily: F.mono }}>costhub/query/scoped.py</span> — and a test fails
+            if a <span style={{ fontFamily: F.mono }}>SELECT</span> from it turns up in any other
+            module but the ingest writer.
           </div>
         </div>
 
@@ -67,7 +82,7 @@ export const S05Predicate: React.FC<{ duration: number }> = ({ duration }) => {
             const start = 36 + i * 7;
             const width = springs(frame, [
               { at: start, value: 0 },
-              { at: start, value: (c.rows / maxRows) * 300 },
+              { at: start, value: (c.rows / maxRows) * 230 },
             ]);
             const shown = Math.round(
               springs(frame, [
@@ -86,12 +101,12 @@ export const S05Predicate: React.FC<{ duration: number }> = ({ duration }) => {
                   marginBottom: 18,
                 }}
               >
-                <span style={{ width: 340, fontSize: 25, color: C.ink, lineHeight: 1.25 }}>
+                <span style={{ width: 400, fontSize: 24, color: C.ink, lineHeight: 1.25 }}>
                   {c.label}
                 </span>
                 <span
                   style={{
-                    width: 300,
+                    width: 230,
                     height: 22,
                     backgroundColor: C.muted,
                     borderRadius: 4,
@@ -109,9 +124,10 @@ export const S05Predicate: React.FC<{ duration: number }> = ({ duration }) => {
                 </span>
                 <span
                   style={{
-                    width: 140,
+                    width: 170,
                     fontFamily: F.mono,
                     fontSize: 26,
+                    whiteSpace: 'nowrap',
                     color: c.rows === 0 ? C.destructive : C.ateneo,
                     fontVariantNumeric: 'tabular-nums',
                   }}

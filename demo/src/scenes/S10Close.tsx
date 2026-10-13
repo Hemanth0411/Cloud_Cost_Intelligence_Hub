@@ -2,19 +2,19 @@ import React from 'react';
 import { useCurrentFrame } from 'remotion';
 import { Caption, Eyebrow, Headline, Lede, Stage } from '../components/chrome';
 import { C, F } from '../theme';
-import { enter, sceneFade } from '../anim';
+import { enter } from '../anim';
 
 /** Scene 10 -- the close, and the provenance of everything shown. */
-export const S10Close: React.FC<{ duration: number }> = ({ duration }) => {
+export const S10Close: React.FC = () => {
   const frame = useCurrentFrame();
   const facts = [
     'Per-account, per-service grants',
-    'Every superadmin read audited',
+    'Superadmin reads logged',
     'One reader, one predicate',
     'Terraform up in one command',
   ];
   return (
-    <Stage opacity={sceneFade(frame, duration, 6, 10)}>
+    <Stage>
       <Eyebrow frame={frame}>CostHub</Eyebrow>
       <Headline frame={frame} size={92}>
         Cost data people can share
@@ -24,7 +24,7 @@ export const S10Close: React.FC<{ duration: number }> = ({ duration }) => {
       <Lede frame={frame} start={14}>
         Deployed on Cognito, API Gateway, Lambda, RDS and Amplify &mdash; and it bills itself.
       </Lede>
-      <div style={{ position: 'absolute', left: 120, bottom: 170, display: 'flex', gap: 46 }}>
+      <div style={{ position: 'absolute', left: 120, bottom: 230, display: 'flex', gap: 46 }}>
         {facts.map((f, i) => (
           <span
             key={f}
@@ -40,8 +40,8 @@ export const S10Close: React.FC<{ duration: number }> = ({ duration }) => {
         ))}
       </div>
       <Caption frame={frame} start={32} tone="live">
-        Charts: audited mock estate. Every measured figure in this video was read from the deployed
-        stack on 2026-10-13.
+        Charts: audited mock estate. The live figures were read from the deployed database on
+        2026-10-13; the test and data-check counts are local runs.
       </Caption>
     </Stage>
   );

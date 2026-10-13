@@ -37,8 +37,16 @@ const base: Filters = {
 const ds = getDataset();
 const all = getDashboardData(ds, base);
 
-/** The narrowed view: one account, which is what one grant buys. */
-const GRANTED_ACCOUNT = 'aws-data-lake';
+/**
+ * The narrowed view: one account, which is what one grant buys.
+ *
+ * This is NOT a free choice. `mockGrants()[0]` gives finance.lead a
+ * grant on Prod Core Platform, and the video names that user, so the
+ * account has to be the one the fixture actually granted them. An
+ * earlier version picked Data Lake because the narrowing looked more
+ * dramatic, which made the scene disagree with the data it cited.
+ */
+const GRANTED_ACCOUNT = 'aws-prod-core';
 const granted = getDashboardData(ds, { ...base, accountId: GRANTED_ACCOUNT });
 
 const round = (n: number) => Math.round(n * 100) / 100;

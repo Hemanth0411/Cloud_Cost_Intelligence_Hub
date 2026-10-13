@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-10-13T16:16:57+05:30",
+  "capturedAt": "2026-10-13T17:39:37+05:30",
   "source": "costhub/query/scoped.py GRANT_PREDICATE, run against deployed RDS",
   "window": {
     "start": "2026-01-01",
@@ -8,12 +8,12 @@
   "predicate": "EXISTS (\n  SELECT 1\n  FROM access_grants g\n  WHERE g.user_id      = %(user_id)s\n    AND g.revoked_at  IS NULL\n    AND g.deleted_at  IS NULL\n    AND g.provider     = f.provider\n    AND g.account_id   = f.account_id\n    AND (g.service_name IS NULL OR g.service_name = f.service_name)\n    AND now() >= g.valid_from\n    AND (g.valid_until IS NULL OR now() < g.valid_until)\n)",
   "cases": [
     {
-      "label": "superadmin (bypass, audited)",
+      "label": "superadmin (predicate bypassed)",
       "principal": "hemanth.reddy@chryselys.com",
-      "rows": 27,
-      "accounts": 1,
-      "services": 6,
-      "cost": 0.0
+      "rows": 1301,
+      "accounts": 2,
+      "services": 26,
+      "cost": 1856.263717
     },
     {
       "label": "user, granted the whole account",

@@ -22,6 +22,12 @@ export type SpringConfig = Parameters<typeof spring>[0]['config'];
 export const SOFT: SpringConfig = { damping: 200, mass: 0.9, stiffness: 110 };
 /** For entrances that need a little life. Still no visible overshoot. */
 export const LIVELY: SpringConfig = { damping: 26, mass: 0.6, stiffness: 160 };
+/**
+ * Counting money. Critically damped and quick: the first spring spent
+ * 55% of its travel in six frames and then crawled the last $929 over
+ * most of a second, which reads as a jump followed by a freeze.
+ */
+export const COUNT: SpringConfig = { damping: 200, mass: 0.45, stiffness: 190 };
 
 /** 0 before `start`, then a spring to 1. Clamped, so it never goes negative. */
 export const ease = (frame: number, start: number, config: SpringConfig = SOFT): number => {
@@ -66,12 +72,15 @@ export const enter = (
   };
 };
 
-/** Fade in at the head of a scene and out at its tail. No motion. */
-export const sceneFade = (frame: number, duration: number, head = 8, tail = 8): number =>
-  interpolate(frame, [0, head, duration - tail, duration], [0, 1, 1, 0], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-  });
+/*
+ * There is no scene-fade helper on purpose.
+ *
+ * Each scene used to fade its own opacity in and out. With nothing
+ * behind them that is a half-second dip through BLACK at every cut --
+ * the only gradient in an otherwise flat piece, and it lands exactly on
+ * the beat the cut was timed to, so the beat is struck by darkness
+ * rather than by a new image. Scenes now cut hard.
+ */
 
 /** Money, the way the product formats it. */
 export const usd = (n: number, digits = 0): string =>

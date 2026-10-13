@@ -1,5 +1,11 @@
 """Run the SHIPPED grant predicate against the DEPLOYED database.
 
+NOTE ON WHAT THIS DOES NOT MEASURE: the deployed fact table holds rows
+for ONE account, so the cases below exercise the service-level narrowing
+and the revoke, not the account-level exclusion. The predicate joins
+`g.account_id = f.account_id` either way; that half is sound by
+construction and unproven at runtime here. The video says so.
+
 The video's central claim is that access narrowing happens in SQL, so
 the video should not illustrate it -- it should measure it. This imports
 `GRANT_PREDICATE` and `SUPERADMIN_BYPASS` from
@@ -118,7 +124,7 @@ payload = {
     "window": {k: v.isoformat() for k, v in WINDOW.items()},
     "predicate": GRANT_PREDICATE.strip(),
     "cases": [
-        {"label": "superadmin (bypass, audited)", "principal": "hemanth.reddy@chryselys.com", **superadmin},
+        {"label": "superadmin (predicate bypassed)", "principal": "hemanth.reddy@chryselys.com", **superadmin},
         {"label": "user, granted the whole account", "principal": "rbac.proof@costhub.demo", **granted},
         {"label": "same user, grant narrowed to one service", "principal": "rbac.proof@costhub.demo", **narrowed},
         {"label": "same user, grant revoked", "principal": "rbac.proof@costhub.demo", **revoked},

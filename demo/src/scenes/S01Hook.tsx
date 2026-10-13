@@ -2,17 +2,17 @@ import React from 'react';
 import { useCurrentFrame } from 'remotion';
 import { Caption, Eyebrow, Headline, Lede, Stage } from '../components/chrome';
 import { C, F } from '../theme';
-import { enter, sceneFade } from '../anim';
+import { enter } from '../anim';
 
 /**
  * Scene 1 -- the hook. Claims: none beyond what the stack is, which is
  * the list in `terraform/`.
  */
-export const S01Hook: React.FC<{ duration: number }> = ({ duration }) => {
+export const S01Hook: React.FC = () => {
   const frame = useCurrentFrame();
   const stack = ['Cognito', 'API Gateway', 'Lambda', 'RDS Postgres', 'Amplify', 'Terraform'];
   return (
-    <Stage opacity={sceneFade(frame, duration, 6, 6)}>
+    <Stage>
       <Eyebrow frame={frame}>CostHub &middot; cloud cost intelligence</Eyebrow>
       <Headline frame={frame} size={96}>
         Cost visibility for AWS accounts

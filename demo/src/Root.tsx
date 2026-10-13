@@ -10,7 +10,7 @@ import React from 'react';
 import { Audio, Composition, Sequence, staticFile } from 'remotion';
 import { FPS, H, W, bars } from './theme';
 import timing from './data/timing.json';
-import { loadFonts } from './fonts';
+import { Fonts } from './fonts';
 import { S01Hook } from './scenes/S01Hook';
 import { S02Problem } from './scenes/S02Problem';
 import { S03Product } from './scenes/S03Product';
@@ -22,7 +22,6 @@ import { S08Deploy } from './scenes/S08Deploy';
 import { S09Scale } from './scenes/S09Scale';
 import { S10Close } from './scenes/S10Close';
 
-loadFonts();
 
 /**
  * Scene order and components. The LENGTHS live in data/timing.json,
@@ -55,6 +54,7 @@ const Film: React.FC<{ withAudio?: boolean }> = ({ withAudio = true }) => {
   let at = 0;
   return (
     <>
+      <Fonts />
       {withAudio ? <Audio src={staticFile('audio/bed.wav')} volume={1} /> : null}
       {SCENES.map((scene, i) => {
         const from = at;

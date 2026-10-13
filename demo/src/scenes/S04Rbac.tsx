@@ -4,7 +4,7 @@ import { Caption, Eyebrow, Headline, Pill, Stage } from '../components/chrome';
 import { BarsKeyed } from '../components/data';
 import mock from '../data/mock.json';
 import { C, F } from '../theme';
-import { compactUsd, enter, sceneFade, springs, usd } from '../anim';
+import { compactUsd, COUNT, ease, enter, LIVELY, springs, usd } from '../anim';
 
 /**
  * Scene 4 -- the differentiator, shown rather than described.
@@ -21,7 +21,7 @@ import { compactUsd, enter, sceneFade, springs, usd } from '../anim';
  */
 const GRANT_AT = 108;
 
-export const S04Rbac: React.FC<{ duration: number }> = ({ duration }) => {
+export const S04Rbac: React.FC = () => {
   const frame = useCurrentFrame();
   const accounts = mock.all.accounts;
   const grantedId = mock.granted.accountId;
@@ -42,32 +42,36 @@ export const S04Rbac: React.FC<{ duration: number }> = ({ duration }) => {
     };
   });
 
-  const switched = frame >= GRANT_AT;
+  // The swap is a value, not a branch: the two identity lines cross-fade
+  // and slide past each other, so the CAUSE is visible and not just its
+  // effect on the numbers.
+  const swap = ease(frame, GRANT_AT, LIVELY);
   return (
-    <Stage opacity={sceneFade(frame, duration, 6, 6)}>
+    <Stage>
       <Eyebrow frame={frame}>The difference that matters</Eyebrow>
       <Headline frame={frame} size={70}>
         The same screen. A different identity.
       </Headline>
 
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 24,
-          marginTop: 38,
-          ...enter(frame, 12),
-        }}
-      >
-        <span style={{ fontFamily: F.mono, fontSize: 32, color: C.ateneo }}>
-          {switched ? 'finance.lead@chryselys.com' : 'hemanth.reddy@chryselys.com'}
-        </span>
-        <Pill color={switched ? C.bronze : C.ateneo}>
-          {switched ? '1 grant: Data Lake' : 'superadmin'}
-        </Pill>
-        <span style={{ fontSize: 28, color: C.slate }}>
-          {switched ? 'one account, every service in it' : 'every account, audited on each read'}
-        </span>
+      <div style={{ position: 'relative', height: 64, marginTop: 38, ...enter(frame, 12) }}>
+        <Identity
+          frame={frame}
+          shown={1 - swap}
+          offset={-swap * 26}
+          email="hemanth.reddy@chryselys.com"
+          pill="superadmin"
+          pillColor={C.ateneo}
+          note="every account, and the bypass is logged"
+        />
+        <Identity
+          frame={frame}
+          shown={swap}
+          offset={(1 - swap) * 26}
+          email="finance.lead@chryselys.com"
+          pill={`1 grant: ${mock.granted.accountName}`}
+          pillColor={C.bronze}
+          note="one account, every service in it"
+        />
       </div>
 
       <div style={{ display: 'flex', gap: 70, marginTop: 36, alignItems: 'flex-start' }}>
@@ -96,9 +100,9 @@ export const S04Rbac: React.FC<{ duration: number }> = ({ duration }) => {
         </div>
       </div>
 
-      <Caption frame={frame} start={26}>
-        Mock estate, AWS accounts only. The narrowing itself is measured against the deployed
-        database in the next scene.
+      <Caption frame={frame} start={16}>
+        Mock estate, AWS accounts only. The predicate that does the narrowing is measured
+        against the deployed database in the next scene.
       </Caption>
     </Stage>
   );
@@ -112,14 +116,20 @@ export const S04Rbac: React.FC<{ duration: number }> = ({ duration }) => {
  * which is also the honest picture of what a grant does.
  */
 const VisibleSpend: React.FC<{ frame: number }> = ({ frame }) => {
-  const shownTotal = springs(frame, [
-    { at: 18, value: 0 },
-    { at: 18, value: mock.all.total },
-    { at: GRANT_AT, value: mock.granted.total },
-  ]);
+  const shownTotal = springs(
+    frame,
+    [
+      { at: 18, value: 0 },
+      { at: 18, value: mock.all.total },
+      { at: GRANT_AT, value: mock.granted.total },
+    ],
+    COUNT,
+  );
+  // Counted DOWN only. An earlier version sprang this up from zero with
+  // the money, so for half a second the superadmin panel read "3 of 5
+  // accounts visible" -- a sentence the scene exists to contradict.
   const shownAccounts = springs(frame, [
-    { at: 20, value: 0 },
-    { at: 20, value: mock.all.accounts.length },
+    { at: 0, value: mock.all.accounts.length },
     { at: GRANT_AT, value: 1 },
   ]);
   return (
@@ -140,11 +150,45 @@ const VisibleSpend: React.FC<{ frame: number }> = ({ frame }) => {
       <div style={{ fontSize: 30, color: C.slate, paddingTop: 10 }}>
         {Math.round(shownAccounts)} of {mock.all.accounts.length} accounts visible
       </div>
-      <div style={{ fontSize: 28, color: C.slate, paddingTop: 22, maxWidth: 420, lineHeight: 1.4 }}>
-        {frame >= GRANT_AT + 10
-          ? 'Four accounts did not disappear from the UI. They were never returned.'
-          : ''}
+      <div
+        style={{
+          fontSize: 28,
+          color: C.slate,
+          paddingTop: 22,
+          maxWidth: 420,
+          lineHeight: 1.4,
+          opacity: ease(frame, GRANT_AT + 14),
+        }}
+      >
+        Four accounts did not disappear from the UI. The database never returned them.
       </div>
     </>
   );
 };
+
+/** One identity line. Two of these cross-fade when the grant lands. */
+const Identity: React.FC<{
+  frame: number;
+  shown: number;
+  offset: number;
+  email: string;
+  pill: string;
+  pillColor: string;
+  note: string;
+}> = ({ shown, offset, email, pill, pillColor, note }) => (
+  <div
+    style={{
+      position: 'absolute',
+      inset: 0,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 24,
+      opacity: shown,
+      transform: `translateY(${offset.toFixed(2)}px)`,
+    }}
+  >
+    <span style={{ fontFamily: F.mono, fontSize: 32, color: C.ateneo }}>{email}</span>
+    <Pill color={pillColor}>{pill}</Pill>
+    <span style={{ fontSize: 28, color: C.slate }}>{note}</span>
+  </div>
+);

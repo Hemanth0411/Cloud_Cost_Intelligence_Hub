@@ -1,15 +1,28 @@
 # CostHub demo video
 
-A 77-second demo, rendered from code with Remotion 4 so that any timing
-change is one re-render away. `out/costhub.mp4`, 1920×1080, 30 fps.
+A 65-second demo, rendered from code with Remotion 4 so that any
+timing change is one re-render away. `out/costhub.mp4`, 1920×1080,
+30 fps, 100 BPM, cuts on the beat.
 
 ## Re-render
 
 ```bash
 cd demo
 npm install
-npx remotion render Costhub out/costhub.mp4 --gl=swangle   # no GPU here: swangle
+npm run render     # remotion render Costhub out/costhub.mp4 --gl=swangle --timeout=60000 --concurrency=4
 ```
+
+Three things about rendering on this machine, all learned the hard way:
+
+* **`--gl=swangle`** because there is no GPU.
+* **`--timeout=60000`.** The default 30s `delayRender` budget is not
+  enough for the font load under software rendering; the first full
+  render died at frame 904 after six minutes.
+* **Chrome comes from `remotion.config.ts`, not from Remotion's
+  download.** Remotion's own fetch of `chrome-headless-shell-win64.zip`
+  extracts 2 of its 290 entries here -- no `.exe` -- then reports
+  success and renders nothing. The config points at the installed
+  Chrome; override with `REMOTION_BROWSER`.
 
 Other compositions: `CosthubSilent` (same cut, no audio track) and
 `Scene<Id>` for each scene on its own, so one shot can be reviewed
@@ -88,12 +101,12 @@ for a claim to drift. Kokoro-82M (Apache-2.0) is installed under
 |---|---|---|---|
 | 1 | Hook | Deployed on Cognito, API Gateway, Lambda, RDS, Amplify, in account 997916278551 | `terraform/` + `terraform output` |
 | 2 | Problem | No AWS Organization; cost data is sensitive; CID dashboards assume a payer account | `docs/01-requirements.md`, `CONTEXT.md` |
-| 3 | Product | $3,479,523.12 over 12 months, 5 AWS accounts, 10 services, monthly columns, per-account bars | `tools/dump-mock.ts` → the app's own `getDashboardData`. **Captioned as audited mock, not live spend.** |
-| 4 | RBAC narrowing | Same screen under two identities: 5 accounts → 1, $3.48M → $830,632.38 | Same mock dump, `accountId: 'aws-data-lake'`. Captioned as mock estate. |
-| 5 | Predicate | `GRANT_PREDICATE` verbatim; rows returned as five principals: 27 / 27 / 10 / 0 / 0 | `tools/rbac-proof.py` against deployed RDS. The two test principals were inserted in a transaction and rolled back; the script re-checks the row counts afterwards and the scene prints that. |
-| 6 | Real verdicts | One account OK with 6 real service names; one account failed with the real Cost Explorer denial text | `ingest_runs` on deployed RDS, `tools/dump-live.py` |
-| 7 | Cost to run | Its own bill $0.00 over 27 rows / 6 services, Jul 1 – Oct 13; db.t4g.micro + 5 Lambdas; $80/month budget; $0.01 per connection test | `fact_cost_daily` (its own account), `terraform/env/dev.tfvars`, `terraform/messaging.tf`, `connections/probe.py` |
-| 8 | Deploy | `./do.sh up dev` step list; 57 resources; an AST test guards the single reader | `do.sh cmd_up`, `terraform state list \| wc -l` = 57, `backend/tests/test_invariant.py` |
+| 3 | Product | $3,479,523.12 over the 365 days to 2026-10-11, 5 AWS accounts, 10 services, 12 monthly columns, per-account bars | `tools/dump-mock.ts` → the app's own `getDashboardData`. **Captioned as audited mock, not live spend.** The columns are a fixed 12-calendar-month look-back and so do NOT sum to the 365-day total; the scene says so. |
+| 4 | RBAC narrowing | Same screen under two identities: 5 accounts → 1, $3,479,523 → $1,436,790 | Same mock dump. The account is `aws-prod-core` because that is the one `mockGrants()` actually gives finance.lead — the scene names that user, so it has to match. Captioned as mock estate. |
+| 5 | Predicate | `GRANT_PREDICATE` verbatim; rows returned for five principals: 1301 / 27 / 10 / 0 / 0 | `tools/rbac-proof.py` against deployed RDS. The two test principals were inserted in a transaction and rolled back; the script re-checks the counts afterwards and the scene prints that. The superadmin row is a raw-SQL bypass, not an audited product read — the label says "predicate bypassed" for that reason. |
+| 6 | Real verdicts | One account OK with 6 real service names; one account failed with the real Cost Explorer denial text | `ingest_runs` on deployed RDS, `tools/dump-live.py`. **The failing account is a real third party: its 12-digit id and display name are masked in the scene** (`maskAccount` / `redact` in `S06Proof.tsx`). The capture keeps the unredacted row, so the claim stays checkable. |
+| 7 | Cost to run | Its own bill $0.00 over 27 rows / 6 services, Jul 1 – Oct 13; db.t4g.micro + four 512 MB Lambdas and one at 256; $80/month budget; $0.01 per connection test | `fact_cost_daily` scoped to `account_id = 'self'`, `terraform/lambda.tf`, `terraform/env/dev.tfvars`, `terraform/messaging.tf`. The $0.01 is the published Cost Explorer price and the caption says so. |
+| 8 | Deploy | `./do.sh up dev` step list; 57 resources; a test parses every module and fails on a stray `SELECT` | `do.sh cmd_up`, `terraform state list \| wc -l` = 57, `backend/tests/test_invariant.py` — note `READERS_ALLOWED` is **two** modules (`query/scoped.py` and `ingest/runner.py`), and the check matches SELECTs in string literals, which is what the scene now says. |
 | 9 | Scale | Account = a row; provider = one adapter entry; ingest idempotent on the natural key; **Google Cloud not built, Azure never spoken to** | `ingest/sources.py`, `ingest/runner.py` `ON CONFLICT`, `migrations/002_facts.sql` indexes, CONTEXT.md |
 | 10 | Close | Provenance line: charts are mock, measured figures are from the deployed stack | — |
 
@@ -113,6 +126,20 @@ Every one of these is a real gap, and showing it would be a promise:
 - **Live cost figures as the big number.** Real spend is $0.00. It
   appears only where it is true, in scenes 6 and 7, with its reason.
 
+## Where the live scenes get scoped
+
+`tools/dump-live.py` reads `fact_cost_daily` **for `account_id = 'self'`
+only**. A second, real AWS account was connected on 2026-10-13 and now
+ingests successfully, which put about $1.8k of somebody else's spend —
+service by service — into the same table. None of that belongs in a
+video, and the deployment's own account is also the only one whose bill
+can honestly be narrated as "it bills itself".
+
+The one row kept from the other account is the historical failed ingest
+in scene 6, selected by `error ILIKE '%Cost Explorer access denied%'`
+because that is the two-stage verdict the scene is about. Its display
+name and 12-digit id are stripped before anything is written to disk.
+
 ## Verification state
 
 - `npx tsc --noEmit` — clean.
@@ -123,3 +150,10 @@ Every one of these is a real gap, and showing it would be a promise:
   work. `test_only_scoped_reads_the_fact_table` — the one scene 8 cites
   — passed.
 - Audio: −14.1 LUFS, −1.5 dBTP, measured with `ebur128`.
+- Three review passes ran against the rendered file: honesty (13
+  findings), craft (17, frame-cited), licensing (10). The honesty and
+  licensing findings are all applied or recorded; of the craft findings,
+  the dip-to-black at every cut, the frozen-frame pacing, the un-animated
+  identity swap, the SQL overflowing its card and the mid-tween frames
+  that asserted false counts are fixed. Left alone: the 4-up card
+  baselines, the small type at 480px, and the top-heavy composition.

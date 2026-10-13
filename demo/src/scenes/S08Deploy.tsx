@@ -3,7 +3,7 @@ import { useCurrentFrame } from 'remotion';
 import { Caption, Eyebrow, Headline, Stage } from '../components/chrome';
 import { Code, Stat } from '../components/data';
 import { C, F } from '../theme';
-import { enter, sceneFade } from '../anim';
+import { enter } from '../anim';
 
 /**
  * Scene 8 -- deploying and keeping it alive.
@@ -23,17 +23,17 @@ const STEPS = [
   '  -> outputs    write frontend/.env.local',
 ];
 
-export const S08Deploy: React.FC<{ duration: number }> = ({ duration }) => {
+export const S08Deploy: React.FC = () => {
   const frame = useCurrentFrame();
   return (
-    <Stage opacity={sceneFade(frame, duration, 6, 6)}>
+    <Stage>
       <Eyebrow frame={frame}>Deploy and maintain</Eyebrow>
       <Headline frame={frame} size={68}>
         One command stands the whole thing up.
       </Headline>
 
-      <div style={{ display: 'flex', gap: 60, marginTop: 44, alignItems: 'flex-start' }}>
-        <Code frame={frame} start={12} lines={STEPS} size={27} width={900} />
+      <div style={{ display: 'flex', gap: 50, marginTop: 44, alignItems: 'flex-start' }}>
+        <Code frame={frame} start={12} lines={STEPS} size={23} width={860} />
         <div style={{ display: 'grid', rowGap: 36, flex: 1 }}>
           <Stat
             frame={frame}
@@ -48,8 +48,8 @@ export const S08Deploy: React.FC<{ duration: number }> = ({ duration }) => {
             start={22}
             index={1}
             label="The guard that matters"
-            value="A test walks the AST"
-            note="It fails if any module but query/scoped.py reads fact_cost_daily -- so the RBAC claim cannot rot quietly."
+            value="A test reads the SQL"
+            note="It parses every module and fails if a SELECT from fact_cost_daily turns up outside query/scoped.py and the ingest writer. The RBAC claim cannot rot quietly."
           />
           <Stat
             frame={frame}
@@ -64,8 +64,8 @@ export const S08Deploy: React.FC<{ duration: number }> = ({ duration }) => {
 
       <Caption frame={frame} start={38} tone="live">
         <span style={{ fontFamily: F.mono }}>terraform state list</span> on 2026-10-13: 57 resources.
-        Backend suite that day: 174 passed, 2 failed &mdash; a flaky connection and a file over the
-        300-line limit.
+        Backend suite that day, run locally: 174 passed, 2 failed &mdash; a dropped database
+        connection, and two files over the 300-line limit.
       </Caption>
     </Stage>
   );

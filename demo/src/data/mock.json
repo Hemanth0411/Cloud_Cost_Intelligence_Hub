@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-13T10:42:06.237Z",
+  "generatedAt": "2026-10-13T12:08:16.023Z",
   "source": "frontend/src/lib/mock -- audited by `npm run verify:data` (3,940 checks)",
   "datasetStart": "2024-01-01",
   "datasetEnd": "2026-10-11",
@@ -213,114 +213,119 @@
     ]
   },
   "granted": {
-    "accountId": "aws-data-lake",
-    "accountName": "Data Lake",
-    "total": 830632.38,
-    "servicesInUse": 6,
+    "accountId": "aws-prod-core",
+    "accountName": "Prod Core Platform",
+    "total": 1436790.16,
+    "servicesInUse": 7,
     "monthly": [
       {
         "start": "2025-11-01",
-        "aws": 59708.25,
-        "total": 59708.25,
+        "aws": 104232.6,
+        "total": 104232.6,
         "partial": false
       },
       {
         "start": "2025-12-01",
-        "aws": 66222.28,
-        "total": 66222.28,
+        "aws": 110182.06,
+        "total": 110182.06,
         "partial": false
       },
       {
         "start": "2026-01-01",
-        "aws": 67888.69,
-        "total": 67888.69,
+        "aws": 111659.12,
+        "total": 111659.12,
         "partial": false
       },
       {
         "start": "2026-02-01",
-        "aws": 63327.06,
-        "total": 63327.06,
+        "aws": 100789.33,
+        "total": 100789.33,
         "partial": false
       },
       {
         "start": "2026-03-01",
-        "aws": 69652.31,
-        "total": 69652.31,
+        "aws": 113382.67,
+        "total": 113382.67,
         "partial": false
       },
       {
         "start": "2026-04-01",
-        "aws": 70973.31,
-        "total": 70973.31,
+        "aws": 111032.68,
+        "total": 111032.68,
         "partial": false
       },
       {
         "start": "2026-05-01",
-        "aws": 71410.2,
-        "total": 71410.2,
+        "aws": 116754.05,
+        "total": 116754.05,
         "partial": false
       },
       {
         "start": "2026-06-01",
-        "aws": 71056.76,
-        "total": 71056.76,
+        "aws": 123499.28,
+        "total": 123499.28,
         "partial": false
       },
       {
         "start": "2026-07-01",
-        "aws": 73829.46,
-        "total": 73829.46,
+        "aws": 141582.09,
+        "total": 141582.09,
         "partial": false
       },
       {
         "start": "2026-08-01",
-        "aws": 74964.62,
-        "total": 74964.62,
+        "aws": 138407.63,
+        "total": 138407.63,
         "partial": false
       },
       {
         "start": "2026-09-01",
-        "aws": 73815.78,
-        "total": 73815.78,
+        "aws": 139065.59,
+        "total": 139065.59,
         "partial": false
       },
       {
         "start": "2026-10-01",
-        "aws": 27225.83,
-        "total": 27225.83,
+        "aws": 57039.07,
+        "total": 57039.07,
         "partial": true
       }
     ],
     "services": [
       {
-        "label": "Amazon Relational Database Service",
-        "cost": 293710.19,
-        "sharePct": 35.36
+        "label": "Amazon Elastic Compute Cloud - Compute",
+        "cost": 748040.25,
+        "sharePct": 52.06
       },
       {
-        "label": "Amazon Redshift",
-        "cost": 170101.12,
-        "sharePct": 20.48
+        "label": "Amazon Relational Database Service",
+        "cost": 305399.86,
+        "sharePct": 21.26
       },
       {
         "label": "Amazon Simple Storage Service",
-        "cost": 125397.57,
-        "sharePct": 15.1
+        "cost": 120772.54,
+        "sharePct": 8.41
       },
       {
-        "label": "AWS Glue",
-        "cost": 102726.09,
-        "sharePct": 12.37
+        "label": "Amazon CloudFront",
+        "cost": 90176.99,
+        "sharePct": 6.28
       },
       {
         "label": "AWS Data Transfer",
-        "cost": 98920.12,
-        "sharePct": 11.91
+        "cost": 86807.86,
+        "sharePct": 6.04
       },
       {
         "label": "AWS Lambda",
-        "cost": 39777.29,
-        "sharePct": 4.79
+        "cost": 76748.05,
+        "sharePct": 5.34
+      },
+      {
+        "label": "Amazon Elastic Kubernetes Service",
+        "cost": 8844.61,
+        "sharePct": 0.62
       }
     ]
   },

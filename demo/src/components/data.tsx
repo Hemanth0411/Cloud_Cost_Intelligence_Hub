@@ -7,7 +7,7 @@
  */
 import React from 'react';
 import { C, F } from '../theme';
-import { ease, enter, springs, type Keyframe } from '../anim';
+import { COUNT, ease, enter, springs, type Keyframe } from '../anim';
 
 /** A number that animates to its value and is never interpolated past it. */
 export const Counter: React.FC<{
@@ -18,10 +18,14 @@ export const Counter: React.FC<{
   size?: number;
   color?: string;
 }> = ({ frame, start, value, format, size = 108, color = C.ateneo }) => {
-  const shown = springs(frame, [
-    { at: start, value: 0 },
-    { at: start, value },
-  ]);
+  const shown = springs(
+    frame,
+    [
+      { at: start, value: 0 },
+      { at: start, value },
+    ],
+    COUNT,
+  );
   return (
     <span
       style={{
@@ -306,6 +310,10 @@ export const BarsKeyed: React.FC<{
                 display: 'block',
                 height: '100%',
                 width: `${(Math.max(0, Math.min(value / scaleMax, 1)) * 100).toFixed(3)}%`,
+                // Below half a percent the rounded end is all that is left, and a
+                // bronze pip beside the words "not granted" reads as spend on an
+                // account the row says has none.
+                opacity: value / scaleMax < 0.005 ? 0 : 1,
                 backgroundColor: C.bronze,
               }}
             />
