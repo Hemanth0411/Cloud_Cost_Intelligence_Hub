@@ -18,11 +18,7 @@ three things the UI relies on:
 from __future__ import annotations
 
 
-import pytest
-from fastapi.testclient import TestClient
 
-from costhub.api import deps
-from costhub.api.main import app
 from costhub.db import fetch_all
 from costhub.query.scoped import Principal
 
@@ -53,24 +49,9 @@ FRONTEND_BODY_SELF = {
 }
 
 
-@pytest.fixture
-def client():
-    with TestClient(app) as c:
-        yield c
-
-
-@pytest.fixture
-def as_superadmin(client):
-    app.dependency_overrides[deps.principal] = lambda: SUPERADMIN
-    yield client
-    app.dependency_overrides.clear()
-
-
-@pytest.fixture
-def as_plain_user(client):
-    app.dependency_overrides[deps.principal] = lambda: PLAIN
-    yield client
-    app.dependency_overrides.clear()
+# The authenticated clients now live in conftest.py: a second test
+# file needed them, and two copies of an auth fixture is how one of
+# them comes to grant the wrong role.
 
 
 def test_the_body_the_dialog_sends_is_accepted(as_superadmin):

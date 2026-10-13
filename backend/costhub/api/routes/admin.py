@@ -53,6 +53,29 @@ class ConnectionIn(BaseModel):
     )
 
 
+class ConnectionPatch(BaseModel):
+    """Every field optional: absent means "leave it alone".
+
+    Separate from ConnectionIn rather than reusing it with defaults,
+    because the two mean different things. ConnectionIn describes a whole
+    connection and its defaults are real values -- `credential_mode`
+    defaults to "assume_role". Here a default of None is the ABSENCE of
+    an instruction, and sending the model through `upsert` would blank
+    every credential column the caller did not re-state.
+
+    `provider` and `account_id` are not editable: they are the natural
+    key, and the imported cost rows are keyed by account_id, so changing
+    either orphans the history rather than editing anything.
+    """
+
+    display_name: str | None = None
+    credential_mode: Literal["self", "assume_role", "profile", "secret"] | None = None
+    role_arn: str | None = None
+    external_id: str | None = None
+    profile_name: str | None = None
+    secret_arn: str | None = None
+
+
 # ----------------------------------------------------------------- users
 
 @router.get("/users", summary="All users")
@@ -181,6 +204,40 @@ def set_connection_enabled(
 ) -> dict:
     store.set_enabled(actor=who.email, connection_id=connection_id, value=value)
     return {"id": connection_id, "enabled": value}
+
+
+@router.patch("/connections/{connection_id}", summary="Correct a connection")
+def update_connection(who: SuperAdmin, connection_id: str, body: ConnectionPatch) -> dict:
+    """Change only the fields supplied.
+
+    `exclude_unset` is the whole mechanism: it distinguishes "set this to
+    null" from "do not touch this". Without it, every absent field would
+    arrive as None and clear a column the caller never mentioned -- which
+    is exactly how an edit screen silently destroys an ExternalId.
+    """
+    changes = body.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "nothing to change")
+
+    before = store.update(actor=who.email, connection_id=connection_id, changes=changes)
+    if before is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such connection")
+
+    return {"id": connection_id, "changed": sorted(changes)}
+
+
+@router.delete("/connections/{connection_id}", summary="Stop importing from an account")
+def delete_connection(who: SuperAdmin, connection_id: str) -> dict:
+    """Soft delete. Cost data already imported is kept.
+
+    Says so in the response, because "delete" reads as "remove the data"
+    and it does not: `fact_cost_daily` is keyed by provider and
+    account_id rather than by connection, so the history stays readable
+    and re-registering the account picks it back up.
+    """
+    if not store.soft_delete(actor=who.email, connection_id=connection_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such connection")
+    return {"id": connection_id, "deleted": True, "cost_data_kept": True}
 
 
 @router.post("/connections/{connection_id}/test", summary="Test a connection now")

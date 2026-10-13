@@ -262,3 +262,61 @@ def make_facts(exec_sql):
         return str(run_id)
 
     return _make
+
+
+# ----------------------------------------------- authenticated API clients
+#
+# Moved here from test_connections_api.py when a second file needed them.
+# They override `deps.principal` rather than minting real Cognito tokens:
+# the dependency IS the auth boundary, and a test that signed in properly
+# would be testing Cognito rather than the routes.
+
+
+@pytest.fixture
+def api_client():
+    from fastapi.testclient import TestClient
+
+    from costhub.api.main import app
+
+    with TestClient(app) as c:
+        yield c
+
+
+def _as(principal):
+    from costhub.api import deps
+    from costhub.api.main import app
+
+    app.dependency_overrides[deps.principal] = lambda: principal
+    return app
+
+
+@pytest.fixture
+def as_superadmin(api_client):
+    from costhub.api.main import app
+    from costhub.query.scoped import Principal
+
+    _as(
+        Principal(
+            user_id="00000000-0000-0000-0000-000000000001",
+            email="root@costhub.test",
+            role="superadmin",
+        )
+    )
+    yield api_client
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def as_plain_user(api_client):
+    from costhub.api.main import app
+    from costhub.query.scoped import Principal
+
+    _as(
+        Principal(
+            user_id="00000000-0000-0000-0000-000000000002",
+            email="user@costhub.test",
+            role="user",
+        )
+    )
+    yield api_client
+    app.dependency_overrides.clear()
