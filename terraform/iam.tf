@@ -127,3 +127,49 @@ resource "aws_iam_role_policy" "assume_cost_roles" {
   role   = aws_iam_role.lambda.id
   policy = data.aws_iam_policy_document.assume_cost_roles.json
 }
+
+# Narration for GET /insights (backend/costhub/insights).
+#
+# ONE model, by ARN -- not bedrock:* and not resource "*". The Converse
+# API is authorized by bedrock:InvokeModel; there is no separate action.
+#
+# The model is Amazon Nova Lite, on-demand in this region, so the grant
+# is a single foundation-model ARN. It was not the first choice: every
+# Anthropic model in this account is refused until someone submits the
+# Anthropic use-case form in the Bedrock console (an attestation the
+# account owner has to make). Nova Micro is cheaper and also works; Lite
+# was kept for better choices. See docs/16-insights-api.md.
+#
+# To change model, change it in BOTH places: this variable, and
+# INSIGHTS_MODEL_ID on the API function (the code default is the value
+# below). They are two settings until lambda.tf passes this variable to
+# the function as INSIGHTS_MODEL_ID; change only this one and every call
+# is denied, which the endpoint reports as "access_denied". A model served only through an inference profile, as Claude
+# is here, needs the profile ARN and each destination region's
+# foundation-model ARN listed -- one ARN will not be enough.
+#
+# Its own policy rather than a statement in `lambda` above, so adding or
+# removing it never rewrites the policy the rest of the stack depends on.
+# The role is shared by every function in lambda.tf, so the job Lambdas
+# hold this permission too; only the API uses it.
+variable "insights_model_id" {
+  description = "Bedrock model GET /insights may invoke. Keep in step with INSIGHTS_MODEL_ID."
+  type        = string
+  default     = "amazon.nova-lite-v1:0"
+}
+
+data "aws_iam_policy_document" "insights_bedrock" {
+  statement {
+    sid     = "InvokeInsightsModel"
+    actions = ["bedrock:InvokeModel"]
+    resources = [
+      "arn:aws:bedrock:${var.aws_region}::foundation-model/${var.insights_model_id}",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "insights_bedrock" {
+  name   = "${local.prefix}-insights-bedrock"
+  role   = aws_iam_role.lambda.id
+  policy = data.aws_iam_policy_document.insights_bedrock.json
+}
