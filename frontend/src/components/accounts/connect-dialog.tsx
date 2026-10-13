@@ -280,7 +280,7 @@ export function ConnectDialog({ open, onClose, existing, onRegistered }: Connect
                   {done ? (
                     <Check className="h-4 w-4 text-success" aria-hidden />
                   ) : current ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-primary" aria-hidden />
+                    <Loader2 className="h-4 w-4 animate-spin text-ateneo" aria-hidden />
                   ) : (
                     <span className="h-4 w-4 rounded-full border" aria-hidden />
                   )}

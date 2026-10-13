@@ -36,16 +36,16 @@ export function KpiCard({ title, value, icon: Icon, deltaPct, deltaLabel, hint, 
   const isUp = delta !== null && delta > 0;
 
   return (
-    <Card className="flex flex-col gap-3 p-4 transition-shadow hover:shadow-md">
-      <div className="flex items-start justify-between">
-        <p className="text-sm font-medium text-muted-foreground">{title}</p>
-        <span className={cn('flex h-8 w-8 items-center justify-center rounded-md', TONE_ICON[tone])}>
-          <Icon className="h-4 w-4" aria-hidden />
+    <Card className="flex flex-col gap-1.5 p-2.5 transition-shadow hover:shadow-md">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs font-medium text-muted-foreground">{title}</p>
+        <span className={cn('flex h-6 w-6 items-center justify-center rounded-md', TONE_ICON[tone])}>
+          <Icon className="h-3.5 w-3.5" aria-hidden />
         </span>
       </div>
 
       <div>
-        <p className="text-2xl font-semibold leading-none tracking-tight tabular-nums">{value}</p>
+        <p className="text-xl font-semibold leading-none tracking-tight tabular-nums">{value}</p>
         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
           {delta !== null && showDelta && (
             <span

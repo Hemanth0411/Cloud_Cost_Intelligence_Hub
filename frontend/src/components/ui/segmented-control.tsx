@@ -14,11 +14,13 @@ interface SegmentedControlProps<T extends string> {
   onChange: (value: T) => void;
   ariaLabel: string;
   className?: string;
+  /** Extra classes for each option, so one control can be wider than the rest. */
+  itemClassName?: string;
   size?: 'md' | 'sm';
 }
 
 /** Compact single-select toggle group (date presets, chart granularity, tabs). */
-export function SegmentedControl<T extends string>({ options, value, onChange, ariaLabel, className, size = 'md' }: SegmentedControlProps<T>) {
+export function SegmentedControl<T extends string>({ options, value, onChange, ariaLabel, className, itemClassName, size = 'md' }: SegmentedControlProps<T>) {
   return (
     <div role="group" aria-label={ariaLabel} className={cn('inline-flex shrink-0 flex-nowrap rounded-md bg-muted p-0.5', className)}>
       {options.map((option) => {
@@ -32,8 +34,9 @@ export function SegmentedControl<T extends string>({ options, value, onChange, a
             onClick={() => onChange(option.value)}
             className={cn(
               'rounded font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              size === 'sm' ? 'h-6 px-1.5 text-xs' : 'h-7 px-1.5 text-xs',
-              active ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+              size === 'sm' ? 'h-6 min-w-8 px-2 text-xs' : 'h-7 px-2.5 text-xs',
+              itemClassName,
+              active ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:bg-white/70 hover:text-foreground',
             )}
           >
             {option.label}

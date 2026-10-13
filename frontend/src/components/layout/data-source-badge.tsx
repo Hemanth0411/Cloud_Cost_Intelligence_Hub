@@ -100,7 +100,7 @@ function Shell({
 
   return (
     <div
-      className="flex items-center gap-2 rounded-md bg-white/10 px-2.5 py-2 text-xs text-sidebar-muted"
+      className="flex items-center gap-1.5 rounded-md bg-white/10 px-2 py-1 text-[11px] leading-tight text-sidebar-muted"
       title={title}
     >
       <Icon

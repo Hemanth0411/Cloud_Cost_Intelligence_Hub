@@ -94,8 +94,7 @@ export function AccountsTable({ accounts, budgetApplicable, budgetNote, onSelect
                       type="button"
                       onClick={() => onSort(col.key)}
                       className={cn(
-                        'inline-flex items-center gap-1 uppercase tracking-wide hover:text-foreground',
-                        active && 'text-foreground',
+                        'inline-flex items-center gap-1 uppercase tracking-wide text-inherit',
                       )}
                     >
                       {col.label}
@@ -120,7 +119,7 @@ export function AccountsTable({ accounts, budgetApplicable, budgetNote, onSelect
                           e.stopPropagation();
                           onSelect(a);
                         }}
-                        className="truncate rounded text-left font-medium hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="truncate rounded text-left font-medium hover:text-ateneo focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         {a.name}
                       </button>

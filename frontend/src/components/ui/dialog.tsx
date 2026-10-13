@@ -89,7 +89,7 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
           className,
         )}
       >
-        <div className="flex items-start justify-between gap-3 border-b px-3 py-2.5">
+        <div className="flex items-start justify-between gap-2 border-b px-3 py-2">
           <div className="space-y-1">
             <h2 id={titleId} className="text-base font-semibold leading-none tracking-tight">{title}</h2>
             {description && <p id={descriptionId} className="text-sm text-muted-foreground">{description}</p>}
@@ -103,7 +103,7 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="overflow-y-auto px-3 py-3">{children}</div>
+        <div className="overflow-y-auto px-3 py-2.5">{children}</div>
         {footer && <div className="flex flex-wrap items-center justify-end gap-2 border-t bg-muted/30 px-3 py-2">{footer}</div>}
       </div>
     </div>,

@@ -98,7 +98,7 @@ export function ForgotPasswordView() {
         </>
       )}
 
-      <Link href="/login" className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+      <Link href="/login" className="inline-flex items-center gap-1.5 text-sm font-medium text-ateneo hover:underline">
         <ArrowLeft className="h-3.5 w-3.5" aria-hidden /> Back to sign in
       </Link>
       <DemoNotice>The reset flow is simulated. No email is sent and no password is stored; the link only works in this browser for 15 minutes.</DemoNotice>

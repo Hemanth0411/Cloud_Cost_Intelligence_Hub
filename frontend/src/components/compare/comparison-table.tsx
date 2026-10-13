@@ -75,7 +75,7 @@ export function ComparisonTable({ entities, dimension, hasBaseline, baselineLabe
             const Icon = !active ? ArrowUpDown : sortDir === 'asc' ? ArrowUp : ArrowDown;
             return (
               <TableHead key={col.key} className={col.right ? 'text-right' : undefined} aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}>
-                <button type="button" onClick={() => onSort(col.key)} className={cn('inline-flex items-center gap-1 uppercase tracking-wide hover:text-foreground', active && 'text-foreground')}>
+                <button type="button" onClick={() => onSort(col.key)} className="inline-flex items-center gap-1 uppercase tracking-wide text-inherit">
                   {col.key === 'baseline' ? `Baseline` : col.label}
                   <Icon className="h-3 w-3" aria-hidden />
                 </button>
@@ -98,7 +98,7 @@ export function ComparisonTable({ entities, dimension, hasBaseline, baselineLabe
                 <div className="flex items-center gap-2.5">
                   <span className="h-8 w-1 shrink-0 rounded-full" style={{ backgroundColor: PROVIDER_COLOR[e.providerId] }} aria-hidden />
                   <div className="min-w-0">
-                    <Link href={hrefFor(e)} className="truncate font-medium hover:text-primary hover:underline" title="Open in dashboard">{displayName(e)}</Link>
+                    <Link href={hrefFor(e)} className="truncate font-medium hover:text-ateneo hover:underline" title="Open in dashboard">{displayName(e)}</Link>
                     <p className="truncate text-[11px] text-muted-foreground">
                       {dimension === 'provider' ? 'Top: ' : dimension === 'account' ? `${PROVIDER_SHORT_NAME[e.providerId]} · top: ` : `${PROVIDER_SHORT_NAME[e.providerId]} · ${e.category?.replace('-', '/')} · top: `}
                       {e.topChild?.label ?? 'n/a'} · {formatPercent(e.sharePct)} of spend

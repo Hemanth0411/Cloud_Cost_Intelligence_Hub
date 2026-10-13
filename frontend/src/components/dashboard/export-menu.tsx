@@ -22,7 +22,7 @@ export function ExportMenu({ data, className }: { data: DashboardData; className
     <DropdownMenu
       label="Export data"
       menuClassName="w-max min-w-[16rem]"
-      triggerClassName={cn(buttonVariants({ variant: 'outline', size: 'sm' }), className)}
+      triggerClassName={cn(buttonVariants({ variant: 'default', size: 'sm' }), className)}
       trigger={
         <>
           <Download className="h-3 w-3" aria-hidden /> Export <ChevronDown className="h-3 w-3 text-muted-foreground" aria-hidden />

@@ -14,7 +14,7 @@ export function Header({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
   const current = findNavItem(pathname);
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/70">
+    <header className="sticky top-0 z-30 flex h-10 shrink-0 items-center gap-2 border-b bg-background/80 px-2.5 backdrop-blur supports-[backdrop-filter]:bg-background/70">
       <Button variant="ghost" size="icon" className="lg:hidden" onClick={onOpenMobileNav} aria-label="Open navigation">
         <Menu className="h-5 w-5" />
       </Button>

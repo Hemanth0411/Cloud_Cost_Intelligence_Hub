@@ -70,7 +70,7 @@ export function DashboardView() {
   return (
     <div
       aria-busy={isRefreshing}
-      className={cn('animate-fade-in space-y-4 transition-opacity duration-150', isRefreshing && 'opacity-60')}
+      className={cn('animate-fade-in space-y-3 transition-opacity duration-150', isRefreshing && 'opacity-60')}
     >
       <FilterBar trailing={<ExportMenu data={data} />} />
 
@@ -111,7 +111,7 @@ function DashboardBody({ data, report, periodLabel, onSelectAnomaly, onSelectAcc
 
       {report !== null && <InsightsPreview report={report} />}
 
-      <div className="grid gap-4 xl:grid-cols-3">
+      <div className="grid gap-3 xl:grid-cols-3">
         <div className={cn(data.savings === null ? 'xl:col-span-3' : 'xl:col-span-2')}>
           <SpendOverTimeChart series={data.series} anomalies={data.anomalies} rangeLabel={periodLabel} />
         </div>
@@ -120,7 +120,7 @@ function DashboardBody({ data, report, periodLabel, onSelectAnomaly, onSelectAcc
         )}
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-3">
+      <div className="grid gap-3 xl:grid-cols-3">
         <div className="xl:col-span-2">
           <ComparisonChart data={data} />
         </div>

@@ -1,16 +1,17 @@
 'use client';
 
-import { RotateCcw } from 'lucide-react';
+import { Calendar, RotateCcw } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
+import { Dialog } from '@/components/ui/dialog';
 import { Select } from '@/components/ui/select';
 import { SegmentedControl, type SegmentedOption } from '@/components/ui/segmented-control';
-import { formatDate } from '@/lib/format';
+import { formatDateRange } from '@/lib/format';
 import { RANGE_LABELS, resolveRange } from '@/lib/selectors/range';
 import { getFilterOptions } from '@/lib/services/cost-service';
 import { PROVIDER_ORDER, PROVIDER_SHORT_NAME } from '@/lib/theme';
 import type { DateRangePreset } from '@/types/analytics';
 import type { ProviderId } from '@/types/domain';
-import type { ReactNode } from 'react';
 import { useFilters } from './filters-context';
 
 const PRESETS: ReadonlyArray<SegmentedOption<DateRangePreset>> = (
@@ -20,10 +21,13 @@ const PRESETS: ReadonlyArray<SegmentedOption<DateRangePreset>> = (
 ).map(([value, label]) => ({ value, label, title: RANGE_LABELS[value] }));
 
 const dateInputClass =
-  'h-7 rounded-md border border-input bg-card px-2 text-xs tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+  'h-8 w-full rounded-md border border-input bg-card px-2 text-sm tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 export function FilterBar({ trailing }: { trailing?: ReactNode }) {
   const { filters, setFilters, reset, isDefault } = useFilters();
+  const [rangeOpen, setRangeOpen] = useState(false);
+  const [draftFrom, setDraftFrom] = useState('');
+  const [draftTo, setDraftTo] = useState('');
   const { providers, accounts, services, serviceIdsByAccount, dataStart, dataEnd } = getFilterOptions();
   const range = resolveRange(filters, { start: dataStart, end: dataEnd });
 
@@ -39,90 +43,105 @@ export function FilterBar({ trailing }: { trailing?: ReactNode }) {
         (serviceIdsByAccount[filters.accountId] ?? []).includes(s.id)),
   );
 
+  function openCustomRange(): void {
+    setDraftFrom(filters.customFrom ?? range.from);
+    setDraftTo(filters.customTo ?? range.to);
+    setRangeOpen(true);
+  }
+
   function onPreset(preset: DateRangePreset): void {
-    if (preset === 'custom') setFilters({ range: 'custom', customFrom: range.from, customTo: range.to });
-    else setFilters({ range: preset });
+    if (preset === 'custom') {
+      openCustomRange();
+      return;
+    }
+    setFilters({ range: preset });
   }
 
-  function onFrom(value: string): void {
-    if (!value) return;
-    const to = filters.customTo && filters.customTo >= value ? filters.customTo : value;
-    setFilters({ range: 'custom', customFrom: value, customTo: to });
+  function applyCustomRange(): void {
+    if (!draftFrom || !draftTo || draftFrom > draftTo) return;
+    setFilters({ range: 'custom', customFrom: draftFrom, customTo: draftTo });
+    setRangeOpen(false);
   }
 
-  function onTo(value: string): void {
-    if (!value) return;
-    const from = filters.customFrom && filters.customFrom <= value ? filters.customFrom : value;
-    setFilters({ range: 'custom', customFrom: from, customTo: value });
-  }
+  const rangeInvalid = Boolean(draftFrom && draftTo && draftFrom > draftTo);
 
   return (
-    <div id="filters" className="flex flex-nowrap items-center gap-1.5 rounded-lg border bg-card px-3 py-2">
-      <div className="flex h-8 min-w-0 items-center rounded-md bg-muted p-0.5">
-        <SegmentedControl ariaLabel="Date range" className="shrink-0 bg-transparent p-0" options={PRESETS} value={filters.range} onChange={onPreset} />
-        <span className="mx-1.5 h-4 w-px shrink-0 bg-border" aria-hidden />
-        {filters.range === 'custom' ? (
-          <div className="flex items-center gap-1.5 pr-1 text-xs text-muted-foreground">
-            <label htmlFor="filter-from" className="sr-only">From date</label>
-            <input id="filter-from" type="date" className={dateInputClass} min={dataStart} max={dataEnd} value={filters.customFrom ?? ''} onChange={(e) => onFrom(e.target.value)} />
-            <span aria-hidden>to</span>
-            <label htmlFor="filter-to" className="sr-only">To date</label>
-            <input id="filter-to" type="date" className={dateInputClass} min={dataStart} max={dataEnd} value={filters.customTo ?? ''} onChange={(e) => onTo(e.target.value)} />
-          </div>
-        ) : (
-          <div className="flex min-w-0 items-center gap-1.5 truncate whitespace-nowrap px-2 text-xs text-muted-foreground">
-            <span className="tabular-nums">{formatDate(range.from, 'short')} – {formatDate(range.to, 'short')}</span>
-            <span aria-hidden>·</span>
-            <span className="font-medium text-foreground">{range.days}d</span>
-          </div>
-        )}
+    <div id="filters" className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <SegmentedControl ariaLabel="Date range" itemClassName="h-6 min-w-[4.25rem] px-4" options={PRESETS} value={filters.range} onChange={onPreset} />
+        <div className="flex items-center gap-1.5 whitespace-nowrap text-sm text-muted-foreground">
+          <Calendar className="h-4 w-4 shrink-0" aria-hidden />
+          <span className="tabular-nums">{formatDateRange(range.from, range.to)}</span>
+          <span aria-hidden>·</span>
+          <span>{range.days}d</span>
+        </div>
       </div>
-
-      <span className="h-5 w-px shrink-0 bg-border" aria-hidden />
-
-      <label className="sr-only" htmlFor="filter-provider">Cloud provider</label>
-      <Select
-        id="filter-provider"
-        className="w-32"
-        value={filters.providerId}
-        onChange={(e) => setFilters({ providerId: e.target.value as ProviderId | 'all' })}
-      >
-        <option value="all">All providers</option>
-        {providers.map((p) => (
-          <option key={p.id} value={p.id}>{PROVIDER_SHORT_NAME[p.id]}</option>
-        ))}
-      </Select>
-
-      <label className="sr-only" htmlFor="filter-account">Account</label>
-      <Select id="filter-account" className="w-40" value={filters.accountId} onChange={(e) => setFilters({ accountId: e.target.value })}>
-        <option value="all">All accounts ({visibleAccounts.length})</option>
-        {visibleAccounts.map((a) => (
-          <option key={a.id} value={a.id}>{a.name}</option>
-        ))}
-      </Select>
-
-      <label className="sr-only" htmlFor="filter-service">Service</label>
-      <Select id="filter-service" className="w-36" value={filters.serviceId} onChange={(e) => setFilters({ serviceId: e.target.value })}>
-        <option value="all">All services ({visibleServices.length})</option>
-        {PROVIDER_ORDER.map((pid) => {
-          const group = visibleServices.filter((s) => s.providerId === pid);
-          return group.length === 0 ? null : (
-            <optgroup key={pid} label={PROVIDER_SHORT_NAME[pid]}>
-              {group.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </optgroup>
-          );
-        })}
-      </Select>
-
-      <div className="ml-auto flex shrink-0 items-center gap-1">
-        <Button variant="ghost" size="sm" className="px-2" onClick={reset} disabled={isDefault}>
+      <div className="flex flex-nowrap items-center gap-2">
+        <label className="sr-only" htmlFor="filter-provider">Cloud provider</label>
+        <Select
+          id="filter-provider"
+          className="h-7 w-40 pl-3 text-sm leading-7"
+          value={filters.providerId}
+          onChange={(e) => setFilters({ providerId: e.target.value as ProviderId | 'all' })}
+        >
+          <option value="all">All providers</option>
+          {providers.map((p) => (
+            <option key={p.id} value={p.id}>{PROVIDER_SHORT_NAME[p.id]}</option>
+          ))}
+        </Select>
+        <label className="sr-only" htmlFor="filter-account">Account</label>
+        <Select id="filter-account" className="h-7 w-44 pl-3 text-sm leading-7" value={filters.accountId} onChange={(e) => setFilters({ accountId: e.target.value })}>
+          <option value="all">All accounts ({visibleAccounts.length})</option>
+          {visibleAccounts.map((a) => (
+            <option key={a.id} value={a.id}>{a.name}</option>
+          ))}
+        </Select>
+        <label className="sr-only" htmlFor="filter-service">Service</label>
+        <Select id="filter-service" className="h-7 w-56 pl-3 text-sm leading-7" value={filters.serviceId} onChange={(e) => setFilters({ serviceId: e.target.value })}>
+          <option value="all">All services ({visibleServices.length})</option>
+          {PROVIDER_ORDER.map((pid) => {
+            const group = visibleServices.filter((s) => s.providerId === pid);
+            return group.length === 0 ? null : (
+              <optgroup key={pid} label={PROVIDER_SHORT_NAME[pid]}>
+                {group.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </optgroup>
+            );
+          })}
+        </Select>
+        <Button variant="ghost" size="sm" className="h-7 px-2 text-muted-foreground" onClick={reset} disabled={isDefault}>
           <RotateCcw className="h-3.5 w-3.5" aria-hidden />
           Reset
         </Button>
         {trailing}
       </div>
+
+      <Dialog
+        open={rangeOpen}
+        onOpenChange={setRangeOpen}
+        title="Custom date range"
+        description="Choose a start and end date within the available data."
+        className="sm:max-w-sm"
+        footer={
+          <>
+            <Button variant="outline" size="sm" onClick={() => setRangeOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={applyCustomRange} disabled={!draftFrom || !draftTo || rangeInvalid}>Apply</Button>
+          </>
+        }
+      >
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="space-y-1 text-xs font-medium text-foreground">
+            From
+            <input id="filter-from" type="date" className={dateInputClass} min={dataStart} max={draftTo || dataEnd} value={draftFrom} onChange={(e) => setDraftFrom(e.target.value)} />
+          </label>
+          <label className="space-y-1 text-xs font-medium text-foreground">
+            To
+            <input id="filter-to" type="date" className={dateInputClass} min={draftFrom || dataStart} max={dataEnd} value={draftTo} onChange={(e) => setDraftTo(e.target.value)} />
+          </label>
+        </div>
+        {rangeInvalid && <p className="mt-2 text-xs text-destructive">The start date has to be on or before the end date.</p>}
+      </Dialog>
     </div>
   );
 }

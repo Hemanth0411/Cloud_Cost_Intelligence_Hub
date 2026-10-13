@@ -164,7 +164,7 @@ export function AccountsView() {
                           <span className="h-9 w-1 shrink-0 rounded-full" style={{ backgroundColor: PROVIDER_COLOR[a.providerId] }} aria-hidden />
                           <div className="min-w-0">
                             {spend ? (
-                              <button type="button" onClick={() => setDetailId(a.id)} className="truncate rounded text-left font-medium hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{a.name}</button>
+                              <button type="button" onClick={() => setDetailId(a.id)} className="truncate rounded text-left font-medium hover:text-ateneo focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{a.name}</button>
                             ) : (
                               <p className="truncate font-medium">{a.name}</p>
                             )}

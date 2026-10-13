@@ -47,7 +47,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <aside
         className={cn(
           'hidden shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-200 lg:block',
-          collapsed ? 'w-[72px]' : 'w-52',
+          collapsed ? 'w-16' : 'w-48',
         )}
       >
         <SidebarContent collapsed={collapsed} onToggleCollapse={toggleCollapsed} />
@@ -62,7 +62,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
             onClick={() => setMobileOpen(false)}
           />
-          <aside className="absolute inset-y-0 left-0 w-52 animate-slide-in-left border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-xl">
+          <aside className="absolute inset-y-0 left-0 w-48 animate-slide-in-left border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-xl">
             <button
               type="button"
               aria-label="Close navigation"
@@ -79,7 +79,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <Header onOpenMobileNav={() => setMobileOpen(true)} />
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-[1480px] space-y-4 p-4">{children}</div>
+          <div className="mx-auto w-full max-w-[1480px] space-y-2.5 p-2.5">{children}</div>
         </main>
       </div>
     </div>

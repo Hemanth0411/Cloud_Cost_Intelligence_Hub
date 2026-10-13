@@ -27,7 +27,7 @@ export function AiSummaryCard({ state }: { state: InsightReportState }) {
       <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-ateneo via-bronze to-khaki" aria-hidden />
       <div className="space-y-4 p-3 sm:p-3">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-ateneo to-bronze text-cream">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-ateneo text-cream">
             <Sparkles className="h-5 w-5" aria-hidden />
           </span>
           <div className="mr-auto">
@@ -46,7 +46,7 @@ export function AiSummaryCard({ state }: { state: InsightReportState }) {
               const current = state.step === index;
               return (
                 <li key={label} className={cn('flex items-center gap-2.5 text-sm', !done && !current && 'text-muted-foreground/60', done && 'text-muted-foreground')}>
-                  {done ? <Check className="h-4 w-4 text-success" aria-hidden /> : current ? <Loader2 className="h-4 w-4 animate-spin text-primary" aria-hidden /> : <span className="h-4 w-4 rounded-full border" aria-hidden />}
+                  {done ? <Check className="h-4 w-4 text-success" aria-hidden /> : current ? <Loader2 className="h-4 w-4 animate-spin text-ateneo" aria-hidden /> : <span className="h-4 w-4 rounded-full border" aria-hidden />}
                   {label}
                 </li>
               );

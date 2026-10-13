@@ -7,7 +7,7 @@ export function Sparkline({ series, color = 'hsl(var(--primary))' }: { series: n
   const gradientId = `spark-${useId().replace(/:/g, '')}`;
   const data = series.map((value, index) => ({ index, value }));
   return (
-    <div className="h-10 w-full" aria-hidden>
+    <div className="h-7 w-full" aria-hidden>
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
           <defs>

@@ -34,7 +34,7 @@ function Metric({ label, value, sub, tone }: { label: string; value: string; sub
   return (
     <div className="rounded-lg border bg-muted/30 px-3 py-2.5">
       <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className={cn('mt-1 text-base font-semibold tabular-nums', tone === 'bad' && 'text-destructive', tone === 'info' && 'text-primary')}>{value}</p>
+      <p className={cn('mt-1 text-base font-semibold tabular-nums', tone === 'bad' && 'text-destructive', tone === 'info' && 'text-ateneo')}>{value}</p>
       {sub && <p className="text-[11px] text-muted-foreground">{sub}</p>}
     </div>
   );
@@ -98,7 +98,7 @@ export function InvestigationDialog({ anomaly, onClose }: { anomaly: AnomalyView
       footer={
         anomaly && (
           <>
-            <Link href={link} className="mr-auto inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline">
+            <Link href={link} className="mr-auto inline-flex items-center gap-1.5 text-xs font-medium text-ateneo hover:underline">
               <ExternalLink className="h-3.5 w-3.5" aria-hidden /> Open in dashboard
             </Link>
             {workflowActions(anomaly.status, persists).map((action) => {
