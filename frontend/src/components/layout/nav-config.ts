@@ -27,8 +27,11 @@ export interface NavItem {
    * is labelled permanently rather than optimistically -- the whole
    * point being that someone clicking it is told before they read
    * the numbers, not after.
+   *
+   * `'mock'` means it is a concept only while the app is on mock data,
+   * and wired to a real endpoint in live mode.
    */
-  concept?: boolean;
+  concept?: boolean | 'mock';
   /** Shows a live counter next to the label. */
   badge?: 'alerts';
   /**
@@ -63,7 +66,9 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Intelligence',
     items: [
       { label: 'Anomalies', href: '/anomalies', icon: Activity, ready: true },
-      { label: 'AI Insights', href: '/insights', icon: Sparkles, ready: true, concept: true },
+      // A concept in MOCK mode only: there the page is a rule pass over the
+      // invented dataset. Live, it reads GET /insights and is real.
+      { label: 'AI Insights', href: '/insights', icon: Sparkles, ready: true, concept: 'mock' },
       { label: 'Alerts', href: '/alerts', icon: Bell, ready: true, badge: 'alerts' },
     ],
   },

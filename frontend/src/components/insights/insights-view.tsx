@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronsDownUp, ChevronsUpDown, Download, FlaskConical, Loader2, RefreshCw } from 'lucide-react';
+import { ChevronsDownUp, ChevronsUpDown, Download, Loader2, RefreshCw } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useDetectionConfig } from '@/components/anomalies/detection-config-context';
 import { InvestigationDialog } from '@/components/anomalies/investigation-dialog';
@@ -21,6 +21,7 @@ import { formatCompactCurrency } from '@/lib/format';
 import type { CostInsight, InsightKind } from '@/types/domain';
 import { AiSummaryCard } from './ai-summary-card';
 import { InsightCard } from './insight-card';
+import { LiveInsights } from './live-insights';
 import { OpportunityCard } from './opportunity-card';
 
 type Category = 'all' | 'anomaly' | 'budget' | 'change' | 'savings';
@@ -43,66 +44,28 @@ function InsightsSkeleton() {
 }
 
 /**
- * THIS PAGE IS A CONCEPT, AND IT NOW SAYS SO.
+ * TWO PAGES SHARE THIS ROUTE, AND WHICH ONE RENDERS IS NOT COSMETIC.
  *
- * KEPT RATHER THAN DELETED, deliberately. There is no insights
- * endpoint and there cannot be one without a model behind it
- * (TODO-18, Bedrock). But what the page renders in mock mode is a
- * deterministic rule pass over the invented dataset -- a faithful
- * picture of what the feature would look like in use, which is
- * exactly what the mock is for. Deleting it would throw away the only
- * description of an intended capability; the problem was never that
- * it existed, it was that nothing said what it was.
+ * LIVE: `LiveInsights`. Figures from `GET /insights`, scoped by the
+ * caller's grants, with one sentence per card whose wording a model on
+ * Amazon Bedrock chose. Real, and labelled as exactly that.
  *
- * In LIVE mode the rules have nothing to run over: `buildInsightBundle`
- * returns null because the browser never holds the fact rows they
- * read. The page used to render anyway, and that was the violation --
- * "Plain-English explanations written by deterministic rules from your
- * cost data" over an empty list, five category chips reading 0, a
- * "No insights in this category" card asserting the engine had run and
- * found nothing, and a Refresh button that played a five-stage
- * "Scanning cost records... Estimating savings opportunities" animation
- * for two seconds and produced nothing. Every one of those is a claim
- * about an analysis that never happened.
+ * MOCK: `GeneratedInsights`, below. A deterministic rule pass over the
+ * invented dataset, written in the browser. It is richer than the live
+ * page -- budget pacing, savings estimates -- because it can read fact
+ * rows the browser never holds in live mode and because nothing stores
+ * a budget or a savings figure for the API to return. It stays, as the
+ * picture of where the feature could go, and it stays labelled a
+ * concept: its header says so and so does the sidebar tag.
  *
- * So in live mode the page renders ONLY the explanation below. The
- * sidebar carries a permanent "Concept" tag either way, because the
- * label has to arrive before the numbers, not after.
+ * This route used to render an explanation in live mode saying there
+ * was no endpoint. There is one now. What must NOT come back is the
+ * state before that: the mock page's chips, counters and "Refresh
+ * insights" animation rendered over nothing, each one a claim about an
+ * analysis that had not happened.
  */
-function ConceptNotice() {
-  return (
-    <>
-      <PageHeader
-        title="AI insights"
-        description="A design for plain-English explanations and savings ideas generated from your cost data."
-      />
-      <Card className="border-warning/50 bg-warning/5 p-6">
-        <div className="flex items-start gap-3">
-          <FlaskConical className="mt-0.5 h-5 w-5 shrink-0 text-warning" aria-hidden />
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-base font-semibold">Not wired to anything</h2>
-              <Badge className="bg-warning/15 text-warning">Concept</Badge>
-            </div>
-            <p className="max-w-2xl text-sm text-muted-foreground">
-              There is no insights endpoint in the API, and nothing here is computed from your live
-              cost data. Producing these explanations needs a model behind it, which is tracked as
-              TODO-18 (Amazon Bedrock) and has not been built.
-            </p>
-            <p className="max-w-2xl text-sm text-muted-foreground">
-              Switch to mock data on the Settings page to see the full design — the explanations, the
-              evidence lines and the savings estimates. Every figure there comes from an invented
-              dataset.
-            </p>
-          </div>
-        </div>
-      </Card>
-    </>
-  );
-}
-
 export function InsightsView() {
-  if (!COST_CAPABILITIES.insights) return <ConceptNotice />;
+  if (!COST_CAPABILITIES.insights) return <LiveInsights />;
   return <GeneratedInsights />;
 }
 

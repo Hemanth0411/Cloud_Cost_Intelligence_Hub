@@ -4,6 +4,7 @@ import { ChevronsLeft, ChevronsRight, Cloud } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAlerts } from '@/components/alerts/alerts-context';
+import { useMode } from '@/hooks/use-mode';
 import { useSession } from '@/hooks/use-session';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -20,6 +21,8 @@ export function SidebarContent({ collapsed, onNavigate, onToggleCollapse }: Side
   const pathname = usePathname();
   const { unread } = useAlerts();
   const { isSuperadmin } = useSession();
+  // Some pages are a concept only on mock data and real against the API.
+  const { mock } = useMode();
   // Admin links appear only for a superadmin. Until the session cookie
   // has been read they are hidden, which is the safe default.
   const groups = navGroupsFor(isSuperadmin);
@@ -61,6 +64,7 @@ export function SidebarContent({ collapsed, onNavigate, onToggleCollapse }: Side
               {group.items.map((item) => {
                 const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
                 const Icon = item.icon;
+                const concept = item.concept === true || (item.concept === 'mock' && mock);
                 return (
                   <li key={item.href}>
                     <Link
@@ -71,7 +75,7 @@ export function SidebarContent({ collapsed, onNavigate, onToggleCollapse }: Side
                       // label carries it: the point of the tag is that
                       // nobody reaches the page without having been
                       // told, and a collapsed sidebar is still a way in.
-                      title={collapsed ? (item.concept ? `${item.label} (concept — not wired)` : item.label) : undefined}
+                      title={collapsed ? (concept ? `${item.label} (concept — not wired)` : item.label) : undefined}
                       className={cn(
                         'group relative flex items-center gap-3 rounded-md px-2.5 py-2 text-sm font-medium transition-colors',
                         collapsed && 'justify-center px-0',
@@ -95,7 +99,7 @@ export function SidebarContent({ collapsed, onNavigate, onToggleCollapse }: Side
                           Soon
                         </Badge>
                       )}
-                      {!collapsed && item.ready && item.concept && (
+                      {!collapsed && item.ready && concept && (
                         // `warning`, not `secondary`: secondary is
                         // byte-identical to the "Soon" tag two lines
                         // up, and these mean opposite things. "Soon"

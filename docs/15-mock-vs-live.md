@@ -6,7 +6,8 @@ The app runs in one of two modes. This page is how you change which.
 |---|---|---|
 | Cost figures | generated in the browser | `GET /cost/*` |
 | Sign-in | a password checked against `localStorage` | Amazon Cognito, real OIDC token |
-| Budgets, savings, AI insights, connection health | shown | **not shown** — nothing stores them |
+| Budgets, savings, connection health | shown | **not shown** — nothing stores them |
+| AI insights | a rule pass over the invented dataset, written in the browser and labelled a concept | `GET /insights`: figures computed by the API, wording chosen by a model — see `16-insights-api.md` |
 | What the sidebar says | `Mock dataset · no live cloud APIs` | `Live API · data as of …` |
 
 Mock exists to show what the product looks like in use. It never shows a

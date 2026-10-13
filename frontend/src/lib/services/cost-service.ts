@@ -90,7 +90,12 @@ import type { Account, AccountConnection, AnomalyConfig, AnomalyStatus, Detected
 export const COST_CAPABILITIES = {
   /** No budget column exists in any table. */
   budgets: isMock(),
-  /** No insight endpoint. Generating prose would need Bedrock -- TODO-18. */
+  /**
+   * The BROWSER-generated insight report: mock only, since it reads fact
+   * rows the browser does not hold in live mode. Live mode has its own
+   * source, `GET /insights` (lib/api/insights-api.ts), so false here
+   * means "use the endpoint", not "there are no insights".
+   */
   insights: isMock(),
   /** `dim_service.service_category` is not exposed by any endpoint. */
   serviceCategories: isMock(),
