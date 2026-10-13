@@ -7,7 +7,7 @@ import { parseConnectionOverrides, summarizeConnections, type ConnectionSummary 
 import { getBaseConnection, getFilterOptions } from '@/lib/services/cost-service';
 import type { AccountConnection, Connectivity, ProviderId } from '@/types/domain';
 
-const STORAGE_KEY = 'cloudlens:connections';
+const STORAGE_KEY = 'costhub:connections';
 const SYNC_DURATION_MS = 1800;
 
 const nowIso = (): string => `${demoNow().toISOString().slice(0, 19)}Z`;

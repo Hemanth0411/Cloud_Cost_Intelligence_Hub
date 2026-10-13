@@ -120,7 +120,6 @@ export interface DailyCost {
   accountId: string;
   serviceId: string;
   cost: number;
-  usageQuantity: number;
 }
 
 /**

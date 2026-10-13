@@ -32,7 +32,7 @@ export function SidebarContent({ collapsed, onNavigate, onToggleCollapse }: Side
         </div>
         {!collapsed && (
           <div className="min-w-0 flex-1 leading-tight">
-            <p className="font-slab text-sm font-semibold tracking-tight text-sidebar-foreground">CloudLens</p>
+            <p className="font-slab text-sm font-semibold tracking-tight text-sidebar-foreground">CostHub</p>
             <p className="font-slab text-[11px] text-khaki">Cost Intelligence</p>
           </div>
         )}

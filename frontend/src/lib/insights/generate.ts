@@ -171,7 +171,7 @@ export function generateInsightReport(
       kind: 'anomaly',
       priority: a.severity === 'critical' || a.severity === 'high' ? 'high' : a.severity === 'medium' ? 'medium' : 'low',
       title: x.headline,
-      summary: [x.whatChanged, x.contribution, x.usageNote, x.concurrentNote].filter((t): t is string => t !== null).join(' '),
+      summary: [x.whatChanged, x.contribution, x.concurrentNote].filter((t): t is string => t !== null).join(' '),
       evidence: x.evidence,
       investigateNext: x.investigateNext,
       recommendedActions: x.recommendedActions,
@@ -240,8 +240,6 @@ export function generateInsightReport(
     const old = { from: addDays(end, -179), to: addDays(end, -90) };
     const nowCost = sumByService(scoped, cur.from, cur.to, (r) => r.cost);
     const oldCost = sumByService(scoped, old.from, old.to, (r) => r.cost);
-    const nowUsage = sumByService(scoped, cur.from, cur.to, (r) => r.usageQuantity);
-    const oldUsage = sumByService(scoped, old.from, old.to, (r) => r.usageQuantity);
 
     const growers = [...nowCost]
       .flatMap(([id, c]) => {
@@ -259,13 +257,11 @@ export function generateInsightReport(
     if (growers.length > 0 || yoy !== null) {
       const g = growers[0];
       const g2 = growers[1];
-      const usageGrowth = g && (oldUsage.get(g.id) ?? 0) > 0 ? (((nowUsage.get(g.id) ?? 0) - (oldUsage.get(g.id) ?? 0)) / (oldUsage.get(g.id) ?? 1)) * 100 : null;
       const parts: string[] = [];
       if (g) {
         parts.push(
           `Over the last 90 days ${serviceName(g.id)} grew ${g.pct.toFixed(0)}% (+${usd(g.now - g.before)}) compared with the 90 days before, the fastest growth in this view${g2 ? `, followed by ${serviceName(g2.id)} (+${g2.pct.toFixed(0)}%)` : ''}.`,
         );
-        if (usageGrowth !== null) parts.push(`Billed usage for ${serviceName(g.id)} changed by ${usageGrowth >= 0 ? '+' : '−'}${abs(usageGrowth).toFixed(0)}% over the same comparison.`);
       } else {
         parts.push('No service grew more than 10% over the last 90 days compared with the 90 days before.');
       }

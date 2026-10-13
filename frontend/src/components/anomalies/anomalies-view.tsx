@@ -128,7 +128,7 @@ export function AnomaliesView() {
               variant="outline"
               size="sm"
               disabled={filtered.length === 0}
-              onClick={() => ready && downloadTextFile(`cloudlens-anomalies-${ready.data.range.from}_${ready.data.range.to}.csv`, anomaliesToCsv(filtered))}
+              onClick={() => ready && downloadTextFile(`costhub-anomalies-${ready.data.range.from}_${ready.data.range.to}.csv`, anomaliesToCsv(filtered))}
             >
               <Download className="h-3.5 w-3.5" aria-hidden /> Export CSV
             </Button>

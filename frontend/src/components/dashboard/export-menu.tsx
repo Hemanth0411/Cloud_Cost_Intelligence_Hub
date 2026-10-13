@@ -32,18 +32,18 @@ export function ExportMenu({ data, className }: { data: DashboardData; className
       <DropdownMenuLabel>Current filters · CSV</DropdownMenuLabel>
       <DropdownMenuSeparator />
       {SERIES_LABELS.map(({ key, label }) => (
-        <DropdownMenuItem key={key} icon={icon} onSelect={() => downloadTextFile(`cloudlens-${key}-spend-${stamp}.csv`, trendToCsv(data.series[key]))}>
+        <DropdownMenuItem key={key} icon={icon} onSelect={() => downloadTextFile(`costhub-${key}-spend-${stamp}.csv`, trendToCsv(data.series[key]))}>
           {label}
         </DropdownMenuItem>
       ))}
       <DropdownMenuSeparator />
-      <DropdownMenuItem icon={icon} onSelect={() => downloadTextFile(`cloudlens-accounts-${stamp}.csv`, accountsToCsv(data.accounts))}>
+      <DropdownMenuItem icon={icon} onSelect={() => downloadTextFile(`costhub-accounts-${stamp}.csv`, accountsToCsv(data.accounts))}>
         Accounts and budgets
       </DropdownMenuItem>
-      <DropdownMenuItem icon={icon} onSelect={() => downloadTextFile(`cloudlens-anomalies-${stamp}.csv`, anomaliesToCsv(data.anomalies))}>
+      <DropdownMenuItem icon={icon} onSelect={() => downloadTextFile(`costhub-anomalies-${stamp}.csv`, anomaliesToCsv(data.anomalies))}>
         Anomalies
       </DropdownMenuItem>
-      <DropdownMenuItem icon={icon} onSelect={() => downloadTextFile(`cloudlens-savings-${stamp}.csv`, savingsToCsv(data.savings ?? []))}>
+      <DropdownMenuItem icon={icon} onSelect={() => downloadTextFile(`costhub-savings-${stamp}.csv`, savingsToCsv(data.savings ?? []))}>
         Savings opportunities
       </DropdownMenuItem>
     </DropdownMenu>

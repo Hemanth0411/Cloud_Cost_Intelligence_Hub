@@ -1,4 +1,4 @@
-# CloudLens: Cloud Cost Intelligence Platform
+# CostHub: Cloud Cost Intelligence Platform
 
 AI-powered multi-cloud (AWS / Azure / GCP) cost visibility, anomaly detection and optimization.
 **Hackathon prototype. Runs entirely on a deterministic mock dataset; no cloud, backend or AI APIs.**
@@ -16,8 +16,8 @@ npm run typecheck
 
 | | |
 |---|---|
-| **Email** | `admin@cloudlens.demo` |
-| **Password** | `CloudLens!2026` |
+| **Email** | `admin@costhub.demo` |
+| **Password** | `CostHub!2026` |
 
 These are public, built-in demo credentials, shown on the sign-in page with a one-click "Use demo credentials" button.
 You can also **register your own demo account** (`/register`).

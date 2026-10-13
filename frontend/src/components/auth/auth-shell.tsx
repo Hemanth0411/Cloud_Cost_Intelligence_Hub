@@ -23,7 +23,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-bronze text-cream">
             <Cloud className="h-5 w-5" aria-hidden />
           </div>
-          <span className="font-slab text-lg font-semibold tracking-tight">CloudLens</span>
+          <span className="font-slab text-lg font-semibold tracking-tight">CostHub</span>
         </div>
 
         <div className="relative max-w-md space-y-8">

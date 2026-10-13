@@ -75,9 +75,9 @@ export function ForgotPasswordView() {
               </div>
               <div className="space-y-3 p-4 text-sm">
                 <dl className="space-y-0.5 text-xs text-muted-foreground">
-                  <div className="flex gap-2"><dt className="w-12">From</dt><dd>CloudLens &lt;no-reply@cloudlens.demo&gt;</dd></div>
+                  <div className="flex gap-2"><dt className="w-12">From</dt><dd>CostHub &lt;no-reply@costhub.demo&gt;</dd></div>
                   <div className="flex gap-2"><dt className="w-12">To</dt><dd>{sent.email}</dd></div>
-                  <div className="flex gap-2"><dt className="w-12">Subject</dt><dd className="text-foreground">Reset your CloudLens password</dd></div>
+                  <div className="flex gap-2"><dt className="w-12">Subject</dt><dd className="text-foreground">Reset your CostHub password</dd></div>
                 </dl>
                 <p>Use the button below within 15 minutes to choose a new password. If you did not ask for this, ignore it.</p>
                 <Link href={`/reset-password?token=${sent.token.token}`} className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90">

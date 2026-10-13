@@ -58,7 +58,7 @@ function BulletList({ title, items }: { title: string; items: string[] }) {
 
 /**
  * Investigate, acknowledge, resolve or dismiss an anomaly. Shows the evidence behind it:
- * the surrounding cost curve, account-level contribution, billed usage, and suggested checks.
+ * the surrounding cost curve, account-level contribution, and suggested checks.
  */
 export function InvestigationDialog({ anomaly, onClose }: { anomaly: AnomalyView | null; onClose: () => void }) {
   const { config } = useDetectionConfig();
@@ -168,7 +168,6 @@ export function InvestigationDialog({ anomaly, onClose }: { anomaly: AnomalyView
               <div className="space-y-2.5 text-sm leading-relaxed">
                 <p>{investigation.explanation.whatChanged}</p>
                 {investigation.explanation.contribution && <p>{investigation.explanation.contribution}</p>}
-                {investigation.explanation.usageNote && <p>{investigation.explanation.usageNote}</p>}
                 {investigation.explanation.concurrentNote && <p>{investigation.explanation.concurrentNote}</p>}
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
@@ -184,7 +183,7 @@ export function InvestigationDialog({ anomaly, onClose }: { anomaly: AnomalyView
           ) : (
             /* NO NARRATIVE AND NO CURVE WITHOUT THE ROWS BEHIND THEM.
                The explanation names the owning team, the service
-               category and the billed-usage trend; the chart plots
+               category; the chart plots
                forty-three daily points. The API returns one finding
                row and none of that, so the figures above stand alone
                rather than being padded out with invented context. */

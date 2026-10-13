@@ -21,8 +21,6 @@ export interface AnomalyContext {
     /** Share of the account's change explained by this service, or null when the account barely moved. */
     contributionPct: number | null;
   };
-  /** Billed usage quantity: observed versus typical. */
-  usage: { observed: number; expected: number; changePct: number | null };
   /** Other anomalies in the same account within two days. */
   concurrent: DetectedAnomaly[];
 }
@@ -42,7 +40,7 @@ const isWeekend = (iso: string): boolean => {
 
 /**
  * Evidence around one anomaly, all derived from the same daily rows the detector used:
- * the surrounding cost curve, what the whole account did, usage, and neighbouring anomalies.
+ * the surrounding cost curve, what the whole account did, and neighbouring anomalies.
  */
 export function getAnomalyContext(
   ds: Dataset,
@@ -69,40 +67,26 @@ export function getAnomalyContext(
 
   let accountObserved: number;
   let accountExpected: number;
-  let usageObserved: number;
-  let usageExpected: number;
 
   if (W === 1) {
     const weekend = isWeekend(anomaly.date);
     const comparable: number[] = [];
-    const usageComparable: number[] = [];
     for (let j = index - 1; j >= Math.max(0, index - B); j -= 1) {
       if (isWeekend(addDays(ds.startDate, j)) !== weekend) continue;
       comparable.push(accountTotal(j));
-      usageComparable.push(series[j]?.usageQuantity ?? 0);
     }
     accountObserved = accountTotal(index);
     accountExpected = median(comparable);
-    usageObserved = series[index]?.usageQuantity ?? 0;
-    usageExpected = median(usageComparable);
   } else {
     const recent: number[] = [];
     const base: number[] = [];
-    const usageRecent: number[] = [];
-    const usageBase: number[] = [];
-    for (let j = index - W + 1; j <= index; j += 1) {
-      recent.push(accountTotal(j));
-      usageRecent.push(series[j]?.usageQuantity ?? 0);
-    }
+    for (let j = index - W + 1; j <= index; j += 1) recent.push(accountTotal(j));
     for (let j = index - W - B + 1; j <= index - W; j += 1) {
       if (j < 0) continue;
       base.push(accountTotal(j));
-      usageBase.push(series[j]?.usageQuantity ?? 0);
     }
     accountObserved = median(recent);
     accountExpected = median(base);
-    usageObserved = median(usageRecent);
-    usageExpected = median(usageBase);
   }
 
   const accountDifference = accountObserved - accountExpected;
@@ -120,11 +104,6 @@ export function getAnomalyContext(
     points,
     windowStart: addDays(anomaly.date, -(W - 1)),
     account: { observed: accountObserved, expected: accountExpected, difference: accountDifference, contributionPct },
-    usage: {
-      observed: usageObserved,
-      expected: usageExpected,
-      changePct: usageExpected > 0 ? ((usageObserved - usageExpected) / usageExpected) * 100 : null,
-    },
     concurrent,
   };
 }

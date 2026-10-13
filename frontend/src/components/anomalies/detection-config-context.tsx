@@ -5,7 +5,7 @@ import { parseAnomalyConfig } from '@/lib/anomaly-config';
 import { DEFAULT_ANOMALY_CONFIG } from '@/lib/selectors/detect-anomalies';
 import type { AnomalyConfig } from '@/types/domain';
 
-const STORAGE_KEY = 'cloudlens:detection-config';
+const STORAGE_KEY = 'costhub:detection-config';
 
 interface DetectionConfigContextValue {
   config: AnomalyConfig;

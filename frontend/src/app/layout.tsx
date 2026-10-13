@@ -19,7 +19,7 @@ const robotoSlab = Roboto_Slab({
 });
 
 export const metadata: Metadata = {
-  title: { default: 'CloudLens · Cloud Cost Intelligence', template: '%s · CloudLens' },
+  title: { default: 'CostHub · Cloud Cost Intelligence', template: '%s · CostHub' },
   description: 'AI-powered multi-cloud cost visibility, anomaly detection, and optimization.',
 };
 

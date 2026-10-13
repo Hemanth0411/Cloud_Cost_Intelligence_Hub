@@ -17,9 +17,10 @@ import { passwordStrength, validateConfirm, validateEmail, validateLogin, valida
 import { checkResetToken, consumeResetToken, createResetToken, DEMO_ADMIN, findUser, listUsers, randomToken, registerUser, RESET_TOKEN_TTL_MS, signIn, TOKENS_KEY, USERS_KEY, type KeyValueStore } from '@/lib/auth/store';
 import { DEMO_CREDENTIALS } from '@/lib/auth/constants';
 import { CONNECTION_FIELDS, deriveProviderStatus, sampleConnectionDetails, summarizeConnections, validateConnectionDetails } from '@/lib/connections';
-import { formatDateTime, formatRelative } from '@/lib/format';
-import { shiftYears } from '@/lib/dates';
+import { compactServiceLabel, formatDateTime, formatRelative } from '@/lib/format';
+import { diffDays, shiftYears } from '@/lib/dates';
 import { entitiesFor, getComparison } from '@/lib/selectors/comparison';
+import { PLANTED_INCIDENTS, PLANTED_LEVEL_SHIFTS } from '@/lib/mock/generate-costs';
 import { applyPreferences, buildAlerts, defaultRead, detectionTimestamp, isRead, unreadCount, type AlertSources } from '@/lib/alerts/build';
 import { availableActions, transitionFor } from '@/lib/alerts/actions';
 import { channelSummary, DEFAULT_PREFERENCES, parsePreferences, severityAtLeast } from '@/lib/alerts/preferences';
@@ -337,7 +338,7 @@ check('facade returns cached default and custom configs', getAnomalies(DEFAULT_A
   let badText = 0, badContext = 0, badShare = 0, noSteps = 0;
   for (const v of everyView) {
     const inv = required(investigateAnomaly(v, DEFAULT_ANOMALY_CONFIG), 'investigation');
-    const text = [inv.explanation.headline, inv.explanation.whatChanged, inv.explanation.contribution ?? '', inv.explanation.usageNote ?? '', inv.explanation.concurrentNote ?? '', ...inv.explanation.investigateNext, ...inv.explanation.recommendedActions, ...inv.explanation.evidence.map((e) => `${e.label} ${e.value}`)].join(' ');
+    const text = [inv.explanation.headline, inv.explanation.whatChanged, inv.explanation.contribution ?? '', inv.explanation.concurrentNote ?? '', ...inv.explanation.investigateNext, ...inv.explanation.recommendedActions, ...inv.explanation.evidence.map((e) => `${e.label} ${e.value}`)].join(' ');
     if (/NaN|undefined|Infinity|null|\[object/.test(text)) badText += 1;
     if (inv.context.points.length < 8 || !inv.context.points.some((p) => p.date === v.date)) badContext += 1;
     const c = inv.context.account.contributionPct;
@@ -602,6 +603,333 @@ function memoryStore(): KeyValueStore & { dump(): string } {
   check('anomalies CSV has header and rows', anomaliesToCsv(d.anomalies).split('\r\n').length === d.anomalies.length + 1 && (anomaliesToCsv(d.anomalies).split('\r\n')[0] ?? '').startsWith('detected_on,kind'));
   const csvTotal = trendToCsv(d.series.day).split('\r\n').slice(1).reduce((acc, line) => acc + Number(line.split(',')[6]), 0);
   check('daily CSV total matches KPI total', near(csvTotal, d.kpis.totalSpend.value, 1));
+}
+
+// --- FinOps plausibility ------------------------------------------------------------------------------
+/**
+ * The checks above ask "is the dataset self-consistent?". These ask the
+ * question a FinOps practitioner asks on being shown the demo: "is this a
+ * bill?" They are deliberately about SHAPE and MAGNITUDE rather than exact
+ * numbers, so retuning the estate does not break them but losing the shape
+ * does.
+ *
+ * Each one is here because the dataset failed it at least once.
+ */
+{
+  const catOf = (id: string) => ds.serviceById.get(id)?.category ?? null;
+  const last30 = ds.costs.filter((r) => r.date > addDaysIso(ds.endDate, -30));
+  const estate = sum(last30.map((r) => r.cost));
+  const dash = getDashboardData(ds, base);
+
+  // ---- Totals roll up ---------------------------------------------------
+  // Account totals must BE the sum of their service lines, and therefore no
+  // service line can exceed the account that contains it.
+  const byAccount = new Map<string, number>();
+  const byLine = new Map<string, number>();
+  for (const r of last30) {
+    byAccount.set(r.accountId, (byAccount.get(r.accountId) ?? 0) + r.cost);
+    byLine.set(`${r.accountId}|${r.serviceId}`, (byLine.get(`${r.accountId}|${r.serviceId}`) ?? 0) + r.cost);
+  }
+  check(
+    'account totals equal the sum of their service lines',
+    dash.accounts.every((a) => near(a.cost, byAccount.get(a.accountId) ?? 0, 0.5)),
+  );
+  check('estate total equals the sum of all accounts', near(sum([...byAccount.values()]), estate, 0.5));
+  check(
+    'no service line costs more than its own account',
+    [...byLine].every(([k, v]) => v <= (byAccount.get(k.split('|')[0] ?? '') ?? 0) + 0.01),
+  );
+  check(
+    'provider totals equal the sum of their accounts',
+    dash.breakdowns.provider.every((p) =>
+      near(p.cost, sum(ds.accounts.filter((a) => a.providerId === p.id).map((a) => byAccount.get(a.id) ?? 0)), 0.5)),
+  );
+
+  // ---- Nothing bills for what its provider does not sell ----------------
+  check(
+    'every account bills only its own provider services',
+    ds.accounts.every((a) =>
+      (ds.serviceIdsByAccount.get(a.id) ?? []).every((id) => ds.serviceById.get(id)?.providerId === a.providerId)),
+  );
+
+  // ---- Service names are the ones the cost APIs return ------------------
+  // Live mode shows `service_name` exactly as the provider's API gave it, so
+  // a mock that says "RDS" trains the audience on a label the product will
+  // never produce. Cost Explorer's SERVICE dimension always carries the
+  // vendor prefix.
+  const awsServices = ds.services.filter((x) => x.providerId === 'aws');
+  check(
+    'AWS service names are Cost Explorer SERVICE values (vendor-prefixed)',
+    awsServices.every((x) => /^(Amazon|AWS) /.test(x.name)),
+    awsServices.filter((x) => !/^(Amazon|AWS) /.test(x.name)).map((x) => x.name).join(', '),
+  );
+  const ABBREVIATIONS = ['EC2', 'EKS', 'RDS', 'S3', 'AKS', 'GKE', 'GCE', 'GCS', 'VM', 'Azure SQL', 'Blob Storage', 'Front Door'];
+  check(
+    'no service is named by its abbreviation',
+    ds.services.every((x) => !ABBREVIATIONS.includes(x.name)),
+    ds.services.filter((x) => ABBREVIATIONS.includes(x.name)).map((x) => x.name).join(', '),
+  );
+  check('service names are unique', new Set(ds.services.map((x) => x.name)).size === ds.services.length);
+  // The long names still have to survive a chart axis, which is what the
+  // shortener is for -- on live rows as much as on these.
+  check(
+    'every service name shortens to something an axis can show',
+    ds.services.every((x) => {
+      const short = compactServiceLabel(x.name);
+      return short.length > 0 && short.length <= 24;
+    }),
+  );
+  check(
+    'shortening keeps services distinguishable',
+    new Set(ds.services.map((x) => compactServiceLabel(x.name))).size === ds.services.length,
+  );
+
+  // ---- Magnitudes relative to each other --------------------------------
+  const catTotals = new Map<string, number>();
+  for (const r of last30) {
+    const c = catOf(r.serviceId);
+    if (c) catTotals.set(c, (catTotals.get(c) ?? 0) + r.cost);
+  }
+  const ranked = [...catTotals].sort((a, b) => b[1] - a[1]);
+  check(
+    'compute is the largest category',
+    ranked[0]?.[0] === 'compute',
+    ranked.map(([c, v]) => `${c} ${((v / estate) * 100).toFixed(0)}%`).join(' '),
+  );
+  check('compute is 30-60% of spend', (catTotals.get('compute') ?? 0) / estate > 0.3 && (catTotals.get('compute') ?? 0) / estate < 0.6);
+  check('network (egress + CDN) is under 12% of spend', (catTotals.get('network') ?? 0) / estate < 0.12);
+  check('storage is 5-25% of spend', (catTotals.get('storage') ?? 0) / estate > 0.05 && (catTotals.get('storage') ?? 0) / estate < 0.25);
+  check('every category has some spend', ranked.length === 6);
+  const biggestLine = [...byLine].sort((a, b) => b[1] - a[1])[0];
+  check(
+    'no single service line is more than 15% of the estate',
+    (biggestLine?.[1] ?? 0) / estate < 0.15,
+    biggestLine ? `${biggestLine[0]} ${((biggestLine[1] / estate) * 100).toFixed(1)}%` : '',
+  );
+  // Managed-Kubernetes lines bill the CONTROL PLANE; node pools bill as
+  // EC2 / Virtual Machines / Compute Engine. A four-figure daily figure here
+  // would mean hundreds of clusters.
+  for (const id of ['aws-eks', 'azure-aks', 'gcp-gke']) {
+    const provider = ds.serviceById.get(id)?.providerId;
+    const providerTotal = sum(last30.filter((r) => r.providerId === provider).map((r) => r.cost));
+    const lineTotal = sum(last30.filter((r) => r.serviceId === id).map((r) => r.cost));
+    check(
+      `${id} stays at control-plane scale (under 1.5% of its provider)`,
+      lineTotal / providerTotal < 0.015,
+      `${((lineTotal / providerTotal) * 100).toFixed(2)}%`,
+    );
+  }
+
+  // ---- Weekly seasonality, per category ---------------------------------
+  // Weekends must differ from Tuesdays -- but only for the parts of a bill
+  // that actually move. Object storage is charged on bytes stored, so its
+  // Saturday costs what its Tuesday did.
+  const weekendRatioOf = (rows: readonly { date: string; cost: number }[]): number | null => {
+    let we = 0;
+    let wen = 0;
+    let wd = 0;
+    let wdn = 0;
+    for (const r of rows) {
+      const d = new Date(`${r.date}T00:00:00Z`).getUTCDay();
+      if (d === 0 || d === 6) {
+        we += r.cost;
+        wen += 1;
+      } else {
+        wd += r.cost;
+        wdn += 1;
+      }
+    }
+    return wen === 0 || wdn === 0 ? null : we / wen / (wd / wdn);
+  };
+  const recent = ds.costs.filter((r) => r.date >= '2026-01-01');
+  const envOf = (id: string) => ds.accountById.get(id)?.environment;
+  const devCompute = weekendRatioOf(recent.filter((r) => envOf(r.accountId) !== 'production' && catOf(r.serviceId) === 'compute'));
+  const prodCompute = weekendRatioOf(recent.filter((r) => envOf(r.accountId) === 'production' && catOf(r.serviceId) === 'compute'));
+  const allStorage = weekendRatioOf(recent.filter((r) => catOf(r.serviceId) === 'storage'));
+  const prodDatabase = weekendRatioOf(recent.filter((r) => envOf(r.accountId) === 'production' && catOf(r.serviceId) === 'database'));
+  check('non-production compute is scheduled down at weekends', (devCompute ?? 1) < 0.75, `${devCompute?.toFixed(3)}`);
+  check('production compute dips a little at weekends', (prodCompute ?? 1) < 0.97 && (prodCompute ?? 0) > 0.85, `${prodCompute?.toFixed(3)}`);
+  check('storage is flat across the week (charged on bytes stored)', (allStorage ?? 0) > 0.95, `${allStorage?.toFixed(3)}`);
+  check('provisioned production databases are near-flat at weekends', (prodDatabase ?? 0) > 0.95, `${prodDatabase?.toFixed(3)}`);
+
+  // ---- Month boundaries --------------------------------------------------
+  const dates = [...new Set(ds.costs.map((r) => r.date))].sort();
+  check('no gap in the daily calendar', dates.every((d, i) => i === 0 || d === addDaysIso(dates[i - 1] ?? d, 1)));
+  const perMonth = new Map<string, number>();
+  for (const d of dates) perMonth.set(d.slice(0, 7), (perMonth.get(d.slice(0, 7)) ?? 0) + 1);
+  const wrongLength = [...perMonth].filter(([m, n]) => {
+    const [y, mm] = m.split('-').map(Number);
+    const inMonth = new Date(Date.UTC(y ?? 0, mm ?? 1, 0)).getUTCDate();
+    return m === ds.endDate.slice(0, 7) ? n !== Number(ds.endDate.slice(8, 10)) : n !== inMonth;
+  });
+  check('every month has exactly its own number of days', wrongLength.length === 0, JSON.stringify(wrongLength));
+  check('29 Feb 2024 exists and 29 Feb 2025 does not', dates.includes('2024-02-29') && !dates.includes('2025-02-29'));
+  // Every series covers every day, so no month boundary can hide a hole.
+  check(
+    'every (account, service) series covers every date',
+    [...ds.seriesByKey.values()].every((series) => series.length === dates.length),
+  );
+
+  // ---- Planted events all reach a finding, and nothing else does --------
+  // The dataset plants incidents so the detector has real signal. An event no
+  // screen ever shows is a story the demo cannot tell; a finding with no
+  // planted cause is the detector firing on noise.
+  const dayFor = (daysAgo: number): string => addDaysIso(ds.endDate, -daysAgo);
+  const missedIncidents = PLANTED_INCIDENTS.filter((i) => {
+    const first = dayFor(i.daysAgo + i.durationDays - 1);
+    const last = dayFor(i.daysAgo);
+    return !ds.anomalies.some(
+      (a) => a.accountId === i.accountId && a.serviceId === i.serviceId && a.date >= addDaysIso(first, -1) && a.date <= addDaysIso(last, 2),
+    );
+  });
+  check(
+    'every planted incident produces a finding',
+    missedIncidents.length === 0,
+    missedIncidents.map((i) => `${i.accountId}/${i.serviceId} ${i.daysAgo}d x${i.multiplier}`).join(', '),
+  );
+  const missedShifts = PLANTED_LEVEL_SHIFTS.filter((shift) => {
+    const start = dayFor(shift.daysAgo);
+    return !ds.anomalies.some(
+      (a) =>
+        a.accountId === shift.accountId &&
+        a.serviceId === shift.serviceId &&
+        a.kind.startsWith('sustained') &&
+        a.date >= start &&
+        a.date <= addDaysIso(start, 25),
+    );
+  });
+  check(
+    'every planted level shift produces a sustained finding',
+    missedShifts.length === 0,
+    missedShifts.map((s) => `${s.accountId}/${s.serviceId} ${s.daysAgo}d x${s.multiplier} ramp${s.rampDays}`).join(', '),
+  );
+  const unexplained = ds.anomalies.filter((a) => {
+    const fromIncident = PLANTED_INCIDENTS.some(
+      (i) =>
+        i.accountId === a.accountId &&
+        i.serviceId === a.serviceId &&
+        Math.abs(diffDays(a.date, dayFor(i.daysAgo))) <= i.durationDays + 2,
+    );
+    const fromShift = PLANTED_LEVEL_SHIFTS.some((s) => {
+      const age = diffDays(a.date, dayFor(s.daysAgo));
+      return s.accountId === a.accountId && s.serviceId === a.serviceId && age >= -2 && age <= 35;
+    });
+    return !fromIncident && !fromShift;
+  });
+  check(
+    'no finding fires on noise alone',
+    unexplained.length === 0,
+    unexplained.slice(0, 5).map((a) => `${a.date} ${a.kind} ${a.accountId}/${a.serviceId}`).join(', '),
+  );
+  // Both detectors need history BEFORE the event: the client rules use
+  // `baselineDays` (28), the server MadDetector `min_history` 14 out of a
+  // 28-day window. The oldest planted event must leave room for the larger.
+  const oldestDay = Math.max(
+    ...PLANTED_INCIDENTS.map((i) => i.daysAgo + i.durationDays - 1),
+    ...PLANTED_LEVEL_SHIFTS.map((s) => s.daysAgo),
+  );
+  const span = diffDays(ds.endDate, ds.startDate);
+  check('oldest planted event leaves 28 days of baseline before it', span - oldestDay >= 28, `${span - oldestDay}d`);
+  check(
+    'newest planted event leaves the detector room to see it',
+    Math.min(...PLANTED_INCIDENTS.map((i) => i.daysAgo), ...PLANTED_LEVEL_SHIFTS.map((s) => s.daysAgo)) >= 2,
+  );
+  // A step that persists and a spike that returns are different stories, and
+  // the demo needs both.
+  check(
+    'findings include steps that persist, in both directions',
+    ds.anomalies.some((a) => a.kind === 'sustained-increase') && ds.anomalies.some((a) => a.kind === 'sustained-decrease'),
+  );
+  check(
+    'findings include one-off spikes and drops',
+    ds.anomalies.some((a) => a.kind === 'spike') && ds.anomalies.some((a) => a.kind === 'drop'),
+  );
+  const repeats = new Map<string, string[]>();
+  for (const a of ds.anomalies) {
+    if (a.kind !== 'spike' || a.date < '2026-07-01') continue;
+    const key = `${a.accountId}|${a.serviceId}`;
+    repeats.set(key, [...(repeats.get(key) ?? []), a.date]);
+  }
+  // Spread over more than one incident's duration, so this is a spike that
+  // CAME BACK rather than one incident spanning two days.
+  const recurring = [...repeats.values()].filter((d) => d.length >= 3 && Math.abs(diffDays(d[0] ?? '', d[d.length - 1] ?? '')) >= 21);
+  check('a spike recurs rather than only ever happening once', recurring.length > 0);
+
+  // ---- Comparison deltas are believable ---------------------------------
+  // A demo full of +400% rows reads as broken data, not as insight.
+  let worst = 0;
+  let worstLabel = '';
+  for (const range of ['7d', '30d', '90d', 'mtd', 'ytd'] as const) {
+    for (const kind of ['previous', 'year-ago'] as const) {
+      const c = getComparison(ds, { ...base, range }, kind);
+      if (!c.hasBaseline) continue;
+      for (const e of [...c.providers, ...c.accounts, ...c.services]) {
+        if (e.diffPct !== null && Math.abs(e.diffPct) > worst) {
+          worst = Math.abs(e.diffPct);
+          worstLabel = `${e.label} ${range}/${kind} ${e.diffPct.toFixed(0)}%`;
+        }
+      }
+      check(`${range} vs ${kind}: estate delta is within 60%`, Math.abs(c.totals.diffPct ?? 0) < 60, `${c.totals.diffPct?.toFixed(1)}%`);
+    }
+  }
+  check('no comparison row swings more than 150%', worst < 150, worstLabel);
+
+  // ---- Growth is a trend, not a cliff -----------------------------------
+  const daily = new Map<string, number>();
+  for (const r of ds.costs) daily.set(r.date, (daily.get(r.date) ?? 0) + r.cost);
+  const totals = dates.map((d) => daily.get(d) ?? 0);
+  let maxJump = 0;
+  for (let i = 1; i < totals.length; i += 1) {
+    const jump = Math.abs((totals[i] ?? 0) / (totals[i - 1] ?? 1) - 1);
+    if (jump > maxJump) maxJump = jump;
+  }
+  check('estate total never jumps more than 35% day over day', maxJump < 0.35, `${(maxJump * 100).toFixed(1)}%`);
+  const byYear = dash.series.year;
+  check(
+    'each full year grows on the one before, by under 40%',
+    byYear.slice(1).every((y, i) => {
+      const prev = byYear[i]?.total ?? 0;
+      return y.partial || (y.total > prev && y.total < prev * 1.4);
+    }),
+  );
+
+  // ---- Budgets look set by an owner, not fitted to the data -------------
+  const over = dash.accounts.filter((a) => a.budgetStatus === 'over-budget');
+  const onTrack = dash.accounts.filter((a) => a.budgetStatus === 'on-track');
+  check('some accounts are over budget', over.length >= 1 && over.length <= 4, `${over.length}`);
+  check('some accounts are comfortably on track', onTrack.length >= 3, `${onTrack.length}`);
+  check(
+    'budget utilisation is spread, not all bunched in the 90s',
+    Math.min(...dash.accounts.map((a) => a.projectedPct)) < 85,
+    `min ${Math.min(...dash.accounts.map((a) => a.projectedPct)).toFixed(0)}%`,
+  );
+  check(
+    'the estate as a whole is projected inside its aggregate budget',
+    dash.kpis.budget.projectedPct > 70 && dash.kpis.budget.projectedPct < 100,
+    `${dash.kpis.budget.projectedPct.toFixed(1)}%`,
+  );
+
+  // ---- No capability the backend cannot deliver -------------------------
+  // `fact_cost_daily` has no usage column and Cost Explorer is queried for
+  // UnblendedCost / AmortizedCost only, so there is no usage quantity to show
+  // and no price-versus-volume split to compute. A mock row carrying one
+  // would put a number on screen the live product can never fill.
+  check(
+    'no cost row carries a usage quantity the backend cannot produce',
+    ds.costs.every((r) => !('usageQuantity' in r) && !('usage' in r)),
+  );
+  const badIds = ds.accounts.filter((a) =>
+    a.providerId === 'aws'
+      ? !/^\d{4}-\d{4}-\d{4}$/.test(a.externalId)
+      : a.providerId === 'azure'
+        ? !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(a.externalId)
+        : !/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(a.externalId),
+  );
+  check(
+    'account identifiers have the provider shape (12-digit AWS, GUID subscription, GCP project id)',
+    badIds.length === 0,
+    badIds.map((a) => `${a.id}=${a.externalId}`).join(', '),
+  );
 }
 
 // --- Report -----------------------------------------------------------------------------------

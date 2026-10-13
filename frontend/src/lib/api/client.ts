@@ -115,7 +115,7 @@ let reauthenticating = false;
  * GUEST_ONLY_PATHS, so it then redirects a "signed-in" visitor straight
  * to /dashboard:
  *
- *   $ curl -i '/login?next=%2Fadmin%2Fusers' -H 'Cookie: cloudlens_session=...'
+ *   $ curl -i '/login?next=%2Fadmin%2Fusers' -H 'Cookie: costhub_session=...'
  *   HTTP/1.1 307 Temporary Redirect
  *   location: /dashboard
  *

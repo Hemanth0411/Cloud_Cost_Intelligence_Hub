@@ -25,7 +25,6 @@ export interface AnomalyExplanation {
   headline: string;
   whatChanged: string;
   contribution: string | null;
-  usageNote: string | null;
   concurrentNote: string | null;
   investigateNext: string[];
   recommendedActions: string[];
@@ -97,16 +96,6 @@ export function explainAnomaly(input: AnomalyNarrativeInput): AnomalyExplanation
         : `${a.accountName} as a whole moved by ${signed(acc.difference)} versus typical, so other services in the account moved the opposite way and partly masked this change.`;
   }
 
-  let usageNote: string | null = null;
-  if (ctx.usage.changePct !== null) {
-    const inLine = Math.abs(ctx.usage.changePct - a.changePct) <= 15;
-    usageNote = `Billed usage for ${a.serviceName} was ${signedPct(ctx.usage.changePct)} versus typical over the same period. ${
-      inLine
-        ? 'That moves in line with cost, which points to a change in how much was consumed rather than a change in price.'
-        : 'That differs from the cost change, so check for pricing, discount or credit changes as well as usage.'
-    }`;
-  }
-
   let concurrentNote: string | null = null;
   if (ctx.concurrent.length > 0) {
     const names = ctx.concurrent.slice(0, 3).map((c) => `${serviceNameOf(c.serviceId)} ${KIND_LABELS[c.kind].toLowerCase()} on ${formatDate(c.date, 'short')}`);
@@ -137,13 +126,11 @@ export function explainAnomaly(input: AnomalyNarrativeInput): AnomalyExplanation
     { label: 'Detection window', value: `${a.windowDays} day${a.windowDays === 1 ? '' : 's'}` },
   ];
   if (acc.contributionPct !== null) evidence.push({ label: `Share of ${a.accountName} change`, value: formatPercent(acc.contributionPct, 0) });
-  if (ctx.usage.changePct !== null) evidence.push({ label: 'Billed usage change', value: signedPct(ctx.usage.changePct) });
 
   return {
     headline: `${a.serviceName} ${KIND_LABELS[a.kind].toLowerCase()} in ${a.accountName}`,
     whatChanged,
     contribution,
-    usageNote,
     concurrentNote,
     investigateNext,
     recommendedActions,

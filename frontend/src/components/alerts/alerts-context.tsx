@@ -23,7 +23,7 @@ import {
 import type { DetectedAnomalyView } from '@/types/analytics';
 import type { AlertItem, NotificationPreferences } from '@/types/domain';
 
-const STORAGE_KEY = 'cloudlens:alerts';
+const STORAGE_KEY = 'costhub:alerts';
 const SYNC_TIMESTAMP = '2026-10-12T04:00:00Z';
 
 interface AlertsContextValue {

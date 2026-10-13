@@ -35,7 +35,7 @@ export function SettingsView() {
       const keys: string[] = [];
       for (let i = 0; i < window.localStorage.length; i += 1) {
         const key = window.localStorage.key(i);
-        if (key?.startsWith('cloudlens:') && !KEEP.has(key)) keys.push(key);
+        if (key?.startsWith('costhub:') && !KEEP.has(key)) keys.push(key);
       }
       keys.forEach((k) => window.localStorage.removeItem(k));
     } catch {

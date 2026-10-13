@@ -36,7 +36,7 @@
 import { liveModeBlockers, USE_MOCK } from '@/lib/config';
 
 /** Deliberately kept by "Reset browser state": see settings-view.tsx. */
-export const MOCK_OVERRIDE_KEY = 'cloudlens:use-mock';
+export const MOCK_OVERRIDE_KEY = 'costhub:use-mock';
 
 /**
  * `?mock=1` / `?mock=0` -- the way back in when the app will not load.

@@ -109,3 +109,25 @@ export function formatRelative(iso: string, now: Date): string {
   if (days < 7) return `${days} d ago`;
   return formatDate(iso.slice(0, 10), 'medium');
 }
+
+/**
+ * A service name short enough for a chart axis tick.
+ *
+ * Cost APIs return long, vendor-qualified names -- Cost Explorer's SERVICE
+ * dimension says "Amazon Elastic Compute Cloud - Compute", not "EC2" -- and
+ * the app shows what the API returned. On an axis that overflows, so the
+ * ticks get the vendor prefix and the "- Compute" style qualifier stripped
+ * and are then truncated. Tooltips, tables and CSV exports keep the full
+ * value, which is the one a bill can be reconciled against.
+ *
+ * Generic on purpose: it has to do the same thing to live rows, which never
+ * carry a friendly short name.
+ */
+export function compactServiceLabel(label: string, max = 24): string {
+  const trimmed = label
+    .replace(/^(Amazon|AWS|Azure|Microsoft|Google Cloud|Google)\s+/, '')
+    .replace(/\s+-\s+(Compute|Storage|Service)$/i, '')
+    .trim();
+  const short = trimmed === '' ? label : trimmed;
+  return short.length <= max ? short : `${short.slice(0, max - 1).trimEnd()}…`;
+}

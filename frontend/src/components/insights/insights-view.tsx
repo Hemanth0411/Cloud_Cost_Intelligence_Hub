@@ -169,7 +169,7 @@ function GeneratedInsights() {
         description="A concept: plain-English explanations and savings ideas written by deterministic rules over the mock dataset. No AI model is called, and no endpoint backs this."
         actions={
           <>
-            <Button variant="outline" size="sm" disabled={!bundle || analyzing} onClick={() => bundle && downloadTextFile(`cloudlens-insights-${bundle.data.range.from}_${bundle.data.range.to}.csv`, insightsToCsv(bundle.report.insights))}>
+            <Button variant="outline" size="sm" disabled={!bundle || analyzing} onClick={() => bundle && downloadTextFile(`costhub-insights-${bundle.data.range.from}_${bundle.data.range.to}.csv`, insightsToCsv(bundle.report.insights))}>
               <Download className="h-3.5 w-3.5" aria-hidden /> Export
             </Button>
             <Button size="sm" onClick={refresh} disabled={analyzing}>
@@ -228,7 +228,7 @@ function GeneratedInsights() {
                 <p className="mt-1 text-[11px] tabular-nums text-muted-foreground">range {formatCompactCurrency(totalLow)}–{formatCompactCurrency(totalHigh)}</p>
               </div>
             )}
-            <Button variant="outline" size="sm" disabled={opportunities.length === 0} onClick={() => bundle && downloadTextFile(`cloudlens-opportunities-${bundle.data.range.from}_${bundle.data.range.to}.csv`, savingsToCsv(opportunities))}>
+            <Button variant="outline" size="sm" disabled={opportunities.length === 0} onClick={() => bundle && downloadTextFile(`costhub-opportunities-${bundle.data.range.from}_${bundle.data.range.to}.csv`, savingsToCsv(opportunities))}>
               <Download className="h-3.5 w-3.5" aria-hidden /> CSV
             </Button>
           </div>

@@ -1,4 +1,4 @@
-export const SESSION_COOKIE = 'cloudlens_session';
+export const SESSION_COOKIE = 'costhub_session';
 
 /**
  * Built-in demo account, used ONLY in mock mode
@@ -8,8 +8,8 @@ export const SESSION_COOKIE = 'cloudlens_session';
  * nothing here is read.
  */
 export const DEMO_CREDENTIALS = {
-  email: 'admin@cloudlens.demo',
-  password: 'CloudLens!2026',
+  email: 'admin@costhub.demo',
+  password: 'CostHub!2026',
 } as const;
 
 /**

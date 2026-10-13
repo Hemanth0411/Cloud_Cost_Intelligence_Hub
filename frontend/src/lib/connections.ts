@@ -10,7 +10,7 @@ export interface ConnectionField {
 }
 
 export const CONNECTION_FIELDS: Record<ProviderId, readonly ConnectionField[]> = {
-  aws: [{ key: 'roleArn', label: 'IAM role ARN', placeholder: 'arn:aws:iam::123456789012:role/CloudLensReadOnly', help: 'A read-only role that can read Cost Explorer data.' }],
+  aws: [{ key: 'roleArn', label: 'IAM role ARN', placeholder: 'arn:aws:iam::123456789012:role/CostHubCostReader', help: 'A read-only role that can read Cost Explorer data.' }],
   azure: [
     { key: 'tenantId', label: 'Tenant ID', placeholder: '00000000-0000-0000-0000-000000000000', help: 'Directory (tenant) ID of the Azure AD.' },
     { key: 'subscriptionId', label: 'Subscription ID', placeholder: '00000000-0000-0000-0000-000000000000', help: 'Subscription to import cost data from.' },
@@ -50,7 +50,7 @@ const uuidFrom = (seed: string): string => {
 export function sampleConnectionDetails(account: Pick<Account, 'id' | 'providerId' | 'externalId'>): Record<string, string> {
   if (account.providerId === 'aws') {
     const digits = account.externalId.replace(/\D/g, '').padEnd(12, '0').slice(0, 12);
-    return { roleArn: `arn:aws:iam::${digits}:role/CloudLensReadOnly` };
+    return { roleArn: `arn:aws:iam::${digits}:role/CostHubCostReader` };
   }
   if (account.providerId === 'azure') {
     return { tenantId: uuidFrom(`${account.id}:tenant`), subscriptionId: uuidFrom(`${account.id}:sub`) };

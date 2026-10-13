@@ -14,7 +14,6 @@ import { isActive } from './anomaly-views';
 
 interface RuleStats {
   base: number;
-  usage: number;
   byDate: Map<string, number>;
   byAccount: Map<string, number>;
   byService: Map<string, number>;
@@ -37,7 +36,6 @@ interface Measures {
   weekdayVariability: number | null;
   topAccount: string;
   topService: string;
-  usageUnits: number;
 }
 
 const NON_PROD: readonly Environment[] = ['development', 'staging'];
@@ -255,7 +253,7 @@ export function computeOpportunities(
   const monthly = 30 / days;
   const totalSpend = rows.reduce((acc, r) => acc + r.cost, 0);
   const stats = new Map<string, RuleStats>(
-    RULES.map((r) => [r.id, { base: 0, usage: 0, byDate: new Map(), byAccount: new Map(), byService: new Map() }]),
+    RULES.map((r) => [r.id, { base: 0, byDate: new Map(), byAccount: new Map(), byService: new Map() }]),
   );
 
   for (const row of rows) {
@@ -267,7 +265,6 @@ export function computeOpportunities(
       const s = stats.get(rule.id);
       if (!s) continue;
       s.base += row.cost;
-      s.usage += row.usageQuantity;
       bump(s.byDate, row.date, row.cost);
       bump(s.byAccount, row.accountId, row.cost);
       bump(s.byService, row.serviceId, row.cost);
@@ -289,7 +286,6 @@ export function computeOpportunities(
       weekdayVariability: weekdayVariability(s.byDate),
       topAccount: accountName(topKey(s.byAccount)),
       topService: serviceName(topKey(s.byService)),
-      usageUnits: s.usage,
     };
     const d = rule.describe(measures);
     opportunities.push({

@@ -7,7 +7,7 @@ import { COST_CAPABILITIES, setAnomalyStatus as persistStatus } from '@/lib/serv
 import type { StatusOverrides } from '@/types/analytics';
 import type { AnomalyStatus } from '@/types/domain';
 
-const STORAGE_KEY = 'cloudlens:anomaly-workflow';
+const STORAGE_KEY = 'costhub:anomaly-workflow';
 const stateSchema = z.object({
   statuses: z.record(z.enum(['open', 'investigating', 'acknowledged', 'resolved', 'dismissed'])),
   notes: z.record(z.string().max(2000)),

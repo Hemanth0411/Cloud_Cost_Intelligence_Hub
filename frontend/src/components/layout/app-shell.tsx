@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import { SidebarContent } from './app-sidebar';
 import { Header } from './header';
 
-const STORAGE_KEY = 'cloudlens:sidebar-collapsed';
+const STORAGE_KEY = 'costhub:sidebar-collapsed';
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);

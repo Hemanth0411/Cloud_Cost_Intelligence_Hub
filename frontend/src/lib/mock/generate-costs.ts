@@ -1,6 +1,11 @@
 import { dayOfWeek, eachDay } from '@/lib/dates';
 import type { DailyCost, MockAccount, MockService } from '@/types/domain';
-import { ACCOUNT_GENERATION, ENVIRONMENT_WEEKEND_FACTOR, SERVICE_PROFILE } from './catalog';
+import {
+  ACCOUNT_GENERATION,
+  CATEGORY_WEEKEND_SENSITIVITY,
+  ENVIRONMENT_WEEKEND_FACTOR,
+  SERVICE_PROFILE,
+} from './catalog';
 import { createRng, hashString, noise } from './seed';
 
 /** Last day of data. Fixed so the dataset is identical on server and client. */
@@ -16,6 +21,10 @@ const SEED = 20261012;
 /**
  * One-off incidents: a multiplier > 1 is a cost spike, < 1 is an unexpected decrease
  * (for example a stalled pipeline or missing usage). They give the detector real signal.
+ *
+ * Every entry sits at least 16 days inside the dataset, so both detectors have their
+ * full baseline before it: the client rule engine needs `baselineDays` (28) of history
+ * and the server MadDetector needs `min_history` (14) out of a `window` of 28.
  */
 interface Incident {
   accountId: string;
@@ -29,12 +38,20 @@ const INCIDENTS: Incident[] = [
   // Recent spikes (visible in the default 30-day view)
   { accountId: 'aws-ml-research', serviceId: 'aws-sagemaker', daysAgo: 2, durationDays: 1, multiplier: 3.4 },
   { accountId: 'aws-prod-core', serviceId: 'aws-ec2', daysAgo: 4, durationDays: 2, multiplier: 2.3 },
-  { accountId: 'aws-prod-core', serviceId: 'aws-datatransfer', daysAgo: 7, durationDays: 1, multiplier: 3.6 },
   { accountId: 'azure-ai-services', serviceId: 'azure-openai', daysAgo: 9, durationDays: 3, multiplier: 3.1 },
   { accountId: 'gcp-bigquery-warehouse', serviceId: 'gcp-bigquery', daysAgo: 15, durationDays: 1, multiplier: 4.2 },
   { accountId: 'aws-data-lake', serviceId: 'aws-s3', daysAgo: 22, durationDays: 2, multiplier: 2.7 },
   { accountId: 'azure-analytics-hub', serviceId: 'azure-synapse', daysAgo: 41, durationDays: 2, multiplier: 2.3 },
-  { accountId: 'gcp-customer-web', serviceId: 'gcp-gke', daysAgo: 63, durationDays: 3, multiplier: 2.1 },
+  // Runaway autoscaling in a GKE node pool, which bills as Compute Engine --
+  // not as Kubernetes Engine, which only charges for the control plane.
+  { accountId: 'gcp-customer-web', serviceId: 'gcp-gce', daysAgo: 63, durationDays: 3, multiplier: 2.1 },
+  // A SPIKE THAT RETURNS. Month-end reporting pulls a full extract across
+  // regions, three billing cycles running: the shape a FinOps team actually
+  // chases, because each occurrence resolves itself and the cause does not.
+  // The detector reports it three times, which is the point.
+  { accountId: 'aws-prod-core', serviceId: 'aws-datatransfer', daysAgo: 7, durationDays: 1, multiplier: 3.6 },
+  { accountId: 'aws-prod-core', serviceId: 'aws-datatransfer', daysAgo: 36, durationDays: 1, multiplier: 3.3 },
+  { accountId: 'aws-prod-core', serviceId: 'aws-datatransfer', daysAgo: 66, durationDays: 1, multiplier: 3.1 },
   // Historical spikes
   { accountId: 'aws-prod-core', serviceId: 'aws-rds', daysAgo: 88, durationDays: 2, multiplier: 2.2 },
   { accountId: 'azure-enterprise-apps', serviceId: 'azure-vm', daysAgo: 118, durationDays: 3, multiplier: 2.0 },
@@ -46,7 +63,7 @@ const INCIDENTS: Incident[] = [
   { accountId: 'aws-ml-research', serviceId: 'aws-sagemaker', daysAgo: 392, durationDays: 3, multiplier: 3.0 },
   { accountId: 'azure-analytics-hub', serviceId: 'azure-synapse', daysAgo: 455, durationDays: 2, multiplier: 2.4 },
   { accountId: 'aws-prod-core', serviceId: 'aws-ec2', daysAgo: 520, durationDays: 3, multiplier: 2.1 },
-  { accountId: 'gcp-customer-web', serviceId: 'gcp-gke', daysAgo: 610, durationDays: 2, multiplier: 2.3 },
+  { accountId: 'gcp-customer-web', serviceId: 'gcp-gce', daysAgo: 610, durationDays: 2, multiplier: 2.3 },
   { accountId: 'azure-enterprise-apps', serviceId: 'azure-sql', daysAgo: 700, durationDays: 2, multiplier: 2.5 },
   { accountId: 'aws-data-lake', serviceId: 'aws-s3', daysAgo: 790, durationDays: 3, multiplier: 3.2 },
   { accountId: 'aws-prod-core', serviceId: 'aws-datatransfer', daysAgo: 880, durationDays: 2, multiplier: 3.4 },
@@ -61,6 +78,19 @@ const INCIDENTS: Incident[] = [
 /**
  * Permanent step changes in a service's daily cost (ramping over a few days). Above 1 is a
  * sustained increase, below 1 a sustained decrease. The cost stays at the new level.
+ *
+ * Effect size and RAMP LENGTH both matter, not just direction:
+ *
+ *  - a shift has to clear the detector's dollar floor (`sustainedMinDailyDelta`,
+ *    $120/day on the balanced preset), and
+ *  - `rampDays` has to be short relative to `sustainedWindowDays` (7). A step
+ *    spread over six days never gets the 7-day window fully above the 28-day
+ *    baseline: a 32% rise ramped over 6 days peaks at a 21% window ratio and
+ *    falls under `sustainedIncreasePct`. That is the detector working as
+ *    designed -- a slow ramp is what the SERVER detector's `creep` rule is
+ *    for -- but a slow ramp planted here is an event no screen ever shows.
+ *
+ * `scripts/verify-data.ts` asserts every entry here reaches a finding.
  */
 interface LevelShift {
   accountId: string;
@@ -73,16 +103,24 @@ interface LevelShift {
 
 const LEVEL_SHIFTS: LevelShift[] = [
   { accountId: 'aws-ml-research', serviceId: 'aws-s3', daysAgo: 16, rampDays: 2, multiplier: 1.7 },
-  { accountId: 'azure-ai-services', serviceId: 'azure-aks', daysAgo: 24, rampDays: 3, multiplier: 1.55 },
+  // Node pools added for a new model deployment: the step lands on Virtual
+  // Machines, where AKS node hours are billed.
+  { accountId: 'azure-ai-services', serviceId: 'azure-vm', daysAgo: 24, rampDays: 3, multiplier: 1.35 },
   { accountId: 'gcp-customer-web', serviceId: 'gcp-cloudsql', daysAgo: 38, rampDays: 4, multiplier: 1.45 },
   { accountId: 'aws-staging', serviceId: 'aws-ec2', daysAgo: 47, rampDays: 2, multiplier: 0.6 },
-  { accountId: 'aws-prod-core', serviceId: 'aws-eks', daysAgo: 120, rampDays: 6, multiplier: 1.35 },
+  { accountId: 'aws-prod-core', serviceId: 'aws-ec2', daysAgo: 120, rampDays: 2, multiplier: 1.32 },
   { accountId: 'azure-enterprise-apps', serviceId: 'azure-vm', daysAgo: 170, rampDays: 5, multiplier: 1.3 },
-  { accountId: 'gcp-bigquery-warehouse', serviceId: 'gcp-gcs', daysAgo: 220, rampDays: 4, multiplier: 0.7 },
+  // Deep enough to clear the detector's dollar floor: a lifecycle policy that
+  // expires a stale dataset, and released reserved capacity in a dev lab.
+  { accountId: 'gcp-bigquery-warehouse', serviceId: 'gcp-gcs', daysAgo: 220, rampDays: 4, multiplier: 0.45 },
   { accountId: 'aws-data-lake', serviceId: 'aws-redshift', daysAgo: 300, rampDays: 4, multiplier: 1.45 },
-  { accountId: 'gcp-ml-lab', serviceId: 'gcp-gce', daysAgo: 480, rampDays: 3, multiplier: 0.65 },
+  { accountId: 'gcp-ml-lab', serviceId: 'gcp-gce', daysAgo: 480, rampDays: 3, multiplier: 0.5 },
   { accountId: 'azure-analytics-hub', serviceId: 'azure-sql', daysAgo: 560, rampDays: 4, multiplier: 1.4 },
 ];
+
+/** Every planted event, for `scripts/verify-data.ts` to assert the detector finds it. */
+export const PLANTED_INCIDENTS: readonly Incident[] = INCIDENTS;
+export const PLANTED_LEVEL_SHIFTS: readonly LevelShift[] = LEVEL_SHIFTS;
 
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 
@@ -95,12 +133,17 @@ export function generateDailyCosts(accounts: MockAccount[], services: MockServic
   for (const account of accounts) {
     const gen = ACCOUNT_GENERATION[account.id];
     if (!gen) continue;
-    const weekendFactor = ENVIRONMENT_WEEKEND_FACTOR[account.environment];
+    const environmentDip = ENVIRONMENT_WEEKEND_FACTOR[account.environment];
 
     for (const serviceId of gen.serviceIds) {
       const service = serviceById.get(serviceId);
       const profile = SERVICE_PROFILE[serviceId];
       if (!service || !profile) continue;
+
+      // Only the elastic part of a category's bill falls at the weekend, so a
+      // storage line stays flat while compute in the same account halves.
+      const weekendFactor =
+        1 - (1 - environmentDip) * CATEGORY_WEEKEND_SENSITIVITY[service.category];
 
       const incidents = INCIDENTS.filter((i) => i.accountId === account.id && i.serviceId === serviceId);
       const shifts = LEVEL_SHIFTS.filter((s) => s.accountId === account.id && s.serviceId === serviceId);
@@ -137,14 +180,12 @@ export function generateDailyCosts(accounts: MockAccount[], services: MockServic
           (1 + volatility * noise(rng)) *
           multiplier;
 
-        const rounded = round2(Math.max(cost, 0.5));
         rows.push({
           date,
           providerId: account.providerId,
           accountId: account.id,
           serviceId,
-          cost: rounded,
-          usageQuantity: Math.round(rounded / profile.unitPrice),
+          cost: round2(Math.max(cost, 0.5)),
         });
       });
     }

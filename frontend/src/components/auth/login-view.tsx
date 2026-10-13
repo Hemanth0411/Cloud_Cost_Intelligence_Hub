@@ -188,7 +188,7 @@ function MockLogin() {
     <AuthShell>
       <div className="space-y-1.5">
         <h1 className="text-2xl font-semibold tracking-tight">Welcome back</h1>
-        <p className="text-sm text-muted-foreground">Sign in to your CloudLens workspace.</p>
+        <p className="text-sm text-muted-foreground">Sign in to your CostHub workspace.</p>
       </div>
 
       {justReset && (

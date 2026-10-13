@@ -2,7 +2,7 @@
 
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { AXIS_TICK, GRID_STROKE, TooltipRow, TooltipShell, type ChartTooltipProps } from '@/components/charts/chart-tooltip';
-import { formatCompactCurrency, formatCurrency, formatSignedCompactCurrency, formatSignedPercent } from '@/lib/format';
+import { compactServiceLabel, formatCompactCurrency, formatCurrency, formatSignedCompactCurrency, formatSignedPercent } from '@/lib/format';
 import type { ComparisonEntity } from '@/types/analytics';
 
 interface Row {
@@ -46,7 +46,7 @@ export function EntityBarsChart({ entities, displayName, hasBaseline, baselineLa
           <BarChart data={rows} layout="vertical" margin={{ top: 0, right: 16, left: 0, bottom: 0 }} barCategoryGap={12} barGap={2}>
             <CartesianGrid horizontal={false} stroke={GRID_STROKE} strokeDasharray="3 4" />
             <XAxis type="number" tick={AXIS_TICK} tickLine={false} axisLine={false} tickFormatter={(v: number) => formatCompactCurrency(v)} />
-            <YAxis type="category" dataKey="name" width={116} tick={AXIS_TICK} tickLine={false} axisLine={false} />
+            <YAxis type="category" dataKey="name" width={130} tick={AXIS_TICK} tickLine={false} axisLine={false} tickFormatter={(v: string) => compactServiceLabel(v)} />
             <Tooltip content={<BarsTooltip baselineLabel={baselineLabel} />} cursor={{ fill: 'hsl(var(--muted) / 0.6)' }} />
             <Bar dataKey="current" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} animationDuration={450} />
             {hasBaseline && <Bar dataKey="baseline" fill="hsl(var(--muted-foreground))" fillOpacity={0.45} radius={[0, 4, 4, 0]} animationDuration={450} />}

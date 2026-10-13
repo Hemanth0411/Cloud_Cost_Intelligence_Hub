@@ -20,7 +20,7 @@ export function Header({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
       </Button>
 
       <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2 text-sm">
-        <span className="hidden text-muted-foreground sm:inline">CloudLens</span>
+        <span className="hidden text-muted-foreground sm:inline">CostHub</span>
         <span className="hidden text-muted-foreground sm:inline">/</span>
         <span className="truncate font-medium">{current?.label ?? 'Dashboard'}</span>
       </nav>

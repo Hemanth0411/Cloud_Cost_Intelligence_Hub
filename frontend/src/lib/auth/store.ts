@@ -29,8 +29,8 @@ export interface KeyValueStore {
  */
 export const DEMO_ADMIN: User = { name: 'Alex Morgan', email: DEMO_CREDENTIALS.email, role: 'superadmin' };
 
-export const USERS_KEY = 'cloudlens:demo-users';
-export const TOKENS_KEY = 'cloudlens:reset-tokens';
+export const USERS_KEY = 'costhub:demo-users';
+export const TOKENS_KEY = 'costhub:reset-tokens';
 export const RESET_TOKEN_TTL_MS = 15 * 60 * 1000;
 const MAX_USERS = 25;
 const MAX_TOKENS = 10;
