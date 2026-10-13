@@ -63,6 +63,22 @@ changed mid-project when an apply replaced a resource. Always
 looks like in use. It must never show a capability that cannot be real. An
 empty real chart is fine; a fabricated one is not.
 
+**The mock estate was audited as a FinOps practitioner would read it**
+(2026-10-13, `d860a63`) and is now defensible. Two things follow from that
+and will silently rot if ignored:
+
+* **Service names in `lib/mock/catalog.ts` are EXACTLY what the cost APIs
+  return** -- `Amazon Relational Database Service`, never `RDS` -- because
+  `cost_explorer.py` writes the `SERVICE` dimension to `service_name`
+  verbatim and live mode shows it. They are long on purpose. Charts shorten
+  them with `compactServiceLabel`, which must keep working on LIVE rows, so
+  do not replace it with a mock-only lookup table.
+* **`npm run verify:data` is the gate, not a report.** 3,940 checks: the old
+  integrity suite plus FinOps plausibility rules (category mix, weekend
+  seasonality per category, control-plane magnitudes, planted-event coverage
+  in both directions, budget spread, comparison-delta bounds). It exits
+  non-zero. Run it after touching anything under `lib/mock/`.
+
 ## Traps — none of these are visible in the code
 
 1. **`AWS_PROFILE=costhub` or you hit the wrong account.** The default
@@ -121,14 +137,31 @@ empty real chart is fine; a fabricated one is not.
     this project ends.
 13. Amplify serves the site behind basic auth: user `demo`, password from
     `dev.tfvars`. That is the stakeholder gate, not the app's login.
+14. **Never run `next build` while a `next dev` server is up.** They share
+    `.next`, and the build wipes what dev is serving. Two symptoms seen:
+    `Cannot find module './NNN.js'`, and
+    `/_next/static/css/app/layout.css` returning 404 -- which renders every
+    page as unstyled text and looks exactly like a blank screen. `touch`
+    does not fix the CSS one; the watcher ignores an mtime-only change.
+    Make a real edit to `src/app/globals.css`, wait for the recompile, then
+    revert it. This matters in a shared checkout: your build breaks the
+    OTHER session's dev server, not just yours.
+15. **The demo login changed on 2026-10-13** to `admin@costhub.demo` /
+    `CostHub!2026`, and the session cookie and every `localStorage` key were
+    renamed `cloudlens*` -> `costhub*` with no migration. Any browser that
+    used an earlier build is signed out, with its saved demo state (alert
+    read marks, anomaly workflow, connection overrides, the mock/live
+    override) discarded. That is expected, not a bug. `?mock=1` on any URL
+    restores mock mode.
 
 ## Verification gates — run these before any commit
 
 ```bash
 cd frontend
 node_modules/.bin/tsc --noEmit -p tsconfig.json   # must be silent
-node_modules/.bin/next build                      # must succeed
+node_modules/.bin/next build                      # must succeed -- NOT while next dev is up (trap 14)
 node_modules/.bin/next lint --file <changed files>
+npm run verify:data                               # 3,940 checks, exits non-zero
 
 cd ../backend && python -m pytest tests -q        # 140 expected, ~7 min
 cd .. && terraform -chdir=terraform validate
@@ -151,14 +184,19 @@ confident falsehood broke a working Terraform config here.
 
 ## What is left
 
-Ordered. Items 1–3 are in flight under a separate brief.
+Ordered.
 
-1. **Wire the cost screens to the real API.** `lib/services/cost-service.ts`
-   still reads `lib/mock/dataset` in both modes.
-2. **Fix the hardcoded data-provenance banner** at
-   `components/layout/app-sidebar.tsx:106`.
-3. **Cut what cannot be real:** delete `/providers` (one provider is one
-   bar), and delete or unmistakably label `/insights`.
+~~1. Wire the cost screens to the real API.~~ **Done** — `cost-service.ts`
+   branches on `isMock()` and the live-mode capability flags derive from it.
+   Not exercised against the deployed API in a browser, so treat live mode
+   as built-but-unproven until someone signs in and looks.
+~~2. Fix the hardcoded data-provenance banner.~~ **Done** — the sidebar and
+   header badges read the resolved mode; verified on screen reading
+   "Mock dataset · no live cloud APIs".
+~~3. Cut what cannot be real.~~ **Done** — `/providers` is gone and
+   `/insights` carries a `Concept` badge plus a header saying "No AI model
+   is called, and no endpoint backs this". Verified on screen.
+
 4. **Backfill real cost data** — actionable now that Cost Explorer has
    populated: `cd backend && python -m costhub.cli backfill --months 4`
    (~4 API calls at $0.01). Until this runs the database has **zero cost
@@ -174,6 +212,23 @@ Ordered. Items 1–3 are in flight under a separate brief.
 8. Cleanup when done: revoke the GitHub PAT, `aws lambda remove-permission
    --function-name costhub-dev-api --statement-id FunctionURLAllowPublicAccess`,
    and tear the stack down so credits stop.
+
+9. **Decide what to do about Google Cloud.** `ingest/sources.py` `ADAPTERS`
+   is `{aws, azure}` — a GCP connection raises `NoAdapter` — yet the mock
+   estate shows three Google Cloud accounts and ~20% of spend, and the
+   connect dialog offers a GCP project-id field. This is the one remaining
+   place the mock promises more than exists. It is a missing module, not an
+   impossible one (the docstring says "one entry here and one new module"),
+   so it was left in deliberately rather than cutting a quarter of the
+   demo's multi-cloud story. Either write the adapter or say on screen that
+   Google Cloud is a roadmap item. **Owner's call.**
+10. **Delete the stale `origin/cloudlens-frontend` branch** (`fdef2ce`,
+    "Add the CloudLens cost dashboard to the frontend"). Already merged into
+    `main`, and it is the last thing in the repo carrying the old name.
+11. `backend/costhub/ingest/dev_seed.py` invents service names as CUR
+    service *codes* (`AmazonEC2`, `AmazonRDS`), not the Cost Explorer
+    display names the real adapter writes. Harmless today, but locally
+    seeded rows will not match live labels or the frontend mock.
 
 Not needed for the demo: Azure, a second AWS account (needs a
 `CostHubCostReader` role created *in that account* first — no change
