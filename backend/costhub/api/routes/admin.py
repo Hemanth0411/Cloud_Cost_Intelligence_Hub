@@ -186,7 +186,13 @@ def audit(
         """
         SELECT id, actor, action, entity_type, entity_id, before, after, at
         FROM audit_log
-        WHERE (%(et)s IS NULL OR entity_type = %(et)s)
+        -- The ::text cast is load-bearing. A bare parameter in
+        -- `$1 IS NULL` gives Postgres nothing to infer a type from:
+        --   psycopg.errors.AmbiguousParameter: could not determine
+        --   data type of parameter $1
+        -- It only fails when the filter is OMITTED, which is what the
+        -- UI does on every page load, and what no test did.
+        WHERE (%(et)s::text IS NULL OR entity_type = %(et)s)
         ORDER BY at DESC LIMIT %(lim)s
         """,
         {"et": entity_type, "lim": limit},

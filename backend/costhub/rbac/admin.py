@@ -224,7 +224,10 @@ def list_grants(*, user_email: str | None = None) -> list[dict]:
     FROM access_grants g
     JOIN users u ON u.id = g.user_id
     WHERE g.deleted_at IS NULL
-      AND (%(email)s IS NULL OR u.email = %(email)s)
+      -- ::text cast, same reason as the audit query: an untyped
+      -- parameter compared with IS NULL raises AmbiguousParameter, and
+      -- only when the caller passes no email -- the default.
+      AND (%(email)s::text IS NULL OR u.email = %(email)s)
     ORDER BY g.created_at DESC
     """
     with connect() as conn, conn.cursor() as cur:
