@@ -287,3 +287,75 @@ def test_a_real_step_on_a_sparse_series_is_still_caught():
     raised = [0.0 if i % 7 in (5, 6) else 60.0 for i in range(14)]
     found = det.detect(series(base + raised))
     assert found, "a real sustained rise must still be detected"
+
+
+# ------------------------------------------- sparse series (regression)
+
+def _sparse_window(active_value: str, active_days: int, total: int = 14):
+    """A densified sparse series: some active days, the rest zero-filled."""
+    from decimal import Decimal
+
+    vals = [Decimal(active_value)] * active_days + [Decimal("0")] * (total - active_days)
+    return vals
+
+
+def test_a_burst_on_a_sparse_series_is_flagged():
+    """The regression this exists for, measured on real data.
+
+    AWS Glue billed about $0.03 on a typical active day and then
+    $224.05. It scored ZERO, because 12 active days out of 28 is enough
+    to put the densified median on zero -- so baseline and MAD were both
+    0 and the series was unflaggable at any amount.
+    """
+    from decimal import Decimal
+
+    detector = MadDetector()
+    window = _sparse_window("0.03", active_days=6)
+
+    score = detector._score(Decimal("224.05"), Decimal("0"), window)
+
+    assert score > detector.z_threshold, (
+        "a 7000x charge against a service's own active-day median must flag"
+    )
+
+
+def test_a_recurring_charge_on_a_sparse_series_is_not_flagged():
+    """The behaviour the previous `return 0.0` was protecting.
+
+    AWS Support at $500/month is one big charge and twenty-nine zero
+    days. Against a densified median of zero every month's charge looked
+    like a spike, and it was reported on every single scan. It must stay
+    unflagged.
+    """
+    from decimal import Decimal
+
+    detector = MadDetector()
+    window = _sparse_window("500", active_days=1)
+
+    assert detector._score(Decimal("500"), Decimal("0"), window) == 0.0
+
+
+def test_a_first_ever_charge_is_not_an_anomaly():
+    """A new service is a different event with a different message."""
+    from decimal import Decimal
+
+    detector = MadDetector()
+
+    assert detector._score(Decimal("50"), Decimal("0"), [Decimal("0")] * 14) == 0.0
+
+
+def test_a_recurring_charge_that_doubles_is_flagged():
+    """The case that proves the sparse path still discriminates.
+
+    Same shape as AWS Support, but the charge itself jumped. Scoring
+    against active days means this flags while the steady version does
+    not -- which is the whole point of not returning a flat 0.0.
+    """
+    from decimal import Decimal
+
+    detector = MadDetector()
+    window = _sparse_window("500", active_days=3)
+
+    score = detector._score(Decimal("1000"), Decimal("0"), window)
+
+    assert score > detector.z_threshold
