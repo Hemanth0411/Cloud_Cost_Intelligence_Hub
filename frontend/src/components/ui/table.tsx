@@ -18,7 +18,7 @@ export function TableBody({ className, ...props }: HTMLAttributes<HTMLTableSecti
 }
 
 export function TableRow({ className, ...props }: HTMLAttributes<HTMLTableRowElement>) {
-  return <tr className={cn('border-b transition-colors hover:bg-muted/50', className)} {...props} />;
+  return <tr className={cn('border-b border-border/80 transition-colors hover:bg-muted/40', className)} {...props} />;
 }
 
 export function TableHead({ className, ...props }: ThHTMLAttributes<HTMLTableCellElement>) {
@@ -26,7 +26,7 @@ export function TableHead({ className, ...props }: ThHTMLAttributes<HTMLTableCel
     <th
       scope="col"
       className={cn(
-        'h-8 px-3 text-left align-middle text-xs font-medium uppercase tracking-wide text-muted-foreground',
+        'h-9 bg-transparent px-3 text-left align-middle text-xs font-medium text-muted-foreground',
         className,
       )}
       {...props}
@@ -35,5 +35,5 @@ export function TableHead({ className, ...props }: ThHTMLAttributes<HTMLTableCel
 }
 
 export function TableCell({ className, ...props }: TdHTMLAttributes<HTMLTableCellElement>) {
-  return <td className={cn('px-3 py-2 align-middle', className)} {...props} />;
+    return <td className={cn('px-3 py-2.5 align-middle text-sm', className)} {...props} />;
 }

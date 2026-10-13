@@ -33,9 +33,9 @@ function PairTooltip({ active, payload, nameA, nameB }: ChartTooltipProps & { na
 
 function Side({ entity, name, color, days, hasBaseline, childLabel }: { entity: ComparisonEntity; name: string; color: string; days: number; hasBaseline: boolean; childLabel: string }) {
   return (
-    <div className="rounded-lg border p-4" style={{ borderTopColor: color, borderTopWidth: 3 }}>
+    <div className="rounded-lg border p-3" style={{ borderTopColor: color, borderTopWidth: 3 }}>
       <p className="truncate text-sm font-semibold">{name}</p>
-      <p className="mt-2 text-2xl font-semibold tabular-nums">{formatCompactCurrency(entity.current)}</p>
+      <p className="mt-2 text-xl font-semibold tabular-nums">{formatCompactCurrency(entity.current)}</p>
       <dl className="mt-3 space-y-1.5 text-xs">
         <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Average per day</dt><dd className="font-medium tabular-nums">{formatCurrency(entity.current / days)}</dd></div>
         <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Share of total</dt><dd className="font-medium tabular-nums">{formatPercent(entity.sharePct)}</dd></div>
@@ -111,7 +111,7 @@ export function HeadToHead({ entities, points, dimension, days, hasBaseline, dis
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="grid gap-4 md:grid-cols-[1fr_auto_1fr]">
+        <div className="grid gap-3 md:grid-cols-[1fr_auto_1fr]">
           <Side entity={a} name={nameA} color={COLOR_A} days={days} hasBaseline={hasBaseline} childLabel={childLabel} />
           <div className="flex flex-col items-center justify-center gap-1 rounded-lg bg-muted/40 px-3 py-2.5 text-center">
             <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">A − B</p>

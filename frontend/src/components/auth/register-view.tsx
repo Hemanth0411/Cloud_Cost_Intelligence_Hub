@@ -108,7 +108,7 @@ export function RegisterView() {
       </form>
 
       <p className="text-center text-sm text-muted-foreground">
-        Already have an account? <Link href={loginHref} className="font-medium text-primary hover:underline">Sign in</Link>
+        Already have an account? <Link href={loginHref} className="font-medium text-ateneo hover:underline">Sign in</Link>
       </p>
       <DemoNotice>Registration saves only your name, email and role in this browser. Passwords are checked for format and discarded.</DemoNotice>
     </AuthShell>

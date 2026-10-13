@@ -22,7 +22,7 @@ function DonutTooltip({ active, payload }: ChartTooltipProps) {
 export function ProviderDonut({ data, total }: { data: BreakdownItem[]; total: number }) {
   return (
     <div className="grid items-center gap-4 sm:grid-cols-2">
-      <div className="relative mx-auto h-[230px] w-full max-w-[260px]" role="img" aria-label="Donut chart of spend by provider">
+      <div className="relative mx-auto h-[180px] w-full max-w-[200px]" role="img" aria-label="Donut chart of spend by provider">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie

@@ -33,7 +33,7 @@ function Tile({ label, value, sub, tone }: { label: string; value: string; sub?:
   return (
     <Card className="px-3 py-2.5">
       <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <p className={cn('mt-1.5 text-2xl font-semibold tabular-nums', tone === 'up' && 'text-destructive', tone === 'down' && 'text-success')}>{value}</p>
+      <p className={cn('mt-1.5 text-xl font-semibold tabular-nums', tone === 'up' && 'text-destructive', tone === 'down' && 'text-success')}>{value}</p>
       {sub && <p className="mt-1 text-xs text-muted-foreground tabular-nums">{sub}</p>}
     </Card>
   );
@@ -76,8 +76,8 @@ export function CompareView() {
 
       {state.status === 'loading' ? (
         <div className="space-y-3" aria-busy="true" aria-label="Loading comparison">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }, (_, i) => <Card key={i} className="space-y-3 p-3"><Skeleton className="h-4 w-24" /><Skeleton className="h-8 w-28" /></Card>)}</div>
-          <Card className="space-y-4 p-3"><Skeleton className="h-4 w-48" /><Skeleton className="h-[260px] w-full" /></Card>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }, (_, i) => <Card key={i} className="space-y-3 p-3"><Skeleton className="h-4 w-24" /><Skeleton className="h-8 w-28" /></Card>)}</div>
+          <Card className="space-y-3 p-3"><Skeleton className="h-4 w-48" /><Skeleton className="h-[260px] w-full" /></Card>
         </div>
       ) : state.status === 'error' ? (
         <ErrorState title="Could not load the comparison" message={state.message} onRetry={() => window.location.reload()} />
@@ -108,7 +108,7 @@ export function CompareView() {
 
               {!noRows && (
               <>
-              <section aria-label="Period summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <section aria-label="Period summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <Tile label="This period" value={formatCompactCurrency(c.totals.current)} sub={`${formatDateRange(c.range.from, c.range.to)} · ${formatCurrency(c.totals.avgCurrent)}/day`} />
                 <Tile label={baseline === 'previous' ? 'Previous period' : 'Same period last year'} value={c.hasBaseline ? formatCompactCurrency(c.totals.baseline) : '—'} sub={c.hasBaseline ? `${formatDateRange(c.baselineFrom, c.baselineTo)} · ${formatCurrency(c.totals.avgBaseline)}/day` : 'No data for that window'} />
                 <Tile label="Difference" value={c.hasBaseline ? formatSignedCompactCurrency(c.totals.diff) : '—'} tone={c.hasBaseline ? tone : undefined} sub={c.hasBaseline ? `${formatSignedCompactCurrency(c.totals.avgCurrent - c.totals.avgBaseline)} per day` : undefined} />

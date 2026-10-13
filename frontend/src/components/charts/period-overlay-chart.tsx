@@ -34,7 +34,7 @@ interface PeriodOverlayChartProps {
 }
 
 /** Daily spend this period (area) over the baseline period (dashed line). Used on the dashboard and Compare page. */
-export function PeriodOverlayChart({ points, hasBaseline, baselineLabel = 'previous period', height = 260 }: PeriodOverlayChartProps) {
+export function PeriodOverlayChart({ points, hasBaseline, baselineLabel = 'previous period', height = 210 }: PeriodOverlayChartProps) {
   const tickInterval = Math.max(0, Math.ceil(points.length / 8) - 1);
   return (
     <div>

@@ -35,7 +35,7 @@ const CATEGORY_KINDS: Record<Exclude<Category, 'all'>, readonly InsightKind[]> =
 
 function InsightsSkeleton() {
   return (
-    <div className="space-y-4" aria-hidden>
+    <div className="space-y-3" aria-hidden>
       {Array.from({ length: 3 }, (_, i) => (
         <Card key={i} className="space-y-3 p-3"><Skeleton className="h-4 w-2/3" /><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-5/6" /></Card>
       ))}
@@ -146,7 +146,7 @@ function GeneratedInsights() {
 
       <AiSummaryCard state={state} />
 
-      <section aria-labelledby="insights-heading" className="space-y-4">
+      <section aria-labelledby="insights-heading" className="space-y-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 id="insights-heading" className="text-base font-semibold">What the data says</h2>
           <div className="flex flex-wrap items-center gap-2">
@@ -163,7 +163,7 @@ function GeneratedInsights() {
         ) : visible.length === 0 ? (
           <Card className="p-10 text-center text-sm text-muted-foreground">No insights in this category for the current filters.</Card>
         ) : (
-          <div className={analyzing ? 'space-y-4 opacity-60 transition-opacity' : 'animate-fade-in space-y-4'} aria-busy={analyzing}>
+          <div className={analyzing ? 'space-y-3 opacity-60 transition-opacity' : 'animate-fade-in space-y-3'} aria-busy={analyzing}>
             {visible.map((insight) => (
               <InsightCard key={insight.id} insight={insight} expanded={expanded.has(insight.id)} onToggle={() => toggle(insight.id)} onViewAnomaly={setAnomalyId} />
             ))}
@@ -171,7 +171,7 @@ function GeneratedInsights() {
         )}
       </section>
 
-      <section aria-labelledby="opps-heading" className="space-y-4">
+      <section aria-labelledby="opps-heading" className="space-y-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
@@ -202,7 +202,7 @@ function GeneratedInsights() {
         ) : opportunities.length === 0 ? (
           <Card className="p-10 text-center text-sm text-muted-foreground">No optimization opportunities for the current filters.</Card>
         ) : (
-          <div className={analyzing ? 'grid gap-4 opacity-60 transition-opacity lg:grid-cols-2' : 'grid animate-fade-in gap-4 lg:grid-cols-2'}>
+          <div className={analyzing ? 'grid gap-3 opacity-60 transition-opacity lg:grid-cols-2' : 'grid animate-fade-in gap-3 lg:grid-cols-2'}>
             {opportunities.map((o) => (
               <OpportunityCard key={o.id} opportunity={o} maxSaving={maxSaving} />
             ))}

@@ -75,7 +75,7 @@ export function AlertRow({ alert, read, now, channels, workflow = true, onToggle
             <Button size="sm" variant="ghost" onClick={onToggleRead}>{read ? 'Mark unread' : 'Mark read'}</Button>
           )}
           {onInvestigate && <Button size="sm" variant="outline" onClick={onInvestigate}>Investigate</Button>}
-          {detailHref && <Link href={detailHref} className="text-xs font-medium text-primary hover:underline">{alert.category === 'connection' ? 'Manage account' : 'View account'}</Link>}
+          {detailHref && <Link href={detailHref} className="text-xs font-medium text-ateneo hover:underline">{alert.category === 'connection' ? 'Manage account' : 'View account'}</Link>}
         </div>
       </div>
     </li>

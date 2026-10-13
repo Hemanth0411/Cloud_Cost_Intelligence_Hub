@@ -30,7 +30,7 @@ export function SavingsPanel({ items, monthlyTotal }: { items: Opportunity[]; mo
           </CardTitle>
           <CardDescription>Estimated monthly savings from this period&apos;s spend</CardDescription>
         </div>
-        <Link href="/insights" className="text-xs font-medium text-primary hover:underline">
+        <Link href="/insights" className="text-xs font-medium text-ateneo hover:underline">
           Details
         </Link>
       </CardHeader>

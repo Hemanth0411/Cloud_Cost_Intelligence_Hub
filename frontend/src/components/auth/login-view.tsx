@@ -249,7 +249,7 @@ function CredentialsLogin({ mock }: { mock: boolean }) {
         <PasswordField id="password" label="Password" value={password} onChange={setPassword} error={errors.password} autoComplete="current-password" />
 
         <div className="flex justify-end">
-          <Link href="/forgot-password" className="text-xs font-medium text-primary hover:underline">Forgot password?</Link>
+          <Link href="/forgot-password" className="text-xs font-medium text-ateneo hover:underline">Forgot password?</Link>
         </div>
 
         {formError && <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{formError}</p>}
@@ -265,7 +265,7 @@ function CredentialsLogin({ mock }: { mock: boolean }) {
           by design and the page would be a dead end. */}
       {mock && (
         <p className="text-center text-sm text-muted-foreground">
-          New here? <Link href={`/register${query}`} className="font-medium text-primary hover:underline">Create an account</Link>
+          New here? <Link href={`/register${query}`} className="font-medium text-ateneo hover:underline">Create an account</Link>
         </p>
       )}
 
@@ -274,7 +274,7 @@ function CredentialsLogin({ mock }: { mock: boolean }) {
           <p className="text-center text-sm text-muted-foreground">
             <Link
               href={`/login?otp=1${nextPath === '/dashboard' ? '' : `&next=${encodeURIComponent(nextPath)}`}`}
-              className="font-medium text-primary hover:underline"
+              className="font-medium text-ateneo hover:underline"
             >
               Sign in with an email code instead
             </Link>

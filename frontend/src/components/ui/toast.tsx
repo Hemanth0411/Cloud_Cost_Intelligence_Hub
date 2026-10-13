@@ -21,7 +21,7 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 const AUTO_DISMISS_MS = 5500;
 
 const ICON = { success: CheckCircle2, info: Info, warning: TriangleAlert } as const;
-const TONE_CLASS: Record<ToastTone, string> = { success: 'text-success', info: 'text-primary', warning: 'text-warning' };
+const TONE_CLASS: Record<ToastTone, string> = { success: 'text-success', info: 'text-ateneo', warning: 'text-warning' };
 
 /** Minimal toast system (no dependency): stacked, auto-dismissing, announced to screen readers. */
 export function ToastProvider({ children }: { children: ReactNode }) {

@@ -54,14 +54,14 @@ const SERVER_KINDS: readonly AnomalyKind[] = ['spike', 'sustained-increase', 'cr
 function LoadingState() {
   return (
     <div className="space-y-3" aria-busy="true" aria-label="Loading anomalies">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {Array.from({ length: 5 }, (_, i) => (
-          <Card key={i} className="space-y-4 p-3"><Skeleton className="h-4 w-24" /><Skeleton className="h-8 w-20" /><Skeleton className="h-4 w-full" /></Card>
+          <Card key={i} className="space-y-3 p-3"><Skeleton className="h-4 w-24" /><Skeleton className="h-8 w-20" /><Skeleton className="h-4 w-full" /></Card>
         ))}
       </div>
       <div className="grid gap-3 xl:grid-cols-3">
-        <Card className="space-y-4 p-3 xl:col-span-2"><Skeleton className="h-4 w-40" /><Skeleton className="h-[240px] w-full" /></Card>
-        <Card className="space-y-4 p-3"><Skeleton className="h-4 w-32" /><Skeleton className="h-[240px] w-full" /></Card>
+        <Card className="space-y-3 p-3 xl:col-span-2"><Skeleton className="h-4 w-40" /><Skeleton className="h-[240px] w-full" /></Card>
+        <Card className="space-y-3 p-3"><Skeleton className="h-4 w-32" /><Skeleton className="h-[240px] w-full" /></Card>
       </div>
       <Card className="space-y-3 p-3"><Skeleton className="h-4 w-40" />{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-10 w-full" />)}</Card>
     </div>

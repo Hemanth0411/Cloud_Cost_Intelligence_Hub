@@ -8,7 +8,6 @@ import { useMode } from '@/hooks/use-mode';
 import { useSession } from '@/hooks/use-session';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { DataSourceBadge } from './data-source-badge';
 import { navGroupsFor } from './nav-config';
 
 interface SidebarContentProps {
@@ -29,9 +28,9 @@ export function SidebarContent({ collapsed, onNavigate, onToggleCollapse }: Side
 
   return (
     <div className="flex h-full flex-col">
-      <div className={cn('flex items-center border-b border-sidebar-border', collapsed ? 'flex-col gap-1.5 px-1.5 py-2' : 'h-12 gap-2 px-2.5')}>
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-bronze text-cream shadow-sm">
-          <Cloud className="h-5 w-5" aria-hidden />
+      <div className={cn('flex items-center border-b border-sidebar-border', collapsed ? 'flex-col gap-1 px-1.5 py-2' : 'h-12 gap-2 px-3')}>
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-bronze text-foreground">
+          <Cloud className="h-4 w-4" aria-hidden />
         </div>
         {!collapsed && (
           <div className="min-w-0 flex-1 leading-tight">
@@ -52,11 +51,11 @@ export function SidebarContent({ collapsed, onNavigate, onToggleCollapse }: Side
         )}
       </div>
 
-      <nav aria-label="Primary" className="flex-1 space-y-3 overflow-y-auto px-2 py-2">
+      <nav aria-label="Primary" className="flex-1 space-y-4 overflow-y-auto py-3">
         {groups.map((group) => (
           <div key={group.label}>
             {!collapsed && (
-              <p className="mb-1.5 px-2 font-slab text-[11px] font-medium uppercase tracking-wider text-khaki">
+              <p className="mb-1 px-4 text-[11px] font-medium text-sidebar-muted">
                 {group.label}
               </p>
             )}
@@ -66,7 +65,10 @@ export function SidebarContent({ collapsed, onNavigate, onToggleCollapse }: Side
                 const Icon = item.icon;
                 const concept = item.concept === true || (item.concept === 'mock' && mock);
                 return (
-                  <li key={item.href}>
+                  <li key={item.href} className="relative">
+                    {active && (
+                      <span className="absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-r-full bg-bronze" aria-hidden />
+                    )}
                     <Link
                       href={item.href}
                       onClick={onNavigate}
@@ -77,11 +79,11 @@ export function SidebarContent({ collapsed, onNavigate, onToggleCollapse }: Side
                       // told, and a collapsed sidebar is still a way in.
                       title={collapsed ? (concept ? `${item.label} (concept — not wired)` : item.label) : undefined}
                       className={cn(
-                        'group relative flex items-center gap-3 rounded-md px-2.5 py-2 text-sm font-medium transition-colors',
-                        collapsed && 'justify-center px-0',
+                        'relative mx-2 flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors',
+                        collapsed && 'mx-1.5 justify-center px-0',
                         active
-                          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                          : 'text-sidebar-muted hover:bg-white/10 hover:text-sidebar-foreground',
+                          ? 'bg-white/10 text-sidebar-foreground'
+                          : 'text-sidebar-muted hover:bg-white/5 hover:text-sidebar-foreground',
                       )}
                     >
                       <Icon className="h-4 w-4 shrink-0" aria-hidden />
@@ -107,7 +109,7 @@ export function SidebarContent({ collapsed, onNavigate, onToggleCollapse }: Side
                         // and there is not going to be one soon".
                         <Badge
                           variant="warning"
-                          className="px-1.5 py-0 text-[10px]"
+                          className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold"
                           title="A design. Nothing on this page is computed from your data."
                         >
                           Concept
@@ -122,11 +124,6 @@ export function SidebarContent({ collapsed, onNavigate, onToggleCollapse }: Side
         ))}
       </nav>
 
-      {!collapsed && (
-        <div className="border-t border-sidebar-border p-2 pb-12">
-          <DataSourceBadge variant="sidebar" />
-        </div>
-      )}
     </div>
   );
 }

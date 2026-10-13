@@ -105,7 +105,7 @@ function CardsSkeleton() {
   return (
     <div className="grid gap-3 lg:grid-cols-2" aria-hidden>
       {Array.from({ length: 4 }, (_, i) => (
-        <Card key={i} className="space-y-3 p-4">
+        <Card key={i} className="space-y-3 p-3">
           <Skeleton className="h-3 w-1/3" />
           <Skeleton className="h-4 w-full" />
           <Skeleton className="h-4 w-4/5" />
@@ -193,7 +193,7 @@ function InsightCardView({ card, lead, sentencesExpected }: { card: InsightCardR
     ([key, label]) => [key, (card.kind === 'anomaly' && ANOMALY_LABELS[key]) || label] as const,
   );
   return (
-    <Card className={cn('flex flex-col gap-3 p-4', lead && 'border-primary/50 lg:col-span-2')}>
+    <Card className={cn('flex flex-col gap-3 p-3', lead && 'border-primary/50 lg:col-span-2')}>
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{card.title}</h3>
         {lead && (

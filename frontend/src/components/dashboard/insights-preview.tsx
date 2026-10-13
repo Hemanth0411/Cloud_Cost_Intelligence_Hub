@@ -18,12 +18,12 @@ export function InsightsPreview({ report }: { report: InsightReport }) {
       <div className="grid gap-3 p-3 pl-4 lg:grid-cols-5">
         <div className="space-y-3 lg:col-span-3">
           <div className="flex flex-wrap items-center gap-2">
-            <Sparkles className="h-4 w-4 text-primary" aria-hidden />
+            <Sparkles className="h-4 w-4 text-ateneo" aria-hidden />
             <h2 className="text-sm font-semibold">AI summary</h2>
             <Badge variant="outline">Simulated · rule-based</Badge>
           </div>
           <p className="text-sm leading-relaxed text-muted-foreground">{report.headline}</p>
-          <Link href="/insights" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+          <Link href="/insights" className="inline-flex items-center gap-1 text-xs font-medium text-ateneo hover:underline">
             See all insights and optimization ideas <ArrowRight className="h-3.5 w-3.5" aria-hidden />
           </Link>
         </div>

@@ -158,7 +158,10 @@ export function SpendOverTimeChart({ series, anomalies, rangeLabel }: SpendOverT
                   type="button"
                   aria-pressed={!off}
                   onClick={() => toggle(id)}
-                  className={cn('flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-opacity', off && 'opacity-40')}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+                    off ? 'border-border opacity-40' : 'border-primary/40 bg-primary/15',
+                  )}
                 >
                   <span className="h-2 w-2 rounded-full" style={{ backgroundColor: PROVIDER_COLOR[id] }} aria-hidden />
                   {PROVIDER_SHORT_NAME[id]}
@@ -185,7 +188,7 @@ export function SpendOverTimeChart({ series, anomalies, rangeLabel }: SpendOverT
       </CardHeader>
 
       <CardContent>
-        <div className="h-[320px] w-full" role="img" aria-label={`${granularity} spending chart by cloud provider`}>
+        <div className="h-[240px] w-full" role="img" aria-label={`${granularity} spending chart by cloud provider`}>
           <ResponsiveContainer width="100%" height="100%">
             {granularity === 'day' ? (
               <AreaChart data={points} margin={margin}>

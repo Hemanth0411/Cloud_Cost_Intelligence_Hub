@@ -17,7 +17,7 @@ export function OpportunityCard({ opportunity: o, maxSaving }: { opportunity: Op
   const conf = CONFIDENCE[o.confidence];
   return (
     <Card className="flex h-full flex-col">
-      <div className="flex-1 space-y-4 p-3">
+      <div className="flex-1 space-y-3 p-3">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 space-y-2">
             <h3 className="text-sm font-semibold leading-snug">{o.title}</h3>

@@ -4,74 +4,75 @@
 
 @layer base {
   :root {
-    /* Cream #e8e1ce, Khaki #c6b78a, Chinese Bronze #C98B27, Ateneo Blue #004567, Periwinkle #9296b2, Slate #5c6082. */
-    --cream: 43.8 36.1% 85.9%;
-    --khaki: 45 34.5% 65.9%;
-    --bronze: 37 67.5% 47.1%;
-    --ateneo: 199.8 100% 20.2%;
-    --periwinkle: 232.5 17.2% 63.5%;
-    --slate: 233.7 17.1% 43.5%;
+    /* Sampled from the reference dashboard: slate blue #315B81, gold #C2923E, page #FAF9F5, terracotta, sage, purple. */
+    --cream: 40 40% 96%;
+    --khaki: 40 32% 78%;
+    --bronze: 38 52% 50%;
+    --ateneo: 209 45% 35%;
+    --periwinkle: 258 28% 64%;
+    --slate: 258 24% 46%;
 
-    --background: 43.8 36.1% 85.9%;
-    --foreground: 233 22% 16%;
-    --card: 43 40% 96%;
-    --card-foreground: 233 22% 16%;
-    --sidebar: 199.8 100% 20.2%;
-    --sidebar-foreground: 43.8 36.1% 92%;
-    --sidebar-muted: 43 22% 78%;
-    --sidebar-accent: 37 67.5% 47.1%;
-    --sidebar-accent-foreground: 43 40% 97%;
-    --sidebar-border: 199.8 45% 28%;
-    --muted: 43 24% 80%;
-    --muted-foreground: 233.7 17.1% 43.5%;
-    --secondary: 45 28% 78%;
-    --secondary-foreground: 233 22% 16%;
-    --accent: 37 42% 88%;
-    --accent-foreground: 199.8 100% 20.2%;
-    --border: 43 18% 74%;
-    --input: 43 16% 70%;
-    --ring: 37 67.5% 47.1%;
-    --primary: 199.8 100% 20.2%;
-    --primary-foreground: 43 40% 97%;
-    --destructive: 0 72% 42%;
-    --destructive-foreground: 0 0% 100%;
-    --success: 152 42% 28%;
-    --warning: 32 72% 36%;
-    --provider-aws: 37 67.5% 47.1%;
-    --provider-azure: 199.8 72% 32%;
-    --provider-gcp: 233.7 17.1% 43.5%;
-    --radius: 0.75rem;
+    --background: 225 33% 97%;
+    --foreground: 226 27% 17%;
+    --card: 0 0% 100%;
+    --card-foreground: 226 27% 17%;
+    --sidebar: 217 52% 13%;
+    --sidebar-foreground: 210 25% 96%;
+    --sidebar-muted: 214 18% 72%;
+    --sidebar-accent: 38 52% 50%;
+    --sidebar-accent-foreground: 210 24% 14%;
+    --sidebar-border: 217 36% 18%;
+    --muted: 214 32% 93%;
+    --muted-foreground: 214 14% 42%;
+    --secondary: 214 24% 94%;
+    --secondary-foreground: 226 27% 17%;
+    --accent: 214 28% 94%;
+    --accent-foreground: 226 27% 17%;
+    --border: 220 16% 90%;
+    --input: 216 18% 82%;
+    --ring: 209 45% 32%;
+    /* Gold fill. Labels on it are charcoal, matching the reference action button. */
+    --primary: 38 52% 50%;
+    --primary-foreground: 210 24% 14%;
+    --destructive: 8 45% 40%;
+    --destructive-foreground: 40 40% 98%;
+    --success: 164 18% 32%;
+    --warning: 28 42% 32%;
+    --provider-aws: 39 80% 50%;
+    --provider-azure: 214 62% 49%;
+    --provider-gcp: 258 44% 54%;
+    --radius: 0.5rem;
   }
 
   .dark {
-    --background: 200 48% 8%;
-    --foreground: 45 30% 92%;
-    --card: 200 40% 12%;
-    --card-foreground: 45 30% 92%;
-    --sidebar: 200 55% 12%;
-    --sidebar-foreground: 45 30% 92%;
-    --sidebar-muted: 45 18% 74%;
-    --sidebar-accent: 37 67.5% 47.1%;
-    --sidebar-accent-foreground: 45 40% 97%;
-    --sidebar-border: 200 30% 22%;
-    --muted: 200 28% 16%;
-    --muted-foreground: 233 18% 74%;
-    --secondary: 233 16% 22%;
-    --secondary-foreground: 45 30% 92%;
-    --accent: 37 32% 18%;
-    --accent-foreground: 37 65% 74%;
-    --border: 200 22% 20%;
-    --input: 200 18% 24%;
-    --ring: 37 67.5% 47.1%;
-    --primary: 37 62% 54%;
-    --primary-foreground: 200 50% 8%;
-    --destructive: 0 72% 62%;
+    --background: 210 28% 10%;
+    --foreground: 40 25% 94%;
+    --card: 210 22% 14%;
+    --card-foreground: 40 25% 94%;
+    --sidebar: 209 38% 16%;
+    --sidebar-foreground: 40 25% 94%;
+    --sidebar-muted: 210 14% 72%;
+    --sidebar-accent: 38 52% 50%;
+    --sidebar-accent-foreground: 210 24% 12%;
+    --sidebar-border: 209 22% 24%;
+    --muted: 210 16% 18%;
+    --muted-foreground: 210 12% 72%;
+    --secondary: 210 14% 20%;
+    --secondary-foreground: 40 25% 94%;
+    --accent: 210 14% 20%;
+    --accent-foreground: 40 30% 90%;
+    --border: 210 14% 22%;
+    --input: 210 12% 26%;
+    --ring: 38 52% 54%;
+    --primary: 38 52% 50%;
+    --primary-foreground: 210 24% 12%;
+    --destructive: 8 48% 62%;
     --destructive-foreground: 0 0% 100%;
-    --success: 152 42% 52%;
-    --warning: 36 72% 58%;
-    --provider-aws: 37 68% 58%;
-    --provider-azure: 200 55% 62%;
-    --provider-gcp: 233 20% 72%;
+    --success: 164 22% 56%;
+    --warning: 32 48% 60%;
+    --provider-aws: 38 55% 58%;
+    --provider-azure: 209 40% 66%;
+    --provider-gcp: 258 32% 72%;
   }
 
   * {
@@ -83,7 +84,7 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-sm leading-5 text-foreground;
   }
 
   h1,
@@ -92,12 +93,9 @@
     font-family: var(--font-roboto-slab), Georgia, 'Times New Roman', serif;
   }
 
-  h1 {
-    color: hsl(var(--ateneo));
-  }
-
+  h1,
   .dark h1 {
-    color: hsl(var(--bronze));
+    color: hsl(var(--foreground));
   }
 
   ::selection {

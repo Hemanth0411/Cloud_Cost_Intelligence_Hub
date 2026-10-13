@@ -107,7 +107,7 @@ export function AnomalyTable({ anomalies, onOpen, onSetStatus }: AnomalyTablePro
                   {col.key === null ? (
                     col.label
                   ) : (
-                    <button type="button" onClick={() => onSort(col.key as SortKey)} className={cn('inline-flex items-center gap-1 uppercase tracking-wide hover:text-foreground', active && 'text-foreground')}>
+                    <button type="button" onClick={() => onSort(col.key as SortKey)} className={cn('inline-flex items-center gap-1 uppercase tracking-wide text-inherit hover:text-foreground', active && 'text-foreground')}>
                       {col.label}
                       <Icon className="h-3 w-3" aria-hidden />
                     </button>
@@ -144,7 +144,7 @@ export function AnomalyTable({ anomalies, onOpen, onSetStatus }: AnomalyTablePro
                           e.stopPropagation();
                           onOpen(a);
                         }}
-                        className="truncate rounded text-left font-medium hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="truncate rounded text-left font-medium hover:text-ateneo focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         {a.serviceName}
                       </button>
@@ -157,9 +157,9 @@ export function AnomalyTable({ anomalies, onOpen, onSetStatus }: AnomalyTablePro
                   {(a.windowDays ?? 1) > 1 && <p className="text-[11px] text-muted-foreground">daily median</p>}
                 </TableCell>
                 <TableCell className="text-right tabular-nums text-muted-foreground">{formatCurrency(a.expectedCost)}</TableCell>
-                <TableCell className={cn('text-right font-medium tabular-nums', increase ? 'text-destructive' : 'text-primary')}>{signedUsd(a.differenceCost)}</TableCell>
+                <TableCell className={cn('text-right font-medium tabular-nums', increase ? 'text-destructive' : 'text-ateneo')}>{signedUsd(a.differenceCost)}</TableCell>
                 <TableCell
-                  className={cn('text-right tabular-nums', a.changePct === null ? 'text-muted-foreground' : increase ? 'text-destructive' : 'text-primary')}
+                  className={cn('text-right tabular-nums', a.changePct === null ? 'text-muted-foreground' : increase ? 'text-destructive' : 'text-ateneo')}
                   title={a.changePct === null ? 'No prior spend, so there is no percentage to compare against.' : undefined}
                 >
                   {a.changePct === null ? ABSENT : formatSignedPercent(a.changePct, 0)}

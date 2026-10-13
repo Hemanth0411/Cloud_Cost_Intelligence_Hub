@@ -3,7 +3,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 function ChartCardSkeleton({ height }: { height: number }) {
   return (
-    <Card className="space-y-4 p-3">
+    <Card className="space-y-3 p-3">
       <Skeleton className="h-4 w-40" />
       <Skeleton className="w-full" style={{ height }} />
     </Card>
@@ -13,9 +13,9 @@ function ChartCardSkeleton({ height }: { height: number }) {
 export function DashboardSkeleton() {
   return (
     <div className="space-y-3" aria-busy="true" aria-label="Loading dashboard">
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {Array.from({ length: 8 }, (_, i) => (
-          <Card key={i} className="space-y-4 p-3">
+          <Card key={i} className="space-y-3 p-3">
             <Skeleton className="h-4 w-28" />
             <Skeleton className="h-8 w-32" />
             <Skeleton className="h-8 w-full" />

@@ -26,7 +26,7 @@ export function AnomaliesPanel({ anomalies, onSelect }: AnomaliesPanelProps) {
           <CardTitle>Recent anomalies</CardTitle>
           <CardDescription>Statistically unusual daily cost in this period</CardDescription>
         </div>
-        <Link href="/anomalies" className="text-xs font-medium text-primary hover:underline">
+        <Link href="/anomalies" className="text-xs font-medium text-ateneo hover:underline">
           View all
         </Link>
       </CardHeader>
@@ -58,7 +58,7 @@ export function AnomaliesPanel({ anomalies, onSelect }: AnomaliesPanelProps) {
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className={cn('text-sm font-semibold tabular-nums', isIncrease(a.kind) ? 'text-destructive' : 'text-primary')}>
+                  <p className={cn('text-sm font-semibold tabular-nums', isIncrease(a.kind) ? 'text-destructive' : 'text-ateneo')}>
                     {a.changePct === null ? ABSENT : formatSignedPercent(a.changePct, 0)}
                   </p>
                   <p className="text-xs text-muted-foreground tabular-nums" title={`${formatCurrency(a.observedCost)} vs ${formatCurrency(a.expectedCost)} expected per day`}>
