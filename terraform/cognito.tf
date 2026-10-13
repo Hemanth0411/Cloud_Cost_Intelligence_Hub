@@ -72,6 +72,23 @@ resource "aws_cognito_user_pool_client" "web" {
   explicit_auth_flows = [
     "ALLOW_USER_AUTH", # choice-based auth, which email OTP needs
     "ALLOW_REFRESH_TOKEN_AUTH",
+
+    # Direct email + password sign-in, so the app can post credentials to
+    # InitiateAuth and get tokens back WITHOUT the hosted-page redirect.
+    # That redirect is what made OTP unpleasant: it leaves the app for an
+    # AWS-skinned page mid-flow.
+    #
+    # USER_PASSWORD_AUTH, not USER_SRP_AUTH. SRP never puts the password
+    # on the wire, which is better, and it needs an SRP implementation in
+    # the browser. This is one HTTPS POST. The trade is deliberate and
+    # the password still only travels to Cognito over TLS.
+    #
+    # OTP IS KEPT as a fallback -- `allowed_first_auth_factors` below
+    # still lists EMAIL_OTP, and /login still offers it. Removing it
+    # would also strand the Terraform-created superadmin: a user created
+    # with no password only lands on CONFIRMED because a passwordless
+    # factor is active.
+    "ALLOW_USER_PASSWORD_AUTH",
   ]
 
   # Shortened deliberately: with a 30-day refresh token nobody would see

@@ -12,6 +12,7 @@ import { DEMO_CREDENTIALS } from '@/lib/auth/constants';
 import { startSession } from '@/lib/auth/session';
 import { browserStore, emptyStore, signIn } from '@/lib/auth/store';
 import { validateLogin, type FieldErrors } from '@/lib/auth/validation';
+import { signInWithCredentials } from '@/lib/services/session-service';
 import { useMode } from '@/hooks/use-mode';
 import { AuthShell, DemoNotice } from './auth-shell';
 import { PasswordField } from './password-field';
@@ -29,7 +30,18 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
  * Live mode has no form to render. The pool is passwordless email OTP,
  * which REQUIRES Cognito Managed Login -- the one-time-code screen is
  * Cognito's, not ours, and there is no API this app could call to
- * replace it. So the live path is a hand-off.
+ * replace it. So the OTP path is a hand-off.
+ *
+ * THE DEFAULT PATH IS NOW A PASSWORD, posted straight to Cognito's
+ * InitiateAuth, so the form is ours and the user never leaves. The
+ * hand-off above is kept as a fallback and reached deliberately:
+ * `/login?otp=1`, or automatically when Cognito bounces an authorize
+ * request back here with an `error`.
+ *
+ * ONE FORM SERVES BOTH MODES. Mock and live differ in the submit
+ * handler and the footer only -- the fields, validation, error display
+ * and busy state are identical, so duplicating sixty lines of JSX to
+ * vary two of them is how the two copies drift apart.
  */
 export function LoginView() {
   // RUNTIME, not build-time. If this stayed on the compiled-in
@@ -38,6 +50,9 @@ export function LoginView() {
   // toggle would be half-wired and fail in exactly the situation it
   // exists for (no connectivity, demo about to start).
   const { mock, resolved } = useMode();
+  const params = useSearchParams();
+  const wantsOtp = params.get('otp') === '1';
+  const hasCognitoError = params.get('error') !== null;
   // Keep the shell on screen while the override is read. Returning
   // null would mean the sign-in page server-renders to nothing and
   // flashes blank before hydrating -- on the one page a first-time
@@ -51,7 +66,12 @@ export function LoginView() {
       </AuthShell>
     );
   }
-  return mock ? <MockLogin /> : <ManagedLoginHandoff />;
+  // The hand-off is opt-in, EXCEPT when Cognito has refused an
+  // authorize request: that error arrives as a query parameter on this
+  // page, and only the hand-off renders it. Routing past it would
+  // swallow the one message that explains the failure.
+  if (!mock && (wantsOtp || hasCognitoError)) return <ManagedLoginHandoff />;
+  return <CredentialsLogin mock={mock} />;
 }
 
 // --------------------------------------------------------------- live
@@ -149,16 +169,19 @@ function ManagedLoginHandoff() {
   );
 }
 
-// --------------------------------------------------------------- mock
+// -------------------------------------------------- the credentials form
 
-function MockLogin() {
+function CredentialsLogin({ mock }: { mock: boolean }) {
   const router = useRouter();
   const params = useSearchParams();
   const nextPath = safeNext(params.get('next'));
   const justReset = params.get('reset') === '1';
 
-  const [email, setEmail] = useState<string>(DEMO_CREDENTIALS.email);
-  const [password, setPassword] = useState<string>(DEMO_CREDENTIALS.password);
+  // Prefilled in mock mode because it is a demo whose credentials are
+  // printed on the page anyway; empty in live mode, where guessing at
+  // somebody's email is just a field to clear.
+  const [email, setEmail] = useState<string>(mock ? DEMO_CREDENTIALS.email : '');
+  const [password, setPassword] = useState<string>(mock ? DEMO_CREDENTIALS.password : '');
   const [errors, setErrors] = useState<FieldErrors<'email' | 'password'>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -171,6 +194,23 @@ function MockLogin() {
     if (Object.keys(found).length > 0) return;
 
     setSubmitting(true);
+
+    if (!mock) {
+      try {
+        await signInWithCredentials(email, password);
+      } catch (cause) {
+        setSubmitting(false);
+        // The message is already written for a person: cognito.ts maps
+        // Cognito's error codes, and session-service throws the API's
+        // own refusal (a pool user with no `users` row, say). Anything
+        // unrecognised is a bug, not something to dress up.
+        setFormError(cause instanceof Error ? cause.message : 'Sign-in failed.');
+        return;
+      }
+      router.replace(nextPath);
+      return;
+    }
+
     await sleep(650);
     const result = signIn(browserStore() ?? emptyStore(), email, password);
     if (!result.ok) {
@@ -188,7 +228,11 @@ function MockLogin() {
     <AuthShell>
       <div className="space-y-1.5">
         <h1 className="text-2xl font-semibold tracking-tight">Welcome back</h1>
-        <p className="text-sm text-muted-foreground">Sign in to your CostHub workspace.</p>
+        <p className="text-sm text-muted-foreground">
+          {mock
+            ? 'Sign in to your CostHub workspace.'
+            : 'Sign in with your work email and password.'}
+        </p>
       </div>
 
       {justReset && (
@@ -216,10 +260,35 @@ function MockLogin() {
         </Button>
       </form>
 
-      <p className="text-center text-sm text-muted-foreground">
-        New here? <Link href={`/register${query}`} className="font-medium text-primary hover:underline">Create an account</Link>
-      </p>
+      {/* No "create an account" link in live mode: the pool is
+          allow_admin_create_user_only, so self-registration is refused
+          by design and the page would be a dead end. */}
+      {mock && (
+        <p className="text-center text-sm text-muted-foreground">
+          New here? <Link href={`/register${query}`} className="font-medium text-primary hover:underline">Create an account</Link>
+        </p>
+      )}
 
+      {!mock && (
+        <>
+          <p className="text-center text-sm text-muted-foreground">
+            <Link
+              href={`/login?otp=1${nextPath === '/dashboard' ? '' : `&next=${encodeURIComponent(nextPath)}`}`}
+              className="font-medium text-primary hover:underline"
+            >
+              Sign in with an email code instead
+            </Link>
+          </p>
+          <DemoNotice>
+            Access is by invitation only, and only{' '}
+            <code className="font-mono">@chryselys.com</code> addresses are accepted. Signing in
+            grants no access to cost data by itself &mdash; a superadmin has to grant you an
+            account first, and until then your dashboard is empty by design.
+          </DemoNotice>
+        </>
+      )}
+
+      {mock && (
       <div className="rounded-lg border border-dashed bg-muted/40 p-3.5 text-sm">
         <p className="font-medium">Demo credentials</p>
         <dl className="mt-2 space-y-1 text-xs">
@@ -231,9 +300,13 @@ function MockLogin() {
         </Button>
       </div>
 
-      <DemoNotice>
-        Authentication is simulated in your browser. No password is stored or sent anywhere. An account you register here signs in with any password that meets the policy.
-      </DemoNotice>
+      )}
+
+      {mock && (
+        <DemoNotice>
+          Authentication is simulated in your browser. No password is stored or sent anywhere. An account you register here signs in with any password that meets the policy.
+        </DemoNotice>
+      )}
     </AuthShell>
   );
 }

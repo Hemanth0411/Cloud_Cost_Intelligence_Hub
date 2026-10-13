@@ -32,6 +32,7 @@ const env = {
   clientId: process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID ?? '',
   cognitoDomain: process.env.NEXT_PUBLIC_COGNITO_DOMAIN ?? '',
   deployAccountId: process.env.NEXT_PUBLIC_DEPLOY_ACCOUNT_ID ?? '',
+  region: process.env.NEXT_PUBLIC_AWS_REGION ?? '',
   useMock: process.env.NEXT_PUBLIC_USE_MOCK,
 } as const;
 
@@ -57,12 +58,20 @@ export const DEPLOY_ACCOUNT_ID = /^\d{12}$/.test(env.deployAccountId)
   ? env.deployAccountId
   : '';
 
-// NO pool-id or region export. Managed Login needs only the hosted
-// domain and the public client id, and this app never verifies a JWT
-// locally (`tokens.ts` decodes without verifying, by design), so
-// neither value has a consumer. They stay in .env.local and
-// `do.sh outputs` because they document the stack, but exporting them
-// would advertise a capability the client does not have.
+// NO pool-id export. This app never verifies a JWT locally
+// (`tokens.ts` decodes without verifying, by design), so the pool id
+// has no consumer. It stays in .env.local because it documents the
+// stack, but exporting it would advertise a capability the client does
+// not have.
+//
+// AWS_REGION, by contrast, is exported again -- it was removed as
+// unused when Managed Login was the only sign-in path, since the hosted
+// domain carries its own host. Direct password sign-in needs it: the
+// InitiateAuth endpoint is `cognito-idp.<region>.amazonaws.com`, so the
+// region is part of the URL. Defaulted to us-east-1, because Cost
+// Explorer and Budgets are us-east-1-only and nothing here deploys
+// elsewhere.
+export const AWS_REGION = env.region || 'us-east-1';
 
 /** `https://<domain>` -- the value is stored without a scheme. */
 export const COGNITO_DOMAIN_URL = env.cognitoDomain

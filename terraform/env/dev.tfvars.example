@@ -41,3 +41,27 @@ data_source_accounts = [
   #   role_arn    = "arn:aws:iam::111111111111:role/CostHubCostReader"
   #   external_id = "costhub-CHANGE-ME" },
 ]
+
+# ---------------------------------------------------------------- demo users
+#
+# Cognito password sign-in is the default path (/login). These are the
+# two accounts and their passwords, recorded here because this file is
+# GITIGNORED -- the repo is public, so a password committed to docs/
+# would be a working credential for a live deployment on the internet.
+#
+# Terraform does NOT set these. Cognito stores only a hash and has no
+# API that returns a password, so they cannot be read back from the
+# pool; they exist only because someone set them. To set or reset:
+#
+#   aws cognito-idp admin-set-user-password #     --user-pool-id <your pool id, from ./do.sh outputs dev> #     --username <email> --password '<password>' --permanent #     --region us-east-1
+#
+# --permanent is not optional: without it the user lands in
+# FORCE_CHANGE_PASSWORD, InitiateAuth returns a challenge instead of
+# tokens, and the login form can only tell them to find an admin.
+#
+#   you@chryselys.com             <set one>    (superadmin)
+#   admin@chryselys.com           <set one>    (superadmin -- shared)
+#
+# Both are superadmin in the users table, so both see every account and
+# bypass the grant predicate. For a demo that shows RBAC narrowing, you
+# want a THIRD user with role 'user' and one grant.

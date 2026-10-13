@@ -3,8 +3,10 @@
  *
  * Same contract as the other services in this folder: the UI calls
  * these and never knows which mode it is in. Mock mode keeps the
- * simulated in-browser login; live mode runs the Cognito
- * authorization-code exchange.
+ * simulated in-browser login; live mode has two paths -- an email and
+ * password posted straight to Cognito (`signInWithCredentials`), and
+ * the authorization-code exchange used by the email-code fallback
+ * (`completeSignIn`). Both converge on `establishSession`.
  *
  * THE ROLE COMES FROM THE SERVER, not from the token. A Cognito ID
  * token carries identity (`email`, `email_verified`) but knows nothing
@@ -15,9 +17,15 @@
  * accept fails here, at sign-in, instead of on the dashboard.
  */
 import { get } from '@/lib/api/client';
-import { exchangeCode, markSignedOut, signOutUrl, takePostLoginPath } from '@/lib/auth/cognito';
+import {
+  exchangeCode,
+  markSignedOut,
+  signInWithPassword,
+  signOutUrl,
+  takePostLoginPath,
+} from '@/lib/auth/cognito';
 import { endSession, startSession } from '@/lib/auth/session';
-import { clearTokens, writeTokens } from '@/lib/auth/tokens';
+import { clearTokens, writeTokens, type TokenSet } from '@/lib/auth/tokens';
 import { isMock } from '@/lib/mode';
 import { readTokens } from '@/lib/auth/tokens';
 import type { User } from '@/types/domain';
@@ -54,8 +62,7 @@ function displayNameFor(email: string): string {
  * Finish a live sign-in: exchange the code, confirm with the API, set
  * the session marker. Returns where to send the browser next.
  */
-export async function completeSignIn(code: string, state: string | null): Promise<string> {
-  const tokens = await exchangeCode(code, state);
+async function establishSession(tokens: TokenSet): Promise<void> {
   writeTokens(tokens);
 
   let user: User;
@@ -75,7 +82,27 @@ export async function completeSignIn(code: string, state: string | null): Promis
   }
 
   startSession(user);
+}
+
+export async function completeSignIn(code: string, state: string | null): Promise<string> {
+  await establishSession(await exchangeCode(code, state));
   return takePostLoginPath();
+}
+
+/**
+ * Live sign-in with an email and password, no redirect.
+ *
+ * Shares `establishSession` with the code exchange on purpose. The step
+ * after "we have tokens" is the subtle one -- confirming with
+ * `GET /meta/me` and discarding the tokens if the API refuses them --
+ * and having two copies of it is how one of them comes to be missing
+ * the discard.
+ *
+ * Returns nothing: unlike the callback, the caller already knows where
+ * the user was going, because it never left the page.
+ */
+export async function signInWithCredentials(email: string, password: string): Promise<void> {
+  await establishSession(await signInWithPassword(email, password));
 }
 
 /**

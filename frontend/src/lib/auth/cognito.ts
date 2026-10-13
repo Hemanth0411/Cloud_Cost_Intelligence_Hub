@@ -20,7 +20,7 @@
  * verifier cannot make the next attempt fail in a way that looks like a
  * Cognito problem.
  */
-import { COGNITO_CLIENT_ID, COGNITO_DOMAIN_URL } from '@/lib/config';
+import { AWS_REGION, COGNITO_CLIENT_ID, COGNITO_DOMAIN_URL } from '@/lib/config';
 import { toTokenSet, type TokenSet } from './tokens';
 
 const VERIFIER_KEY = 'costhub:pkce-verifier';
@@ -241,4 +241,132 @@ export function signOutUrl(): string {
     logout_uri: logoutUri(),
   });
   return `${COGNITO_DOMAIN_URL}/logout?${params.toString()}`;
+}
+
+
+// ---- direct password sign-in -------------------------------------------
+
+/**
+ * Email + password straight to Cognito, no redirect.
+ *
+ * WHY THIS EXISTS ALONGSIDE THE HOSTED FLOW: the authorization-code path
+ * above leaves the app for an AWS-skinned page mid-sign-in, which is
+ * jarring in a demo, and email OTP depends on a code arriving by mail.
+ * This posts to InitiateAuth and gets tokens back in one request, so the
+ * login form is the app's own.
+ *
+ * OTP is NOT removed. `beginSignIn` still works and /login still offers
+ * it, because mail-based sign-in needs no password to be set or
+ * remembered -- it is the better path when it works.
+ *
+ * This is the raw JSON protocol rather than the AWS SDK on purpose:
+ * amazon-cognito-identity-js or @aws-sdk/client-cognito-identity-provider
+ * would add a dependency measured in hundreds of kilobytes to send one
+ * request this app can write in twenty lines.
+ *
+ * SECURITY, stated plainly: USER_PASSWORD_AUTH sends the password to
+ * Cognito over TLS. USER_SRP_AUTH would not send it at all, and needs an
+ * SRP implementation in the browser. The password reaches exactly one
+ * host, which is the one that stores its hash.
+ */
+interface InitiateAuthResponse {
+  AuthenticationResult?: {
+    IdToken?: string;
+    RefreshToken?: string;
+    ExpiresIn?: number;
+  };
+  ChallengeName?: string;
+  message?: string;
+  __type?: string;
+}
+
+export async function signInWithPassword(
+  email: string,
+  password: string,
+): Promise<TokenSet> {
+  if (!COGNITO_CLIENT_ID) {
+    throw new AuthError('Sign-in is not configured: no Cognito client id.');
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`https://cognito-idp.${AWS_REGION}.amazonaws.com/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-amz-json-1.1',
+        'X-Amz-Target': 'AWSCognitoIdentityProviderService.InitiateAuth',
+      },
+      body: JSON.stringify({
+        AuthFlow: 'USER_PASSWORD_AUTH',
+        ClientId: COGNITO_CLIENT_ID,
+        // USERNAME is the email: the pool is username_attributes = ["email"].
+        AuthParameters: { USERNAME: email.trim(), PASSWORD: password },
+      }),
+    });
+  } catch {
+    // A network failure here is indistinguishable from a blocked
+    // request, and "Failed to fetch" tells the user nothing actionable.
+    throw new AuthError('Could not reach the sign-in service. Check your connection.');
+  }
+
+  const body = (await response.json().catch(() => ({}))) as InitiateAuthResponse;
+
+  if (!response.ok) {
+    throw new AuthError(describeAuthFailure(body));
+  }
+
+  // A challenge is a successful HTTP call that did NOT return tokens.
+  // Treating it as success would hand the app an undefined id token and
+  // fail somewhere less obvious.
+  if (body.ChallengeName) {
+    throw new AuthError(describeChallenge(body.ChallengeName));
+  }
+
+  const result = body.AuthenticationResult;
+  if (!result?.IdToken) {
+    throw new AuthError('Sign-in succeeded but returned no ID token.');
+  }
+
+  // The API needs the ID TOKEN, not the access token: api/deps.py
+  // requires `email` and `email_verified` claims and verifies `aud`,
+  // none of which a Cognito access token carries.
+  return toTokenSet(result.IdToken, result.RefreshToken ?? null, result.ExpiresIn ?? 3600);
+}
+
+/** Cognito's error codes, as something a person can act on. */
+function describeAuthFailure(body: InitiateAuthResponse): string {
+  const code = (body.__type ?? '').split('#').pop() ?? '';
+  switch (code) {
+    case 'NotAuthorizedException':
+      // Covers a wrong password AND a disabled user. Cognito is
+      // deliberately vague to avoid confirming which accounts exist, and
+      // `prevent_user_existence_errors` is ENABLED on the client, so do
+      // not try to be more specific than this.
+      return 'Incorrect email or password.';
+    case 'UserNotFoundException':
+      return 'Incorrect email or password.';
+    case 'UserNotConfirmedException':
+      return 'This account is not confirmed yet. An administrator needs to activate it.';
+    case 'PasswordResetRequiredException':
+      return 'A password reset is required. Use "Forgot password?" below.';
+    case 'TooManyRequestsException':
+    case 'LimitExceededException':
+      return 'Too many attempts. Wait a minute and try again.';
+    case 'InvalidParameterException':
+      // The most likely cause is the pool not allowing this flow at all,
+      // which is a deployment fault rather than a user error.
+      return body.message ?? 'Sign-in request was rejected. Password sign-in may not be enabled.';
+    default:
+      return body.message ?? 'Sign-in failed.';
+  }
+}
+
+function describeChallenge(name: string): string {
+  if (name === 'NEW_PASSWORD_REQUIRED') {
+    return 'This account must set a new password before signing in. An administrator can set a permanent one.';
+  }
+  if (name === 'EMAIL_OTP' || name === 'SMS_MFA' || name === 'SOFTWARE_TOKEN_MFA') {
+    return 'This account requires a second step. Use the email-code option instead.';
+  }
+  return `Sign-in needs an additional step this app does not handle yet (${name}).`;
 }
