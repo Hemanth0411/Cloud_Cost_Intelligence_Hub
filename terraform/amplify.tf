@@ -51,7 +51,25 @@ resource "aws_amplify_app" "main" {
   # Amplify build, set them once in the Amplify console (or pass them to
   # the manual deploy) -- they only change if the stack is rebuilt.
   environment_variables = {
-    NEXT_PUBLIC_AWS_REGION    = var.aws_region
+    NEXT_PUBLIC_AWS_REGION = var.aws_region
+
+    # Set by Terraform, and NOT in ignore_changes below, because it is
+    # DERIVED rather than configured: whatever account this is applied
+    # to is the account the frontend should name.
+    #
+    # The connect-account dialog prints a trust policy for the other
+    # account's administrator to paste, and that policy has to name this
+    # account. Without this the UI falls back to a literal
+    # `<YOUR_COSTHUB_ACCOUNT_ID>` placeholder -- which someone would
+    # eventually copy verbatim into an IAM policy.
+    #
+    # This one is safe to declare where the API URL and the Cognito ids
+    # are not: it comes from aws_caller_identity, which depends on
+    # nothing, so it closes no cycle. (Amplify's domain is already an
+    # input to the Cognito callbacks and the Lambda CORS origins, which
+    # is why those three cannot be set here.)
+    NEXT_PUBLIC_DEPLOY_ACCOUNT_ID = data.aws_caller_identity.current.account_id
+
     AMPLIFY_MONOREPO_APP_ROOT = "frontend"
   }
 
