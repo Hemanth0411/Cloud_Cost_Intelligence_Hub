@@ -109,11 +109,21 @@ resource "aws_amplify_branch" "main" {
   framework   = "Next.js - SSR"
   stage       = local.env == "main" ? "PRODUCTION" : "DEVELOPMENT"
 
-  # How stakeholders see the demo before Cognito is finished.
-  enable_basic_auth = true
-  basic_auth_credentials = base64encode(
-    "${var.amplify_basic_auth_user}:${var.amplify_basic_auth_password}"
-  )
+  # OFF. It was the stakeholder gate from before Cognito worked, and
+  # Cognito works now -- two password prompts to reach one demo is one
+  # too many, and the app's own sign-in is the real control.
+  #
+  # Note what this does and does not protect. It only ever covered the
+  # Amplify-hosted FRONTEND; the API behind it is an API Gateway
+  # endpoint that was public the whole time and is guarded by the
+  # Cognito JWT, not by this. So turning it off widens who can load the
+  # page, not who can read data: an unauthenticated visitor still gets
+  # the sign-in screen and every /admin route still answers 401.
+  #
+  # To put it back: set this to true and restore basic_auth_credentials
+  # from var.amplify_basic_auth_user / _password, which are still
+  # declared and still in dev.tfvars.
+  enable_basic_auth = false
 
   enable_auto_build = var.amplify_repository != ""
 }
