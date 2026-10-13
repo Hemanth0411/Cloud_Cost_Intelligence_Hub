@@ -60,13 +60,13 @@ sign-in, and sign-in redirects to Cognito. If Cognito is unreachable —
 the exact situation the toggle is for — every route bounces and the
 switch on /settings is behind the bounce.
 
-Under the hood this is one `localStorage` key, `cloudlens:use-mock`,
+Under the hood this is one `localStorage` key, `costhub:use-mock`,
 holding `"true"` or `"false"`. To set it from the console:
 
 ```js
-localStorage.setItem('cloudlens:use-mock', 'true');  // mock
-localStorage.setItem('cloudlens:use-mock', 'false'); // live
-localStorage.removeItem('cloudlens:use-mock');       // follow the build
+localStorage.setItem('costhub:use-mock', 'true');  // mock
+localStorage.setItem('costhub:use-mock', 'false'); // live
+localStorage.removeItem('costhub:use-mock');       // follow the build
 location.reload();
 ```
 
