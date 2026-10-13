@@ -3,6 +3,7 @@
     python -m costhub.cli bootstrap-admin --email you@chryselys.com
     python -m costhub.cli add-connection --account-id self --name personal
     python -m costhub.cli list-connections
+    python -m costhub.cli rename-connection --account-id self --name Hemanth-AWS
     python -m costhub.cli grant --email a@chryselys.com --account-id self
     python -m costhub.cli ingest  [--days 7]  [--dev-seed]
     python -m costhub.cli backfill [--months 14] [--dev-seed]
@@ -65,6 +66,28 @@ def cmd_add_connection(args: argparse.Namespace) -> int:
         profile_name=args.profile,
     )
     print(f"connection {args.provider}/{args.account_id} ({mode})  {cid}")
+    return 0
+
+
+def cmd_rename_connection(args: argparse.Namespace) -> int:
+    """Relabel a connection without touching how it is reached.
+
+    Deliberately not `add-connection` with a new --name: that path
+    rewrites every credential column from its arguments, so it would
+    blank the role ARN and the ExternalId of an assume_role connection
+    unless both were re-supplied, and the ExternalId cannot be read back
+    to re-supply.
+    """
+    cid = store.rename(
+        actor=_actor(),
+        provider=args.provider,
+        account_id=args.account_id,
+        display_name=args.name,
+    )
+    if cid is None:
+        print(f"no connection {args.provider}/{args.account_id}")
+        return 1
+    print(f"renamed {args.provider}/{args.account_id} -> {args.name}  {cid}")
     return 0
 
 
@@ -177,6 +200,12 @@ def build_parser() -> argparse.ArgumentParser:
     a.set_defaults(fn=cmd_add_connection)
 
     sub.add_parser("list-connections").set_defaults(fn=cmd_list_connections)
+
+    a = sub.add_parser("rename-connection")
+    a.add_argument("--provider", default="aws")
+    a.add_argument("--account-id", required=True)
+    a.add_argument("--name", required=True, help="the new display name")
+    a.set_defaults(fn=cmd_rename_connection)
 
     a = sub.add_parser("grant")
     a.add_argument("--email", required=True)

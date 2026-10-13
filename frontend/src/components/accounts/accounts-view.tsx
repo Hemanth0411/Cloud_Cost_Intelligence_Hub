@@ -28,7 +28,7 @@ import { COST_CAPABILITIES, getFilterOptions } from '@/lib/services/cost-service
 import { ABSENT, environmentLabel, PROVIDER_COLOR, PROVIDER_SHORT_NAME } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import type { Account } from '@/types/domain';
-import { ConnectDialog } from './connect-dialog';
+import { ReconnectDialog } from './reconnect-dialog';
 import { ConnectionBadge } from './connection-badge';
 import { DisconnectDialog } from './disconnect-dialog';
 
@@ -219,7 +219,13 @@ export function AccountsView() {
         </CardContent>
       </Card>
 
-      <ConnectDialog account={connecting} onClose={() => setConnecting(null)} />
+      {/* The SIMULATION, not the registration form. Reached only
+          through the buttons above, which are gated on `simulated`.
+          Registering a real cloud account is a different screen with a
+          different shape -- /admin/connections -- because the mock
+          estate's ids are not AWS account ids and because the endpoint
+          behind registration is superadmin-only. */}
+      <ReconnectDialog account={connecting} onClose={() => setConnecting(null)} />
       <DisconnectDialog account={disconnecting} onClose={() => setDisconnecting(null)} />
       <AccountDetailDialog account={detail} periodLabel={periodLabel.toLowerCase()} onClose={() => setDetailId(null)} />
     </>

@@ -95,6 +95,63 @@ def upsert(
         return str(row["id"])
 
 
+def rename(
+    *,
+    actor: str,
+    provider: str,
+    account_id: str,
+    display_name: str,
+) -> str | None:
+    """Change only the label a connection is shown under.
+
+    Separate from `upsert` on purpose. `upsert` sets every credential
+    column from its arguments, so calling it to change a name would
+    blank `role_arn`, `external_id` and `profile_name` for any caller
+    that did not re-supply them -- and `external_id` cannot be
+    re-supplied, because the API redacts it on read. This touches one
+    column, so the ingested cost rows stay attached and the credential
+    mode stays as it was.
+
+    Returns the connection id, or None when no live row matches.
+    """
+    with connect() as conn, conn.cursor() as cur:
+        # Read the old name first, in the same transaction, so the audit
+        # row can carry a real `before`. RETURNING cannot give it: it
+        # sees the row as the UPDATE left it.
+        cur.execute(
+            """
+            SELECT id, display_name FROM cloud_connections
+             WHERE provider = %(p)s AND account_id = %(a)s
+               AND deleted_at IS NULL
+             FOR UPDATE
+            """,
+            {"p": provider, "a": account_id},
+        )
+        before = cur.fetchone()
+        if before is None:
+            return None
+
+        cur.execute(
+            """
+            UPDATE cloud_connections
+               SET display_name = %(d)s, updated_at = now(),
+                   updated_by = %(actor)s, revision = revision + 1
+             WHERE id = %(id)s
+            """,
+            {"id": before["id"], "d": display_name, "actor": actor},
+        )
+        log(
+            cur,
+            actor=actor,
+            action="connection.rename",
+            entity_type="cloud_connection",
+            entity_id=before["id"],
+            before={"display_name": before["display_name"]},
+            after={"display_name": display_name},
+        )
+        return str(before["id"])
+
+
 def set_enabled(*, actor: str, connection_id: str, value: bool) -> None:
     """Disable without losing history (FR-13)."""
     with connect() as conn, conn.cursor() as cur:

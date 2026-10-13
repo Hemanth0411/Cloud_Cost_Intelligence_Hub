@@ -154,6 +154,11 @@ check_account() {
        Nothing has been changed. Point AWS_PROFILE at the right account:
          AWS_PROFILE=costhub ./do.sh $CMD $ENV"
 
+  # Reused by cmd_outputs for NEXT_PUBLIC_DEPLOY_ACCOUNT_ID. Taken from
+  # the verified credentials rather than a terraform output, so reading
+  # it never touches the local state file -- which is single-writer and
+  # does get locked by a concurrent apply.
+  ACCOUNT_ID="$have"
   echo "account:   $have"
 }
 
@@ -399,6 +404,10 @@ cmd_outputs() {
     echo "NEXT_PUBLIC_COGNITO_CLIENT_ID=$($TF output -raw cognito_client_id)"
     echo "NEXT_PUBLIC_COGNITO_DOMAIN=$($TF output -raw cognito_domain)"
     echo "NEXT_PUBLIC_AWS_REGION=$REGION"
+    # Printed by the "add a cloud account" dialog, inside the trust
+    # policy the OTHER account's administrator applies -- it is the
+    # principal they have to trust. Public by construction.
+    echo "NEXT_PUBLIC_DEPLOY_ACCOUNT_ID=$ACCOUNT_ID"
     echo "NEXT_PUBLIC_USE_MOCK=false"
   } > "$out"
   step "wrote $out"

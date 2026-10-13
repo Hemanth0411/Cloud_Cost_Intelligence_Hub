@@ -31,11 +31,31 @@ const env = {
   apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL ?? '',
   clientId: process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID ?? '',
   cognitoDomain: process.env.NEXT_PUBLIC_COGNITO_DOMAIN ?? '',
+  deployAccountId: process.env.NEXT_PUBLIC_DEPLOY_ACCOUNT_ID ?? '',
   useMock: process.env.NEXT_PUBLIC_USE_MOCK,
 } as const;
 
 export const API_BASE_URL = trimSlash(env.apiBaseUrl);
 export const COGNITO_CLIENT_ID = env.clientId;
+
+/**
+ * The AWS account this stack is deployed into, or '' when the build
+ * was not told.
+ *
+ * Needed only to print the trust policy a DIFFERENT account's
+ * administrator has to apply -- it names us as the principal they
+ * trust. It is not a credential and not a secret; an account id is
+ * visible in every ARN this app already shows.
+ *
+ * NOT folded into `liveModeBlockers`. Live mode works perfectly
+ * without it, and refusing live data because an onboarding snippet
+ * would be less specific would be the wrong trade. Where it is
+ * missing, `lib/aws-onboarding.ts` prints a placeholder and the UI
+ * says it is a placeholder, rather than guessing a number.
+ */
+export const DEPLOY_ACCOUNT_ID = /^\d{12}$/.test(env.deployAccountId)
+  ? env.deployAccountId
+  : '';
 
 // NO pool-id or region export. Managed Login needs only the hosted
 // domain and the public client id, and this app never verifies a JWT
