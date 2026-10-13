@@ -5,35 +5,53 @@
  * this module, never to `fetch` or to the mock dataset directly, and
  * which mode it runs in is decided once per page load by `isMock()`.
  *
- * THE ENDPOINTS, LIVE -- all superadmin-only, enforced server-side:
+ * THE ENDPOINTS, LIVE -- all superadmin-only, enforced server-side,
+ * all in `api/routes/connections.py`:
  *
- *   listConnections       -> GET  /admin/connections
- *   listIngestRuns        -> GET  /admin/ingest-runs
- *   registerConnection    -> POST /admin/connections
- *   setConnectionEnabled  -> POST /admin/connections/{id}/enabled?value=
+ *   listConnections       -> GET    /admin/connections
+ *   listIngestRuns        -> GET    /admin/ingest-runs
+ *   registerConnection    -> POST   /admin/connections
+ *   updateConnection      -> PATCH  /admin/connections/{id}
+ *   deleteConnection      -> DELETE /admin/connections/{id}
+ *   setConnectionEnabled  -> POST   /admin/connections/{id}/enabled?value=
+ *   testConnection        -> POST   /admin/connections/{id}/test
+ *   importNow             -> POST   /admin/connections/{id}/import?days=
  *
- * TWO THINGS THE API DOES THAT THE UI HAS TO ACCOUNT FOR:
+ * FOUR THINGS THE API DOES THAT THE UI HAS TO ACCOUNT FOR:
  *
- *  * `external_id` IS REDACTED ON READ. `admin.py:_redact` replaces it
- *    with the literal string `"set"`, because it is one half of the
- *    cross-account trust and the role ARN -- returned beside it -- is
- *    the other. So a connection's ExternalId can be shown exactly once,
- *    at the moment the browser generates it, and never again.
+ *  * `external_id` IS RETURNED IN FULL. It used to come back as the
+ *    literal string `"set"`, and the reasoning -- one half of the
+ *    cross-account trust, so do not emit it -- was reversed on purpose:
+ *    an ExternalId is not a password but the value the OTHER account's
+ *    trust policy must contain, so redacting it from a superadmin
+ *    removed the one thing they have to distribute. Nothing redacts it
+ *    now; `routes/connections.py` carries the full argument.
  *  * `POST /admin/connections` IS AN UPSERT, not an insert.
  *    `store.upsert` is `ON CONFLICT (provider, account_id) DO UPDATE`,
  *    so re-registering an account id that already exists silently
- *    REPLACES its credential columns and returns 201 either way. The
- *    dialog therefore has to tell the user which of the two is about to
- *    happen; the API cannot.
+ *    REPLACES its credential columns and returns 201 either way. It also
+ *    REVIVES a soft-deleted row (`deleted_at = NULL, enabled = true`).
+ *    The dialog therefore has to tell the user which of the two is about
+ *    to happen; the API cannot.
+ *  * `PATCH` IS A PARTIAL UPDATE and means it. The body is read with
+ *    `exclude_unset=True`, so an absent key leaves a column alone and an
+ *    explicit `null` clears it. `lib/connection-edits.ts` builds the
+ *    body from a diff for that reason -- a form that round-tripped the
+ *    whole object would clear every field the user did not touch.
+ *  * `DELETE` IS A SOFT DELETE and keeps the cost rows. It answers
+ *    `cost_data_kept: true`, because `fact_cost_daily` is keyed by
+ *    (provider, account_id) rather than by connection.
  *
- * THERE IS NO SYNC ENDPOINT, and that is why nothing here offers one.
- * Ingest runs on an EventBridge schedule against `cloud_connections`;
- * the browser cannot trigger it. Enable and disable are the two real
- * controls (FR-13), so those are what the screen exposes.
+ * IMPORT CAN BE TRIGGERED, and that is newer than most of this file.
+ * `importNow` runs the real ingest for one connection inline and returns
+ * how many rows landed; the EventBridge schedule at 06:00 UTC is no
+ * longer the only way data arrives. Enable and disable remain the
+ * lifecycle controls (FR-13).
  */
-import { getRows, post } from '@/lib/api/client';
+import { ApiError, del, getRows, patch, post } from '@/lib/api/client';
 import { isMock } from '@/lib/mode';
 import { registrationBody, type RegistrationDraft } from '@/lib/aws-onboarding';
+import type { ConnectionPatchBody } from '@/lib/connection-edits';
 import { mockConnectionRows, mockIngestRunRows } from '@/lib/mock/connection-rows';
 
 /**
@@ -59,7 +77,7 @@ export interface ConnectionRow {
   displayName: string;
   credentialMode: string;
   roleArn: string | null;
-  /** `'set'` or null. The API never returns the value. */
+  /** The real value, in full, or null when the row has none. */
   externalId: string | null;
   profileName: string | null;
   secretArn: string | null;
@@ -105,6 +123,16 @@ export const CONNECTION_CAPABILITIES = {
    * one thing the button exists to prove.
    */
   canImport: !isMock(),
+  /**
+   * `PATCH` and `DELETE` exist in live mode only, and are deliberately
+   * NOT simulated. A mock edit would have to either mutate a derived
+   * array that is rebuilt from the dataset on the next read -- so the
+   * change vanishes and the screen lies about having saved -- or pretend
+   * to persist something no store exists for. The actions column is
+   * hidden wholesale in mock mode for the same reason.
+   */
+  canEdit: !isMock(),
+  canDelete: !isMock(),
 } as const;
 
 // ------------------------------------------------------------- reads
@@ -203,6 +231,67 @@ export async function registerConnection(
   if (isMock()) return { id: null, updated };
   const response = await post<{ id: string }>('/admin/connections', body);
   return { id: response.id, updated };
+}
+
+/**
+ * Correct a connection in place.
+ *
+ * `body` MUST be a diff -- see `lib/connection-edits.ts`. This function
+ * does not build one, and deliberately does not accept a whole row:
+ * there is no shape of `ConnectionRow` it could take without being able
+ * to clear a field nobody edited.
+ *
+ * Two refusals are expected rather than exceptional, and both arrive as
+ * an `ApiError` whose message is the server's own sentence:
+ *
+ *   400  the schema CHECK -- an `assume_role` row must keep a role ARN,
+ *        and `display_name` / `credential_mode` cannot be null. This is
+ *        the first half of "retype the ARN", so it is a normal thing to
+ *        hit and the message names the rule.
+ *   422  pydantic -- `display_name` of `''` fails `min_length=1`.
+ *
+ * Both must reach the user verbatim. A dialog that replaced either with
+ * "could not save" would leave someone retyping the same value.
+ */
+export async function updateConnection(id: string, body: ConnectionPatchBody): Promise<string[]> {
+  const response = await patch<{ id: string; changed: string[] }>(
+    `/admin/connections/${encodeURIComponent(id)}`,
+    body,
+  );
+  return response.changed;
+}
+
+export interface DeleteOutcome {
+  deleted: boolean;
+  /** Always true from this endpoint. Rendered, not assumed -- see below. */
+  costDataKept: boolean;
+}
+
+/**
+ * Stop importing from an account.
+ *
+ * SOFT, and the cost rows stay. `fact_cost_daily` is keyed by
+ * (provider, account_id) and not by connection, so the history remains
+ * readable and every chart is unchanged -- which is the opposite of what
+ * the word "delete" suggests, so the confirmation says it and this
+ * function returns the flag rather than hardcoding the claim in the
+ * dialog.
+ */
+export async function deleteConnection(id: string): Promise<DeleteOutcome> {
+  return del<DeleteOutcome>(`/admin/connections/${encodeURIComponent(id)}`);
+}
+
+/**
+ * Did this fail because the connection is gone?
+ *
+ * Every route on this resource answers 404 for an id that no longer
+ * matches a live row, and soft delete makes that ordinary: two tabs
+ * open, one removes a connection, the other still has the row on screen
+ * and clicks Test. The caller's job is then to re-read the list rather
+ * than to report a fault -- the row on screen is simply stale.
+ */
+export function isMissingConnection(cause: unknown): boolean {
+  return cause instanceof ApiError && cause.status === 404;
 }
 
 export async function setConnectionEnabled(id: string, value: boolean): Promise<void> {

@@ -19,9 +19,16 @@ import { DEPLOY_ACCOUNT_ID } from '@/lib/config';
  * The role name is a CONVENTION, not a choice, and the reason matters:
  * `terraform/iam.tf` grants `sts:AssumeRole` on
  * `arn:aws:iam::*:role/CostHubCostReader` -- by NAME, for any account.
- * A role called anything else is unreachable no matter how its trust
- * policy is written, and nothing on this screen can widen that grant.
- * So the ARN is derived, never typed.
+ * So the ARN is derived here, never typed.
+ *
+ * NOT quite "a role called anything else is unreachable", though it is
+ * tempting to write that. The same statement is
+ * `concat([...], local.assume_role_arns)`, and `assume_role_arns` is
+ * every `role_arn` in `data_source_accounts` in tfvars -- arbitrary
+ * ARNs, which nothing in this browser can see. `probe.py` reaches the
+ * same conclusion and says "unless" rather than "never" for exactly
+ * that reason; the edit dialog's warning about a non-derived ARN hedges
+ * the same way.
  */
 export const COST_READER_ROLE_NAME = 'CostHubCostReader';
 
@@ -183,7 +190,73 @@ export function handoffText(accountId: string, externalId: string): string {
 
 // ------------------------------------------------------------ the form
 
-export type CredentialMode = 'self' | 'assume_role';
+/**
+ * Every value `cloud_connections.credential_mode` can hold.
+ *
+ * The column carries
+ * `CHECK (credential_mode IN ('self','assume_role','profile','secret'))`,
+ * so this is the closed set, and the UI has to be able to LABEL all four
+ * -- a row can arrive in any of them, whoever wrote it.
+ */
+export type StoredCredentialMode = 'self' | 'assume_role' | 'profile' | 'secret';
+
+/**
+ * The subset a browser may REGISTER, which is not the same set.
+ *
+ * `secret` is absent on purpose: it resolves an Azure service principal
+ * out of Secrets Manager (`credentials.py:azure_credentials`),
+ * `aws_session` rejects it outright for an AWS connection, and the Azure
+ * adapter has never been pointed at a real subscription. Offering it
+ * here would only produce rows that cannot authenticate. It stays
+ * editable on a row that already holds it.
+ */
+export type CredentialMode = 'self' | 'assume_role' | 'profile';
+
+export const CREDENTIAL_MODE_LABEL: Record<StoredCredentialMode, string> = {
+  self: 'Deploy account',
+  assume_role: 'AssumeRole',
+  profile: 'Local profile',
+  secret: 'Service principal',
+};
+
+export const CREDENTIAL_MODE_HINT: Record<StoredCredentialMode, string> = {
+  self: 'Read with the application’s own execution role. Nothing to configure.',
+  assume_role:
+    'Short-lived credentials via STS, using an ExternalId. Needs a role in that account.',
+  profile:
+    'A named AWS CLI profile, read from the machine making the call. The scheduled import runs in a Lambda, which has none, so it cannot use this.',
+  secret: 'Client secret held in a secrets manager and read at call time.',
+};
+
+/**
+ * WHY `profile` IS OFFERED AT ALL, and what it cannot do.
+ *
+ * `credentials.py` resolves it as `boto3.Session(profile_name=...)`,
+ * which reads `~/.aws/config` on the machine making the call. The
+ * scheduled import is an EventBridge rule targeting the `ingest` Lambda
+ * (`terraform/schedule.tf`), where that file does not exist, so such a
+ * connection fails every morning.
+ *
+ * Test and Import now are HTTP calls, so they run wherever the API runs
+ * -- a SEPARATE Lambda in the deployed stack (`lambda.tf` declares `api`
+ * and `ingest` as two functions, not one), and something else entirely
+ * if someone is running uvicorn locally.
+ *
+ * WHICH IS WHY THE SECOND LINE BELOW IS CONDITIONAL. The browser is
+ * handed a base URL and nothing more; it cannot tell a deployed API from
+ * a local one. Telling someone running the API on the machine that HAS
+ * the profile that it will fail would be wrong in the direction that
+ * costs them most -- declaring a working connection broken.
+ *
+ * These lines are a constant rather than JSX so that the add dialog and
+ * the edit dialog say the same thing, and so that what the UI claims
+ * about this mode is one editable value rather than three.
+ */
+export const PROFILE_MODE_LIMITS: readonly string[] = [
+  'The scheduled 06:00 UTC import runs in a Lambda, which has no AWS CLI profiles and no ~/.aws/config, so it will fail for this connection every day.',
+  '“Test” and “Import now” run wherever the API runs, never in your browser. Where CostHub is deployed that is a Lambda too, so both report a missing profile however correct the profile is on your own machine.',
+  'Cost data arrives only when someone runs the ingest by hand — python -m costhub.cli ingest — on a machine where this profile is configured.',
+];
 
 export interface RegistrationDraft {
   credentialMode: CredentialMode;
@@ -192,6 +265,8 @@ export interface RegistrationDraft {
   displayName: string;
   /** Generated, shown, and sent once. Never typed. */
   externalId: string;
+  /** A named AWS CLI profile. Only read when the mode is `profile`. */
+  profileName: string;
 }
 
 /**
@@ -205,6 +280,12 @@ export interface RegistrationDraft {
  * only report as an unreachable API. The role ARN is derived from the
  * account id, so the guard that matters is that the account id is
  * present and well formed.
+ *
+ * `profile_name` is NOT a schema rule -- the column is nullable -- but a
+ * profile row without one fails at credential resolution with
+ * `CredentialError: profile_name missing`, which is a connection that
+ * can never work. Registration is the one place that shape is chosen,
+ * so it is refused here.
  */
 export function validateRegistration(draft: RegistrationDraft): Record<string, string> {
   const errors: Record<string, string> = {};
@@ -212,7 +293,11 @@ export function validateRegistration(draft: RegistrationDraft): Record<string, s
   if (name === '') errors.displayName = 'A name is required.';
   else if (name.length > 60) errors.displayName = 'Keep it under 60 characters.';
 
-  if (draft.credentialMode === 'assume_role') {
+  // Every mode but `self` is keyed by a real account id, `profile`
+  // included: `fact_cost_daily` is keyed by (provider, account_id), so
+  // that id is what the imported rows are filed under and what a grant
+  // is written against.
+  if (draft.credentialMode !== 'self') {
     const id = draft.accountId.trim();
     if (id === '') errors.accountId = 'An AWS account id is required.';
     else if (!AWS_ACCOUNT_ID.test(id)) errors.accountId = 'Exactly 12 digits, no dashes.';
@@ -222,17 +307,23 @@ export function validateRegistration(draft: RegistrationDraft): Record<string, s
       // real AWS account. Both would be enabled, and Cost Explorer
       // ignores the account id (`cost_explorer.py` reads whatever the
       // session can see), so the same bill would be written twice under
-      // two account ids and every total would double-count. The second
-      // row also cannot authenticate: it would try to assume a
-      // CostHubCostReader role in the deploy account, which does not
-      // exist.
+      // two account ids and every total would double-count. An
+      // assume_role row also cannot authenticate: it would try to
+      // assume a CostHubCostReader role in the deploy account, which
+      // does not exist.
       errors.accountId =
-        'That is this CostHub account. It is already readable directly — choose “This account” instead of registering it as a cross-account role.';
+        'That is this CostHub account. It is already readable directly — choose “This account” rather than registering it a second time under its own id.';
     }
-    if (draft.externalId === '') {
-      errors.externalId =
-        'This browser could not generate an ExternalId. A predictable one would remove the protection it exists for, so none was substituted.';
-    }
+  }
+
+  if (draft.credentialMode === 'assume_role' && draft.externalId === '') {
+    errors.externalId =
+      'This browser could not generate an ExternalId. A predictable one would remove the protection it exists for, so none was substituted.';
+  }
+
+  if (draft.credentialMode === 'profile' && draft.profileName.trim() === '') {
+    errors.profileName =
+      'A profile name is required: without one the connection fails at credential resolution rather than at the cloud API.';
   }
   return errors;
 }
@@ -245,17 +336,23 @@ export interface RegistrationBody {
   credential_mode: CredentialMode;
   role_arn: string | null;
   external_id: string | null;
+  profile_name: string | null;
 }
 
 export function registrationBody(draft: RegistrationDraft): RegistrationBody {
   const self = draft.credentialMode === 'self';
+  const crossAccount = draft.credentialMode === 'assume_role';
   const accountId = self ? 'self' : draft.accountId.trim();
   return {
     provider: 'aws',
     account_id: accountId,
     display_name: draft.displayName.trim(),
     credential_mode: draft.credentialMode,
-    role_arn: self ? null : costReaderArn(accountId),
-    external_id: self ? null : draft.externalId,
+    // Only an AssumeRole connection has either of these, and the ARN is
+    // derived. A profile connection authenticates as whoever the profile
+    // is, so a role ARN on it would be stored, displayed, and never used.
+    role_arn: crossAccount ? costReaderArn(accountId) : null,
+    external_id: crossAccount ? draft.externalId : null,
+    profile_name: draft.credentialMode === 'profile' ? draft.profileName.trim() : null,
   };
 }

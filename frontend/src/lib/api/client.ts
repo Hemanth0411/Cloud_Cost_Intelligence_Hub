@@ -148,7 +148,7 @@ function reauthenticate(): void {
 // ---- requests ----------------------------------------------------------
 
 export interface RequestOptions {
-  method?: 'GET' | 'POST' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   /** Appended as a query string; null and undefined values are dropped. */
   query?: Record<string, string | number | boolean | null | undefined>;
   body?: unknown;
@@ -178,7 +178,17 @@ function messageFrom(status: number, payload: unknown): string {
     if (Array.isArray(detail) && detail.length > 0) {
       const first = detail[0] as Record<string, unknown> | undefined;
       const msg = first && typeof first.msg === 'string' ? first.msg : null;
-      if (msg) return msg;
+      // WITH THE FIELD NAME. Pydantic's `msg` alone is
+      // "String should have at least 1 character", which on a form with
+      // six inputs does not say which one -- and `loc` is the only place
+      // that says. It is ["body", "display_name"], so the last element
+      // is the field.
+      if (msg) {
+        const loc = first?.loc;
+        const field =
+          Array.isArray(loc) && loc.length > 0 ? String(loc[loc.length - 1]) : null;
+        return field && field !== 'body' ? `${field}: ${msg}` : msg;
+      }
     }
   }
   return `Request failed (${status}).`;
@@ -263,6 +273,20 @@ export function get<T>(path: string, options: RequestOptions = {}): Promise<T> {
 
 export function post<T>(path: string, body?: unknown, options: RequestOptions = {}): Promise<T> {
   return request<T>(path, { ...options, method: 'POST', body });
+}
+
+/**
+ * A PARTIAL update, and the method matters to the server.
+ *
+ * `PATCH /admin/connections/{id}` reads its body with
+ * `model_dump(exclude_unset=True)`: an absent key means "leave this
+ * alone" and an explicit `null` means "clear it". So the body must
+ * carry only the fields that are actually changing, and a caller that
+ * round-trips a whole object would blank every column the user did not
+ * touch. The diffing is `lib/connection-edits.ts`; this just sends it.
+ */
+export function patch<T>(path: string, body?: unknown, options: RequestOptions = {}): Promise<T> {
+  return request<T>(path, { ...options, method: 'PATCH', body });
 }
 
 export function del<T>(path: string, options: RequestOptions = {}): Promise<T> {

@@ -3,6 +3,8 @@
 import { KeyRound, Plus } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { ConnectDialog } from '@/components/accounts/connect-dialog';
+import { ConnectionDeleteDialog } from '@/components/admin/connection-delete-dialog';
+import { ConnectionEditDialog } from '@/components/admin/connection-edit-dialog';
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,10 +13,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useToast } from '@/components/ui/toast';
 import { useAsyncData } from '@/hooks/use-async-data';
 import { ApiError } from '@/lib/api/client';
+import {
+  CREDENTIAL_MODE_HINT,
+  CREDENTIAL_MODE_LABEL,
+  type StoredCredentialMode,
+} from '@/lib/aws-onboarding';
+import { FIELD_LABEL, type ConnectionPatchBody } from '@/lib/connection-edits';
 import { formatDateTime } from '@/lib/format';
 import {
   CONNECTION_CAPABILITIES,
   importNow,
+  isMissingConnection,
   testConnection,
   type ProbeOutcome,
   ingestVerdict,
@@ -53,19 +62,29 @@ import { AdminState } from './admin-state';
  * questions: Test says whether access works and which prerequisite is
  * missing; Import says whether any data arrived.
  *
- * EVERY VALUE HERE IS A STORED ONE. "Last import" is
- * `last_ingest_at` / `last_ingest_status`, not a health probe -- nothing
- * in this app contacts a target account to ask whether it is reachable,
- * and a just-registered connection correctly reads "never" rather than
- * being drawn as broken.
+ * EDIT AND REMOVE COMPLETE THE SET. `PATCH` and `DELETE` existed,
+ * deployed and tested, with no UI -- so "a mistyped role ARN is
+ * unfixable without re-registering" stayed true from a browser and was
+ * only answerable with curl. Both are live-mode only, like the other
+ * two writes.
+ *
+ * EVERY VALUE IN THE TABLE IS A STORED ONE. "Last import" is
+ * `last_ingest_at` / `last_ingest_status`, not a health probe, and a
+ * just-registered connection correctly reads "never" rather than being
+ * drawn as broken. TWO controls do reach the target account -- Test and
+ * Import now -- and the difference is where their answers go. An import
+ * writes `last_ingest_*`, so the table absorbs it. A test writes
+ * nothing: its verdict lives in component state and is printed under the
+ * row it was run on, because a live probe must never be mistaken for a
+ * stored outcome.
+ *
+ * A ROW CAN BE STALE, and soft delete makes that ordinary. Two tabs,
+ * one removes a connection, the other still shows it: every route on
+ * this resource then answers 404, so each handler re-reads the list
+ * instead of reporting a fault. The edit and remove dialogs are
+ * addressed by ID and resolved out of the loaded rows, so a re-read that
+ * no longer contains the row closes the dialog by itself.
  */
-
-const MODE_LABEL: Record<string, string> = {
-  self: 'Deploy account',
-  assume_role: 'AssumeRole',
-  profile: 'Local profile',
-  secret: 'Service principal',
-};
 
 /**
  * `running` is NOT a failure. `ingest_runs.status` is
@@ -86,17 +105,37 @@ function runStatusClass(status: string): string {
   return 'text-destructive';
 }
 
-const MODE_HINT: Record<string, string> = {
-  self: 'Read with the application’s own execution role. Nothing to configure.',
-  assume_role: 'Short-lived credentials via STS, using an ExternalId. Needs a role in that account.',
-  profile: 'A named CLI profile. Local development only.',
-  secret: 'Client secret held in a secrets manager and read at call time.',
-};
+/**
+ * The label and the hint come from `lib/aws-onboarding.ts`, which is
+ * also what the add and edit dialogs' mode picker is built from. They
+ * were duplicated here, and the copies had already drifted -- this one
+ * described `profile` as "local development only" while the dialog that
+ * creates one has to explain that the scheduled import cannot use it at
+ * all.
+ */
+function modeLabel(mode: string): string {
+  return CREDENTIAL_MODE_LABEL[mode as StoredCredentialMode] ?? mode;
+}
+
+function modeHint(mode: string): string {
+  return CREDENTIAL_MODE_HINT[mode as StoredCredentialMode] ?? 'Unrecognised credential mode.';
+}
+
+/** A column name from the API's `changed` array, as the form labels it. */
+function fieldLabel(column: string): string {
+  return FIELD_LABEL[column as keyof ConnectionPatchBody] ?? column;
+}
 
 export function AdminConnectionsView() {
   const { toast } = useToast();
   const [reloadKey, setReloadKey] = useState(0);
   const [adding, setAdding] = useState(false);
+  /* Both dialogs hold an ID, not a row. The row is resolved out of the
+     loaded list on every render, so a reload that no longer contains it
+     -- because it was removed here, or in another tab -- unmounts the
+     dialog instead of leaving it editing a connection that is gone. */
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [importingId, setImportingId] = useState<string | null>(null);
@@ -109,6 +148,8 @@ export function AdminConnectionsView() {
   const runsFailed = ready && state.data.runsFailed;
   const latestRun = latestRunByAccount(runs);
   const reload = (): void => setReloadKey((n) => n + 1);
+  const editing = connections.find((c) => c.id === editingId) ?? null;
+  const removing = connections.find((c) => c.id === removingId) ?? null;
 
   /**
    * A 403 here is the access control WORKING -- /admin/* is
@@ -126,6 +167,26 @@ export function AdminConnectionsView() {
         }
       : null;
 
+  /**
+   * One place for "the row on screen is no longer there".
+   *
+   * Every route on this resource answers 404 when the id does not match
+   * a live row, which soft delete makes a normal thing rather than a
+   * fault: another tab removed it, or this tab has been open since
+   * before someone else did. Re-reading is the whole fix -- reporting
+   * "could not run the test" would be blaming the test for a row that
+   * does not exist.
+   */
+  function stale(): void {
+    toast({
+      tone: 'warning',
+      title: 'That connection no longer exists',
+      description:
+        'It was removed somewhere else, so nothing was changed. The list has been re-read.',
+    });
+    reload();
+  }
+
   function runTest(row: ConnectionRow): void {
     setTestingId(row.id);
     testConnection(row.id)
@@ -140,6 +201,10 @@ export function AdminConnectionsView() {
         });
       })
       .catch((cause: unknown) => {
+        if (isMissingConnection(cause)) {
+          stale();
+          return;
+        }
         const message = cause instanceof Error ? cause.message : String(cause);
         toast({ tone: 'warning', title: 'Could not run the test', description: message });
       })
@@ -162,6 +227,10 @@ export function AdminConnectionsView() {
         reload();
       })
       .catch((cause: unknown) => {
+        if (isMissingConnection(cause)) {
+          stale();
+          return;
+        }
         const message = cause instanceof Error ? cause.message : String(cause);
         toast({
           tone: 'warning',
@@ -187,6 +256,10 @@ export function AdminConnectionsView() {
         reload();
       })
       .catch((cause: unknown) => {
+        if (isMissingConnection(cause)) {
+          stale();
+          return;
+        }
         const message = cause instanceof Error ? cause.message : String(cause);
         toast({ tone: 'warning', title: 'Could not change that', description: message });
       })
@@ -285,12 +358,23 @@ export function AdminConnectionsView() {
                       </TableCell>
                       <TableCell className="text-sm uppercase">{row.provider}</TableCell>
                       <TableCell>
-                        <Badge
-                          variant="outline"
-                          title={MODE_HINT[row.credentialMode] ?? 'Unrecognised credential mode.'}
-                        >
-                          {MODE_LABEL[row.credentialMode] ?? row.credentialMode}
+                        <Badge variant="outline" title={modeHint(row.credentialMode)}>
+                          {modeLabel(row.credentialMode)}
                         </Badge>
+                        {row.credentialMode === 'profile' && (
+                          /* Not decoration. A profile connection cannot
+                             be read by anything that runs server-side,
+                             which is every path that reaches it from
+                             here and the 06:00 UTC schedule as well, so
+                             the row needs to carry that rather than
+                             looking like any other connection that
+                             happens to keep failing. */
+                          <span className="mt-1 block text-[10px] text-warning">
+                            Local only — the scheduled import runs in a Lambda,
+                            which has no AWS CLI profiles. Test and Import now run wherever
+                            the API runs, never in this browser.
+                          </span>
+                        )}
                         {row.roleArn && (
                           <span className="mt-1 block break-all font-mono text-[10px] text-muted-foreground">
                             {row.roleArn}
@@ -351,7 +435,17 @@ export function AdminConnectionsView() {
                                 onClick={() => runImport(row)}
                                 title={
                                   row.enabled
-                                    ? 'Fetch the last 7 days from this account now'
+                                    ? /* EIGHT dates, not seven.
+                                         `default_window(7)` is
+                                         [today-7, today+1) -- the seven
+                                         days before today AND today,
+                                         because AWS restates recent cost
+                                         and today is re-fetched every
+                                         run. The tooltip said "the last
+                                         7 days", which is a different
+                                         window from the one the button
+                                         asks for. */
+                                      'Fetch today and the 7 days before it from this account now'
                                     : 'Disabled connections are skipped by imports'
                                 }
                               >
@@ -364,9 +458,29 @@ export function AdminConnectionsView() {
                                 size="sm"
                                 disabled={testingId === row.id}
                                 onClick={() => runTest(row)}
-                                title="Assume the role and make one Cost Explorer call now"
+                                title={
+                                  /* AssumeRole is a stage the probe runs
+                                     only for an assume_role row --
+                                     `probe.py` goes straight to the cost
+                                     call for `self` and `profile`. The
+                                     tooltip described work that does not
+                                     happen on two of the four modes. */
+                                  row.credentialMode === 'assume_role'
+                                    ? 'Assume the role and make one Cost Explorer call now'
+                                    : "Resolve this connection's credentials and make one Cost Explorer call now"
+                                }
                               >
                                 {testingId === row.id ? 'Testing…' : 'Test'}
+                              </Button>
+                            )}
+                            {CONNECTION_CAPABILITIES.canEdit && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setEditingId(row.id)}
+                                title="Correct the name, credential mode, role ARN or ExternalId"
+                              >
+                                Edit
                               </Button>
                             )}
                             <Button
@@ -377,6 +491,17 @@ export function AdminConnectionsView() {
                             >
                               {busyId === row.id ? '…' : row.enabled ? 'Disable' : 'Enable'}
                             </Button>
+                            {CONNECTION_CAPABILITIES.canDelete && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:bg-destructive/10"
+                                onClick={() => setRemovingId(row.id)}
+                                title="Stop importing from this account. Cost data already imported is kept."
+                              >
+                                Remove
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       )}
@@ -441,7 +566,13 @@ export function AdminConnectionsView() {
                   <TableHead>Started</TableHead>
                   <TableHead>Account</TableHead>
                   <TableHead>Source</TableHead>
-                  <TableHead>Window</TableHead>
+                  {/* `default_window` returns an EXCLUSIVE end --
+                      `today + 1` -- and the runner stores it verbatim,
+                      so a run made today prints an end date of tomorrow.
+                      The header says so rather than letting the column
+                      read as an inclusive range over a day that has no
+                      data in it. */}
+                  <TableHead>Window (end exclusive)</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Rows</TableHead>
                 </TableRow>
@@ -487,6 +618,56 @@ export function AdminConnectionsView() {
           existing={connections}
           onClose={() => setAdding(false)}
           onRegistered={reload}
+        />
+      )}
+
+      {editing && (
+        <ConnectionEditDialog
+          connection={editing}
+          onClose={() => setEditingId(null)}
+          onSaved={(changed) => {
+            setEditingId(null);
+            toast({
+              tone: 'success',
+              title: `${editing.displayName} updated`,
+              // The field list comes from the API's own `changed`
+              // array -- the server's account of what it wrote, not the
+              // form's account of what it sent. Only the spelling is
+              // ours: `display_name` is a column name, "Name" is what
+              // the field is called on screen two inches above.
+              description:
+                changed.length > 0
+                  ? `Changed: ${changed.map(fieldLabel).join(', ')}. Nothing else was touched.`
+                  : 'Nothing changed.',
+            });
+            reload();
+          }}
+          onVanished={() => {
+            setEditingId(null);
+            stale();
+          }}
+        />
+      )}
+
+      {removing && (
+        <ConnectionDeleteDialog
+          connection={removing}
+          onClose={() => setRemovingId(null)}
+          onDeleted={(costDataKept) => {
+            setRemovingId(null);
+            toast({
+              tone: 'success',
+              title: `${removing.displayName} will no longer be imported`,
+              description: costDataKept
+                ? 'Cost data already imported is kept — it is keyed by account id, not by connection. Registering the account again resumes importing.'
+                : 'The connection was removed.',
+            });
+            reload();
+          }}
+          onVanished={() => {
+            setRemovingId(null);
+            stale();
+          }}
         />
       )}
     </div>
