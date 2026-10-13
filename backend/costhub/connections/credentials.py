@@ -41,6 +41,12 @@ class Connection:
     external_id: str | None = None
     profile_name: str | None = None
     secret_arn: str | None = None
+    # Carried so a caller can refuse to act on a disabled connection.
+    # `store.enabled()` filters for the scheduled path, but anything that
+    # fetches ONE connection by id gets it regardless -- and an
+    # on-demand import then spent Cost Explorer calls and wrote rows for
+    # an account the operator had deliberately switched off.
+    enabled: bool = True
 
     @classmethod
     def from_row(cls, row: dict) -> "Connection":

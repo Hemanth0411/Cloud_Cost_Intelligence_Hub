@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
+from psycopg.errors import IntegrityError
 from pydantic import BaseModel, Field
 
 from costhub.api.deps import SuperAdmin
@@ -54,7 +55,11 @@ class ConnectionPatch(BaseModel):
     either orphans the history rather than editing anything.
     """
 
-    display_name: str | None = None
+    # NOT nullable, because the columns are NOT NULL. `null` here used
+    # to reach Postgres and come back as a bare 500 through the generic
+    # handler, with no indication of which constraint failed. A 422 from
+    # pydantic names the field.
+    display_name: str | None = Field(None, min_length=1)
     credential_mode: Literal["self", "assume_role", "profile", "secret"] | None = None
     role_arn: str | None = None
     external_id: str | None = None
@@ -110,7 +115,8 @@ def create_connection(who: SuperAdmin, body: ConnectionIn) -> dict:
 def set_connection_enabled(
     who: SuperAdmin, connection_id: str, value: bool = True
 ) -> dict:
-    store.set_enabled(actor=who.email, connection_id=connection_id, value=value)
+    if not store.set_enabled(actor=who.email, connection_id=connection_id, value=value):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such connection")
     return {"id": connection_id, "enabled": value}
 
 
@@ -154,6 +160,20 @@ def import_now(
     if conn is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such connection")
 
+    # BEFORE spending any Cost Explorer calls. `store.get` filters on
+    # deleted_at only, and `runner.ingest` skips `store.enabled()`
+    # entirely when given an explicit connection list -- so without this
+    # a disabled account was imported, billed for, and stamped
+    # `last_ingest_status='success'` while the screen drew it greyed out
+    # as disabled. The "disabled" branch further down was unreachable.
+    if not conn.enabled:
+        return {
+            "ok": False,
+            "rows": 0,
+            "window": None,
+            "detail": "This connection is disabled, so nothing was imported. Enable it first.",
+        }
+
     start, end = default_window(days)
     results = runner.ingest(
         source_factory=source_for,
@@ -163,17 +183,10 @@ def import_now(
         connections=[conn],
     )
 
-    # `ingest` returns a list because it normally loops; one connection in
-    # means one result out, and an empty list means the connection was
-    # disabled and skipped -- which must not read as "imported nothing".
-    if not results:
-        return {
-            "ok": False,
-            "rows": 0,
-            "window": [start.isoformat(), end.isoformat()],
-            "detail": "This connection is disabled, so nothing was imported. Enable it first.",
-        }
-
+    # One connection in, one result out. The guard above is what handles
+    # the disabled case; this used to be a second attempt at it that
+    # could never run, because `ingest` only returns an empty list when
+    # it had to consult `store.enabled()` itself.
     result = results[0]
     with connect() as db, db.cursor() as cur:
         audit_log(
@@ -219,7 +232,19 @@ def update_connection(who: SuperAdmin, connection_id: str, body: ConnectionPatch
     if not changes:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "nothing to change")
 
-    before = edits.update(actor=who.email, connection_id=connection_id, changes=changes)
+    # The schema has a CHECK that pydantic cannot express: an
+    # assume_role row must keep a role_arn. Clearing it -- the obvious
+    # first half of "retype the ARN" -- violated it and surfaced as an
+    # unhandled 500. Say which rule was broken instead.
+    try:
+        before = edits.update(actor=who.email, connection_id=connection_id, changes=changes)
+    except IntegrityError as exc:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "That change is not allowed: an AssumeRole connection must keep a role ARN, "
+            "and display name and credential mode cannot be empty. "
+            f"({type(exc).__name__})",
+        ) from exc
     if before is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such connection")
 

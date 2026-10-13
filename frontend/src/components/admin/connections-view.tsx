@@ -298,8 +298,18 @@ export function AdminConnectionsView() {
                         )}
                       </TableCell>
                       <TableCell className="text-xs">
-                        {row.externalId === 'set' ? (
-                          <Badge variant="outline">set</Badge>
+                        {row.externalId ? (
+                          /* The real value, shown in full and selectable.
+                             It has to be re-sendable: the other account's
+                             trust policy must contain this exact string,
+                             and getting it wrong is an AccessDenied that
+                             looks like their mistake. This cell rendered
+                             "—" for a while after the API stopped
+                             redacting, because it still tested for the
+                             old literal 'set'. */
+                          <code className="select-all break-all font-mono text-[11px]">
+                            {row.externalId}
+                          </code>
                         ) : (
                           <span className="text-muted-foreground">{ABSENT}</span>
                         )}

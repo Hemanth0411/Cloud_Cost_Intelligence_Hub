@@ -37,7 +37,15 @@ import type { ConnectionRow, IngestRunRow } from '@/lib/services/connection-serv
 import type { MockAccount } from '@/types/domain';
 
 /** Deterministic, so a demo looks the same every time it is opened. */
-const EXTERNAL_ID_SET: ConnectionRow['externalId'] = 'set';
+/* Plausible UUIDs, deterministic so mock renders identically every
+   time. The API returns the real ExternalId now, so mock must model a
+   VALUE -- it used to hardcode the literal 'set', which meant mock was
+   the only mode where this column rendered as intended. */
+const MOCK_EXTERNAL_IDS = [
+  '7c1f2a84-5b03-4e19-9a62-0d8e4f1c3b57',
+  'b4e9d2c1-8a77-4f30-91de-5c6a2b70e84f',
+  '2f8a6b05-3c41-49ad-8e72-91b4d0f5a6c3',
+] as const;
 
 /** Providers `ingest/sources.py` has an adapter for. See the note above. */
 const READABLE_PROVIDERS = new Set(['aws', 'azure']);
@@ -85,7 +93,10 @@ export function mockConnectionRows(): ConnectionRow[] {
         displayName: account.name,
         credentialMode: mode,
         roleArn: mode === 'assume_role' ? `arn:aws:iam::${awsId}:role/CostHubCostReader` : null,
-        externalId: mode === 'assume_role' ? EXTERNAL_ID_SET : null,
+        externalId:
+          mode === 'assume_role'
+            ? MOCK_EXTERNAL_IDS[Math.max(awsIndex, 0) % MOCK_EXTERNAL_IDS.length]
+            : null,
         profileName: null,
         secretArn:
           mode === 'secret'

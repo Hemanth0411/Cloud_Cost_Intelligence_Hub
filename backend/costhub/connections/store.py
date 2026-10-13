@@ -178,8 +178,16 @@ def rename(
 # crossed the 300-line limit (NFR-18), along the boundary that was
 # already there rather than at a convenient line number.
 
-def set_enabled(*, actor: str, connection_id: str, value: bool) -> None:
-    """Disable without losing history (FR-13)."""
+def set_enabled(*, actor: str, connection_id: str, value: bool) -> bool:
+    """Disable without losing history (FR-13).
+
+    Returns False when no live row matched, so the route can answer 404.
+    It used to return None either way and the route reported success
+    unconditionally -- which soft delete made easy to hit: two tabs open,
+    one deletes, the other clicks Enable and is told it worked while
+    nothing happened and no audit row was written. Every other route on
+    this resource 404s in that situation.
+    """
     with connect() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -193,7 +201,7 @@ def set_enabled(*, actor: str, connection_id: str, value: bool) -> None:
         )
         row = cur.fetchone()
         if row is None:
-            return
+            return False
         log(
             cur,
             actor=actor,
@@ -202,6 +210,7 @@ def set_enabled(*, actor: str, connection_id: str, value: bool) -> None:
             entity_id=connection_id,
             after=dict(row),
         )
+        return True
 
 
 def record_ingest(*, connection_id: str, status: str) -> None:

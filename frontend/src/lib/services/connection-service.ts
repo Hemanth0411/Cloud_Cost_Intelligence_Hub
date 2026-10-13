@@ -39,7 +39,15 @@ import { mockConnectionRows, mockIngestRunRows } from '@/lib/mock/connection-row
 /**
  * A row of `cloud_connections`, as the browser is allowed to see it.
  *
- * `externalId` is deliberately typed as the redacted marker rather than
+ * `externalId` is the REAL value now, not a marker. The API stopped
+ * redacting it: an ExternalId is not a password, it is the value the
+ * other account's trust policy must contain, so it has to be readable
+ * and re-sendable. This type said `'set' | null` for a while after the
+ * API changed, and the column rendered "—" for every connection that
+ * had one -- directly under copy promising it was shown in full.
+ * `getRows` is a bare cast, so tsc could not catch the lie.
+ *
+ * Previously: typed as the redacted marker rather than
  * a value: `'set' | null` makes it impossible to write a component that
  * tries to print the secret, because there is nothing to print.
  */
@@ -52,7 +60,7 @@ export interface ConnectionRow {
   credentialMode: string;
   roleArn: string | null;
   /** `'set'` or null. The API never returns the value. */
-  externalId: 'set' | null;
+  externalId: string | null;
   profileName: string | null;
   secretArn: string | null;
   enabled: boolean;
