@@ -292,15 +292,25 @@ export function AdminConnectionsView() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <KeyRound className="h-4 w-4" aria-hidden />
-            No credential is ever stored here
+            No credential is stored in this database
           </CardTitle>
           <CardDescription>
-            An AssumeRole connection holds a role ARN and an ExternalId &mdash; never a key.
-            Both are shown in full: the ExternalId is not a password, it is the value the other
-            account&rsquo;s trust policy must contain, so you need to be able to read it back and
-            re-send it. Adding an account needs no infrastructure change on this side; the
-            permission to assume a <code className="font-mono text-xs">CostHubCostReader</code>{' '}
-            role is already granted for any AWS account.
+            An AssumeRole connection holds a role ARN and an ExternalId &mdash; no key exists to
+            store. Both are shown in full: the ExternalId is not a password, it is the value the
+            other account&rsquo;s trust policy must contain, so you need to be able to read it
+            back and re-send it. Adding an account that way needs no infrastructure change on
+            this side; the permission to assume a{' '}
+            <code className="font-mono text-xs">CostHubCostReader</code> role is already granted
+            for any AWS account, and it is the mode to prefer.
+            <br />
+            <br />
+            An <strong className="font-medium">access key</strong> connection is the fallback for
+            when nobody in the target account will create that role. The key you type goes to AWS
+            Secrets Manager and this table stores only the ARN &mdash; the{' '}
+            <code className="font-mono text-xs">secret_arn</code> column, which is a pointer and
+            not a credential. The key itself is never written to Postgres, never put in the audit
+            log, and never returned by any endpoint, so CostHub shows it exactly once: while you
+            are typing it. Removing the connection deletes the secret.
             {!CONNECTION_CAPABILITIES.canToggleEnabled &&
               ' The rows below are sample data shaped like that response — mock mode calls no API.'}
           </CardDescription>

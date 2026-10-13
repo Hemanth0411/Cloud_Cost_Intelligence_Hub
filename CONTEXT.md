@@ -170,8 +170,20 @@ and will silently rot if ignored:
     That works from this laptop and nowhere else: the deployed API and
     the 06:00 ingest answer "could not load profile 'default'". So that
     account's data moves only when someone runs the ingest by hand here,
-    and it holds 1,274 of the 1,301 cost rows. The real fix is a
+    and it holds 1,274 of the 1,301 cost rows. The best fix is a
     `CostHubCostReader` role in that account and `assume_role`.
+
+    **There are now two fixes, not one.** `credential_mode=secret` is
+    implemented for AWS: four fields in the connect dialog (account id,
+    name, access key id, secret access key), the key goes to Secrets
+    Manager and the row stores only the ARN. It runs on the schedule,
+    which `profile` never will. Prefer the role where you can get one —
+    a static key is long-lived and somebody has to look after it — but
+    this is the mode for an account where nobody will create a role, and
+    it is how the office account's data got in by hand in the first
+    place. See `backend/costhub/connections/key_store.py`, and
+    `terraform/iam.tf` (`ManageConnectionCredentials`) for the one
+    prefix the Lambda may write secrets under.
 
 ## The anomaly detector — what "0 findings" means
 
@@ -263,8 +275,12 @@ Ordered.
 5a. **Decide what the detector should do about sparse series** (limit 1
    above). It is the difference between a quiet feed and a blind one,
    and it needs an owner's answer, not a threshold nudge.
-5b. **Give the office account a real role** (trap 17), or its data goes
-   stale the day nobody runs the ingest from this laptop.
+5b. **Give the office account credentials the Lambda can use** (trap 17),
+   or its data goes stale the day nobody runs the ingest from this
+   laptop. Either a `CostHubCostReader` role and `assume_role` — better,
+   nothing long-lived — or, if nobody will create one, switch it to
+   `secret` and enter an access key in Edit. Both now work from the
+   browser; `profile` never will.
 5c. **The `ingest`, `anomaly` and `alerts` Lambdas run an older build
    than `api`** unless the deploy named them. Check `CodeSha256` on all
    four before assuming a fix is live in the scheduled jobs.

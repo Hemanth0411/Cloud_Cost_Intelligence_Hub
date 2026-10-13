@@ -254,17 +254,39 @@ The four modes, as enforced by the `CHECK` in `004_connections.sql`:
 | `self` | the deploy account itself | the Lambda's own execution role — nothing to configure |
 | `assume_role` | another AWS account | `sts:AssumeRole` with `role_arn` + `external_id`; a second `CHECK` enforces that `role_arn` is present |
 | `profile` | local development only | a named AWS CLI profile on the developer's machine |
-| `secret` | **Azure** | a service principal read from Secrets Manager via `secret_arn` |
+| `secret` | **AWS fallback, and Azure** | a long-lived credential read from Secrets Manager via `secret_arn`: an IAM access key for AWS, a service principal for Azure |
 
-`secret` exists because Azure has no cross-cloud equivalent of
-`AssumeRole`, so a long-lived client secret is unavoidable. Note that
-`credentials.py` dispatches on **provider** first: an AWS connection set
-to `secret` is rejected as an unsupported mode rather than silently
-trying the Azure path.
+`secret` exists for Azure because it has no cross-cloud equivalent of
+`AssumeRole`, so a long-lived client secret is unavoidable. **It is now
+available to AWS as well**, which is a change: `credentials.py` used to
+dispatch on provider and reject an AWS `secret` connection as an
+unsupported mode, and that left a real gap. Registering an account by
+role needs IAM access *in that account*; the ordinary case is somebody
+who already holds a key with Cost Explorer access and has nobody to
+create a role for them, and their only other option was `profile`,
+which cannot run in Lambda at all (see CONTEXT.md trap 17).
 
-**No secret is stored here** (FR-12). For `self` and `assume_role` there is
-nothing to store; for `secret` the column holds a Secrets Manager ARN,
-read at call time, never a value.
+`assume_role` remains the default and the recommended mode — it yields
+credentials that expire in an hour and stores nothing — and the connect
+dialog says so rather than presenting the two as equivalent.
+
+**No credential is stored in this database** (FR-12), and that still
+holds for all four modes. For `self` and `assume_role` there is nothing
+to store. For `secret` the column holds a Secrets Manager ARN, read at
+call time, never a value:
+
+* the AWS key is POSTed once and written to Secrets Manager by the API
+  (`connections/key_store.py`), under the deterministic name
+  `costhub/<env>/connections/<provider>-<account_id>`
+* it is never written to Postgres, never put in an audit row — the trail
+  records `secret_set: true`, the same treatment `external_id_set`
+  already had — and never returned by any endpoint, including a 422 body
+* `soft_delete` deletes the secret, forced rather than scheduled, so
+  re-registering the same account cannot collide with a name still
+  inside a recovery window. Only secrets under our own prefix are ever
+  deleted, which is what keeps an Azure service principal managed
+  elsewhere, and the database secret one path segment above, out of
+  reach of that call
 
 ---
 

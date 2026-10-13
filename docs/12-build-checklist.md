@@ -62,7 +62,7 @@ pass — in particular `test_no_grants_sees_nothing`.
 | | Item | Size | Req |
 |---|---|---|---|
 | [x] | `connections/store.py` — CRUD over `cloud_connections` | S | FR-11–13 |
-| [x] | `connections/credentials.py` — `AssumeRole` / `self` / profile → boto3 session | M | FR-12 |
+| [x] | `connections/credentials.py` — `AssumeRole` / `self` / profile / stored key → boto3 session | M | FR-12 |
 | [x] | `ingest/dev_seed.py` — generated rows, planted step/spike/creep | M | — |
 | [x] | `ingest/cost_explorer.py` — CE adapter, DAILY, grouped by SERVICE | M | FR-14 |
 | [x] | `ingest/runner.py` — per-connection loop, `ingest_runs` lineage, idempotent upsert | M | FR-15–17 |
@@ -133,7 +133,7 @@ the DFIQ RBAC audit.
 | [ ] | `AnomalyCard` + acknowledge | M | FR-29, FR-30 |
 | [ ] | `AlertRuleForm` + `AlertFeed` | L | FR-31–33 |
 | [ ] | Admin: Users, Grants, Connections, Audit | L | FR-1, FR-5, FR-39 |
-| [ ] | `ConnectionForm` — role ARN + external id, **no secret fields** | S | FR-12 |
+| [x] | `ConnectionForm` — role ARN + external id; access key fields for `secret` mode, write-only | S | FR-12 |
 | [ ] | Showcase fixtures + toggle + banner, default **off** | M | FR-40–45 |
 
 `FilterBar` and `EmptyState` are the demo's proof of RBAC — a restricted

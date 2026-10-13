@@ -263,9 +263,29 @@ The role in stemline:
 - is created by hand by whoever holds IAM there, and is deliberately outside
   our Terraform because we do not own that account
 
-**No long-lived credential exists anywhere**, and no secret ever passes
-through the frontend (FR-12). The alternative — an IAM user with an access
-key — is documented as a fallback only.
+**For an AssumeRole connection no long-lived credential exists anywhere**
+(FR-12), which is why it is the default and the recommended mode.
+
+The fallback is implemented rather than merely documented, because the role
+cannot always be had: registering an account needs IAM access in it, and the
+common case is somebody who already holds a read-only key and has nobody to
+create a role for them. Such a connection (`credential_mode = 'secret'`) does
+involve a long-lived credential, and these are the limits on it:
+
+- it is entered once, in the browser, and **POSTed once**. The API writes it
+  to Secrets Manager under `costhub/<env>/connections/<provider>-<account_id>`
+  and stores only the resulting ARN in `cloud_connections.secret_arn`
+- it is **never** written to Postgres, never put in an audit row (the trail
+  records `secret_set: true`), and **never returned by any endpoint** —
+  including the 422 body, which `api/main.py` redacts because pydantic
+  otherwise echoes the input back
+- the Lambda role's write grant is scoped to that one name prefix
+  (`terraform/iam.tf`, `ManageConnectionCredentials`), never `*`, and
+  deliberately does not reach the database secret one segment above it
+- removing the connection, or switching it to another credential mode,
+  **deletes the secret**. Only secrets under our own prefix are ever deleted,
+  so an Azure service principal managed elsewhere is left alone and the
+  response says so
 
 Each account also needs, by its root user: **"IAM User and Role Access to
 Billing Information"** enabled, and Cost Explorer switched on. Without the
