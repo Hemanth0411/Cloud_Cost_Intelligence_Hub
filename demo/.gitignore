@@ -12,8 +12,10 @@ tts/*.onnx
 tts/*.bin
 tts/*.log
 
-# The raw bed is an intermediate; bed.wav is the one the video uses.
+# Intermediates. bed.wav is the finished mix the video plays; vo.wav is
+# kept because regenerating it needs the 325 MB Kokoro model.
 public/audio/bed-raw.wav
+public/audio/mix-raw.wav
 
 # Screenshots are captured from a running dev server, not committed.
 public/shots/

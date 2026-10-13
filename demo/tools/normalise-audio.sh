@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Bring the synthesised bed to -14 LUFS integrated, -1.5 dBTP true peak.
+# Bring the finished audio to -14 LUFS integrated, -1.5 dBTP true peak.
+#
+# Takes the file to normalise as $1, defaulting to the narration mix
+# (public/audio/mix-raw.wav, written by tools/make-voice.py). Pass
+# public/audio/bed-raw.wav instead for a music-only cut.
 #
 # WHY THIS IS THREE STAGES. The raw bed is a quiet drone with sharp
 # pulses: integrated -27.7 LUFS but true peak only -6 dBTP. A linear
@@ -13,7 +17,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 FF=node_modules/ffmpeg-static/ffmpeg.exe
-IN=public/audio/bed-raw.wav
+IN=${1:-public/audio/mix-raw.wav}
 OUT=public/audio/bed.wav
 TARGET=-14
 

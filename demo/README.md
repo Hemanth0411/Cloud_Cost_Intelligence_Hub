@@ -89,11 +89,30 @@ The colours and faces are the app's own tokens, transcribed in
 
 ## Voiceover
 
-Silent, with on-screen text carrying every claim — the brief's fallback,
-taken deliberately: half the audience watches muted, so the text has to
-stand alone anyway, and a narrator reading it aloud adds a second place
-for a claim to drift. Kokoro-82M (Apache-2.0) is installed under
-`tts/` if someone wants to add one.
+Narrated with **Kokoro-82M** (Apache-2.0) on CPU, via the venv in
+`tts/`. One line per scene, in `src/data/narration.json` beside the
+scene timings.
+
+```bash
+tts/venv/Scripts/python tools/make-voice.py      # synthesise + duck + mix
+bash tools/normalise-audio.sh                    # -> -14 LUFS, -1.5 dBTP
+```
+
+`make-voice.py` measures every line against its scene window and
+**fails** if one overruns, rather than letting it be read over the next
+scene's first beat. Three lines did on the first pass and were shortened.
+It also ducks the bed 11 dB under the voice with 0.28s ramps, so the
+music neither fights the narration nor disappears between lines.
+
+The narration is held to the same rule as the captions: each line says
+what its scene shows and no more, including "mock data, not live spend"
+and "Google Cloud is not built yet". Someone who listens without reading
+is told the same truths. On-screen text still carries every claim on its
+own, because half the room will watch muted.
+
+Measured in the finished file: speech present in all ten scene windows
+at 1.6-2.7x the between-line level, 23.8s of speech across 64.8s,
+-14.5 LUFS integrated.
 
 ## What each scene claims
 

@@ -29,7 +29,9 @@ These are the app's own faces (`frontend/tailwind.config.ts`:
 | Asset | How | Licence |
 |---|---|---|
 | `public/audio/bed-raw.wav` | `tools/make-audio.py` — numpy sine drone, pulse, filtered-noise brush, one mark per scene cut | Ours. No third-party sample, loop or stem. |
-| `public/audio/bed.wav` | the above through `tools/normalise-audio.sh` | Ours |
+| `public/audio/vo.wav` | `tools/make-voice.py` — narration synthesised with **Kokoro-82M**, Apache-2.0, run locally on CPU | Apache-2.0 model, no attribution required in the output; the words are ours |
+| `public/audio/mix-raw.wav` | the bed ducked under the voice, summed | Ours |
+| `public/audio/bed.wav` | the mix through `tools/normalise-audio.sh` | Ours |
 
 **No Mixkit track was used, deliberately.** The brief suggested one;
 synthesising the bed was chosen instead because (a) it removes the
@@ -50,10 +52,9 @@ Measured output: **−14.1 LUFS integrated, −1.5 dBTP** (`ebur128`).
 | Remotion's bundled FFmpeg 7.1 (inside `@remotion/compositor-win32-x64-msvc`) | GPL + nonfree as configured, i.e. that binary cannot be redistributed | **This is what encoded `costhub.mp4`** (`encoder=Lavc61.19.100 libx264`). Encoding creates no obligation on the output; the binary stays in `node_modules/` and is gitignored. |
 | `ffmpeg-static` (ffmpeg 6.1.1) | **GPL-3.0-or-later** | Loudness normalisation and frame extraction only. Not redistributed. |
 | `puppeteer` | Apache-2.0 | Written for screenshot capture; **not used in the final render** (see README). |
-| `kokoro-onnx` + Kokoro-82M | Apache-2.0 | Voiceover was attempted; the shipped cut is silent-with-text (see README). |
+| `kokoro-onnx` and its chain | the npm/PyPI package declares no licence of its own; it pulls `phonemizer` and eSpeak NG, both **GPL-3.0**. The Kokoro-82M **model weights are Apache-2.0**. | Used to synthesise the narration that ships in the video. GPL applies to those tools, not to audio they help produce; nothing from that venv is redistributed (it is gitignored). |
 | numpy | `BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0` | Audio generation. |
 | soundfile | BSD-3-Clause, bundling libsndfile (**LGPL-2.1**) | Audio generation. |
-| `kokoro-onnx` and its chain | the package declares no licence; it pulls `phonemizer` and eSpeak NG, both **GPL-3.0** | Installed under `tts/`, gitignored, and NOT used in the shipped cut. |
 
 ### ⚠ Remotion licence — an owner decision, and it is already live
 
