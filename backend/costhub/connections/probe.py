@@ -35,18 +35,25 @@ import logging
 from dataclasses import dataclass
 from datetime import date, timedelta
 
-from botocore.exceptions import BotoCoreError, ClientError
+from botocore.exceptions import BotoCoreError, ClientError, ParamValidationError
 
 from costhub.connections.credentials import (
     Connection,
     CredentialError,
-    aws_session,
+    assume_role,
+    own_session,
 )
 
 log = logging.getLogger(__name__)
 
 CE_REGION = "us-east-1"
 DENIED = {"AccessDeniedException", "AccessDenied", "UnauthorizedException"}
+# The role name this deployment's own IAM policy lets it assume in ANY
+# account, at the root path (terraform/iam.tf,
+# "AssumeCostReaderRolesByName"). The same statement also admits ARNs
+# listed one by one in `data_source_accounts` in tfvars, which this
+# process cannot see -- hence "unless" in the message below.
+PERMITTED_ROLE = "CostHubCostReader"
 
 
 @dataclass(frozen=True)
@@ -69,7 +76,7 @@ class ProbeResult:
 
 
 def probe(conn: Connection) -> ProbeResult:
-    """Resolve credentials, then make one cheap Cost Explorer call.
+    """Resolve our credentials, assume the role, make one cheap cost call.
 
     Never raises for an expected failure: the caller is an API route
     whose job is to report the outcome, and a 500 would tell the operator
@@ -90,15 +97,45 @@ def probe(conn: Connection) -> ProbeResult:
             ),
         )
 
-    # ---- stage 1: can we become the role at all? ----------------------
+    # ---- stage 0: do WE have credentials at all? ----------------------
+    #
+    # Its own step, and deliberately outside the AssumeRole handler. A
+    # profile that does not exist on this machine raises ProfileNotFound,
+    # which is a BotoCoreError -- so when this shared a try block with
+    # the STS call it was reported as stage "assume_role", "Could not
+    # reach AWS STS", for a failure in which STS was never contacted and
+    # the other account's role had nothing to do with it.
     try:
-        session = aws_session(conn)
+        session = own_session(conn)
     except CredentialError as exc:
         return ProbeResult(ok=False, stage="credentials", detail=str(exc))
-    except ClientError as exc:
-        return ProbeResult(ok=False, stage="assume_role", detail=_describe_assume(conn, exc))
-    except BotoCoreError as exc:
-        return ProbeResult(ok=False, stage="assume_role", detail=f"Could not reach AWS STS: {exc}")
+
+    # ---- stage 1: can we become the role at all? ----------------------
+    if conn.credential_mode == "assume_role":
+        try:
+            session = assume_role(session, conn)
+        except CredentialError as exc:
+            return ProbeResult(ok=False, stage="credentials", detail=str(exc))
+        except ClientError as exc:
+            return ProbeResult(ok=False, stage="assume_role", detail=_describe_assume(conn, exc))
+        except ParamValidationError as exc:
+            # botocore refused to SEND it: a role ARN under 20 characters
+            # or an ExternalId under 2. It is a BotoCoreError, so it used
+            # to fall through to "Could not reach AWS STS" -- for a value
+            # stored on this side that never left the process.
+            return ProbeResult(
+                ok=False,
+                stage="credentials",
+                detail=(
+                    f"The role ARN {conn.role_arn!r} or the ExternalId stored on this "
+                    "connection is not valid, so nothing was sent to AWS and the "
+                    f"target account was not tested. ({str(exc).strip()})"
+                ),
+            )
+        except BotoCoreError as exc:
+            return ProbeResult(
+                ok=False, stage="assume_role", detail=f"Could not reach AWS STS: {exc}"
+            )
 
     # ---- stage 2: can that role read cost data? -----------------------
     #
@@ -149,19 +186,58 @@ def probe(conn: Connection) -> ProbeResult:
     )
 
 
+def _off_root_path(role_arn: str | None) -> bool:
+    """Is this a role ARN outside the by-name grant in our own policy?
+
+    Anything after `:role/` other than exactly the permitted name -- a
+    path (`role/costhub/CostHubCostReader`), a different name, or the
+    right name with stray whitespace pasted after it.
+    """
+    if not role_arn or ":role/" not in role_arn:
+        return False
+    return role_arn.split(":role/", 1)[1] != PERMITTED_ROLE
+
+
 def _describe_assume(conn: Connection, exc: ClientError) -> str:
     code = exc.response.get("Error", {}).get("Code", "")
     if code in DENIED:
+        # The root-path advice lives HERE. It used to sit in the
+        # ValidationError branch below, on the assumption that STS
+        # rejects a pathed ARN as malformed. It does not: such an ARN is
+        # perfectly valid, so STS evaluates it and answers AccessDenied
+        # -- and it is OUR policy doing the denying, because it grants
+        # exactly `role/CostHubCostReader`. The old message for that case
+        # sent the other administrator to fix a trust policy when the
+        # fault was the ARN stored on this side.
+        if _off_root_path(conn.role_arn):
+            # !r so a trailing space or newline is visible in the message.
+            return (
+                f"Could not assume {conn.role_arn!r}. This deployment is permitted to "
+                f"assume a role named exactly '{PERMITTED_ROLE}' at the root IAM path "
+                f"('...:role/{PERMITTED_ROLE}'), and the ARN stored here is not that "
+                "-- a role created under a path has the ARN "
+                f"'...:role/<path>/{PERMITTED_ROLE}'. Unless this exact ARN was added "
+                "to the deployment's own policy by hand, the denial comes from this "
+                "side, before their trust policy is ever consulted: correct the ARN "
+                "on this connection, or have the role recreated at the root path. "
+                "(If it was added, look at their trust policy and the ExternalId "
+                "instead.) AWS returns the same AccessDenied either way."
+            )
         return (
             f"Could not assume {conn.role_arn or 'the role'}. The role does not exist, "
             "its trust policy does not allow this account, or the ExternalId does not "
-            "match. This is fixable by their IAM administrator and does not need root."
+            "match. This is fixable by their IAM administrator and does not need root. "
+            f"The role must also sit at the root IAM path, named '{PERMITTED_ROLE}': "
+            "one created under a path has a different ARN and is denied identically."
         )
     if code in {"NoSuchEntity", "ValidationError", "InvalidParameterValue"}:
+        # Reached only for a string long enough to send that is not an
+        # ARN. (Shorter than 20 characters never gets this far: botocore
+        # rejects it client-side, handled in `probe`.) A well-formed ARN
+        # never lands here, whatever its path.
         return (
-            f"AWS rejected the role ARN {conn.role_arn!r}. Check it is at the root IAM "
-            "path -- a role created under a path has the ARN "
-            "'...:role/<path>/CostHubCostReader', which is not what is permitted."
+            f"AWS rejected {conn.role_arn!r} as not a valid role ARN. It should look "
+            f"like 'arn:aws:iam::<12-digit account id>:role/{PERMITTED_ROLE}'."
         )
     return f"AssumeRole failed ({code or 'unknown'}): {exc}"
 

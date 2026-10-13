@@ -26,7 +26,6 @@ from costhub.ingest.ports import CostRow
 
 CE_REGION = "us-east-1"
 METRICS = ["UnblendedCost", "AmortizedCost"]
-MAX_MONTHS_PER_CALL = 1
 
 
 class CostExplorerDenied(AccessNotGranted):
@@ -197,6 +196,11 @@ def _monthly_windows(start: date, end: date) -> Iterator[tuple[date, date]]:
     Cost Explorer tolerates long ranges at DAILY granularity but the
     responses get unwieldy and paginate heavily. Month chunks also make a
     14-month backfill a predictable ~14 calls per account.
+
+    One chunk is at least one Cost Explorer call, and the count is the
+    number of calendar months the range TOUCHES, not its length: a
+    2-day range across a month end is two calls. See `default_window`
+    before reasoning about how many calls an incremental run makes.
     """
     cursor = start
     while cursor < end:
@@ -208,11 +212,22 @@ def _monthly_windows(start: date, end: date) -> Iterator[tuple[date, date]]:
         cursor = nxt
 
 
-def default_window(days: int = 7) -> tuple[date, date]:
+def default_window(days: int = 7, today: date | None = None) -> tuple[date, date]:
     """The incremental window: trailing `days` plus today.
 
     Recent days are re-fetched on every run because AWS restates cost as it
     finalises. The fact table's natural key makes that idempotent.
+
+    The range is [today - days, today + 1): `days` + 1 dates, today
+    included. So `days=31` is 32 dates, which no month can hold -- it
+    always touches two calendar months, and three whenever the month
+    before this one is short enough to be spanned whole: the 1st of
+    May, July, October and December, and the 1st-3rd of March (1st-2nd
+    in a leap year). Even `days=7` is two months on the 1st-7th.
+    `_monthly_windows` makes at least one call per month touched (more
+    if a month paginates), so "a week is one call" is false for a
+    quarter of every month. `tests/test_stale_runs.py` pins these
+    counts, through this function -- which is what `today` is for.
     """
-    today = date.today()
+    today = today or date.today()
     return today - timedelta(days=days), today + timedelta(days=1)

@@ -20,6 +20,7 @@ from costhub.config import settings
 from costhub.connections import store
 from costhub.ingest import report, runner
 from costhub.ingest.cost_explorer import default_window
+from costhub.ingest.stale import reap_stale_runs
 from costhub.ingest.sources import dev_seed_for, source_for
 from costhub.ingest.dev_seed import planted_summary
 from costhub.cli_jobs import cmd_alerts, cmd_detect, cmd_status
@@ -92,6 +93,7 @@ def cmd_rename_connection(args: argparse.Namespace) -> int:
 
 
 def cmd_list_connections(_: argparse.Namespace) -> int:
+    reap_stale_runs()  # `last=` below is only as true as the last run to report
     rows = store.list_connections()
     if not rows:
         print("no connections registered")

@@ -55,8 +55,29 @@ def upsert(
     """Register or update a cloud account.
 
     Idempotent on (provider, account_id) so re-running the seed is safe.
+
+    Three outcomes, audited under three names: `connection.create` for
+    a new row, `connection.update` for a live one, `connection.revive`
+    for a soft-deleted one coming back.
     """
     with connect() as conn, conn.cursor() as cur:
+        # What is in the slot NOW, read in this transaction. RETURNING
+        # cannot say: it sees the row as the upsert left it, with
+        # deleted_at already cleared -- which is how a revived row came
+        # to be logged as an ordinary `connection.update`, leaving
+        # nothing in the trail to say a deleted connection had returned.
+        cur.execute(
+            """
+            SELECT deleted_at, deleted_by, last_ingest_at, last_ingest_status
+              FROM cloud_connections
+             WHERE provider = %(p)s AND account_id = %(a)s
+             FOR UPDATE
+            """,
+            {"p": provider, "a": account_id},
+        )
+        prior = cur.fetchone()
+        revived = prior is not None and prior["deleted_at"] is not None
+
         cur.execute(
             """
             INSERT INTO cloud_connections
@@ -80,6 +101,16 @@ def upsert(
                -- success, the row stayed out of `enabled()`, and nothing
                -- ever imported. Enabled is reset too, since `soft_delete`
                -- turns it off.
+               -- A revived row also forgets its last import. To the
+               -- person registering it this is a new connection; keeping
+               -- the columns showed "Last import: failed" from months ago
+               -- on something that had never been run. Only when
+               -- reviving: an ordinary update keeps its real history.
+               -- (cloud_connections.* is the row BEFORE this update.)
+               last_ingest_at     = CASE WHEN cloud_connections.deleted_at IS NULL
+                                         THEN cloud_connections.last_ingest_at END,
+               last_ingest_status = CASE WHEN cloud_connections.deleted_at IS NULL
+                                         THEN cloud_connections.last_ingest_status END,
                deleted_at      = NULL,
                deleted_by      = NULL,
                enabled         = true,
@@ -96,12 +127,46 @@ def upsert(
         )
         row = cur.fetchone()
         assert row is not None
+        if revived:
+            # Close anything this row's previous life left `running`, in
+            # the same transaction. Otherwise the reaper finds it later,
+            # sees a connection with no last import, and stamps the
+            # revived row `failed` -- the inherited lie again, arriving
+            # fifteen minutes late.
+            cur.execute(
+                """
+                UPDATE ingest_runs
+                   SET status = 'failed', rows_written = 0, finished_at = now(),
+                       error = 'Did not finish before this connection was removed.',
+                       updated_at = now(), updated_by = %(actor)s,
+                       revision = revision + 1
+                 WHERE connection_id = %(id)s AND status = 'running'
+                """,
+                {"id": row["id"], "actor": actor},
+            )
+            action = "connection.revive"
+        else:
+            # `revision` rather than `prior is None`: two first-time
+            # registrations racing both see no prior row, and only one
+            # of them inserts.
+            action = "connection.create" if row["revision"] == 1 else "connection.update"
         log(
             cur,
             actor=actor,
-            action="connection.create" if row["revision"] == 1 else "connection.update",
+            action=action,
             entity_type="cloud_connection",
             entity_id=row["id"],
+            # What the revive discarded, so the trail still holds it.
+            before=(
+                {
+                    "deleted_at": prior["deleted_at"],
+                    "deleted_by": prior["deleted_by"],
+                    "last_ingest_at": prior["last_ingest_at"],
+                    "last_ingest_status": prior["last_ingest_status"],
+                }
+                if revived and prior is not None
+                else None
+            ),
             after={
                 "provider": provider,
                 "account_id": account_id,

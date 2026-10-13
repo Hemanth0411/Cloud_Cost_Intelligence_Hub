@@ -2,7 +2,8 @@
 
 One `ingest_runs` row per connection per window, written *before* fetching
 so a crash leaves a visibly stuck `running` row rather than silently
-nothing. A failure on one connection never aborts the others.
+nothing -- and `stale.reap_stale_runs` later closes it, since a killed
+process cannot. A failure on one connection never aborts the others.
 
 Writes are idempotent: AWS restates cost as it finalises, so recent days
 are re-fetched on every run and land via ON CONFLICT DO UPDATE against the
@@ -20,6 +21,7 @@ from costhub.connections.credentials import Connection, CredentialError
 from costhub.db import connect
 from costhub.ingest.errors import ExpectedIngestError
 from costhub.ingest.ports import CostRow
+from costhub.ingest.stale import reap_stale_runs
 
 log = logging.getLogger(__name__)
 
@@ -95,6 +97,7 @@ def ingest(
     `.fetch(account_id=, start=, end=)` -- the CostSource port. That is the
     seam that makes mock, Cost Explorer and Azure interchangeable.
     """
+    reap_stale_runs()
     targets = list(connections if connections is not None else store.enabled())
     if not targets:
         log.warning("no enabled connections; nothing to ingest")

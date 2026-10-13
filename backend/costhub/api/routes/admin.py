@@ -148,6 +148,11 @@ def audit(
 
 @router.get("/ingest-runs", summary="Ingest history and failures")
 def ingest_runs(_: SuperAdmin, limit: Annotated[int, Query(ge=1, le=200)] = 50) -> dict:
+    # A run whose process was killed cannot close its own row; without
+    # this the list showed it as `running` until the next ingest.
+    from costhub.ingest.stale import reap_stale_runs
+
+    reap_stale_runs()
     rows = fetch_all(
         """
         SELECT id, source, provider, account_id, period_start, period_end,

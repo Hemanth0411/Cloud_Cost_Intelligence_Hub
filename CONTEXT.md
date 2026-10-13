@@ -50,12 +50,12 @@ changed mid-project when an apply replaced a resource. Always
 | Area | State |
 |---|---|
 | Cognito email-OTP sign-in | **live**, proven end to end; the managed login page is branded from `branding/` — see its README |
-| Backend API (all endpoints) | **live**, 140 tests passing |
+| Backend API (all endpoints) | **live**, 207 tests passing |
 | Database + migrations | **live** (RDS) |
 | `/admin/users`, `/admin/audit` | **live data** |
 | Cost screens (dashboard, accounts, services, compare) | see `NEXT_PUBLIC_USE_MOCK` |
 | `/insights` | **has no backend endpoint at all.** Prose generated client-side. Cannot be real without Bedrock (TODO-18) |
-| `/anomalies` | endpoint exists; the MAD detector needs **≥14 days** of history (`min_history=14`, `window=28`) |
+| `/anomalies` | **live and honestly empty.** The detector ran on 105 days of real data (2026-10-13): 30 series, **0 findings**, and that is a true negative -- see "The anomaly detector" below before concluding it is broken or tuning it |
 | Azure adapter | written, unit-tested against a recorded response, **never spoken to Azure** |
 | `./do.sh teardown` | **never run.** Needs `pg_dump`, which is not installed |
 
@@ -154,6 +154,64 @@ and will silently rot if ignored:
     override) discarded. That is expected, not a bug. `?mock=1` on any URL
     restores mock mode.
 
+16. **This checkout is shared by several sessions at once, and that has
+    already bitten.** On 2026-10-13 one session committed
+    `routes/connections.py` while another had uncommitted edits in it:
+    the commit swept those edits in, so `main` and `dev` imported a
+    module (`ingest/stale.py`) that existed only on this disk -- a clean
+    checkout could not have started the API. The Lambda was also built
+    from the working tree with the other session's half-finished code in
+    it. Two rules follow. Before committing a file, `git diff` it and
+    check every hunk is yours. And build what you deploy from a clean
+    tree of a commit (`git worktree add --detach <dir> <sha>`, then
+    `./do.sh build` in there), never from this directory.
+17. **A `profile` connection cannot run in Lambda.** `Chryselys-Office`
+    (881953306582) is `credential_mode=profile`, `profile_name=default`.
+    That works from this laptop and nowhere else: the deployed API and
+    the 06:00 ingest answer "could not load profile 'default'". So that
+    account's data moves only when someone runs the ingest by hand here,
+    and it holds 1,274 of the 1,301 cost rows. The real fix is a
+    `CostHubCostReader` role in that account and `assume_role`.
+
+## The anomaly detector — what "0 findings" means
+
+Our own rolling-median + MAD detector (`anomaly/mad.py`), not AWS Cost
+Anomaly Detection. Run 2026-10-13 against the deployed database with
+default settings: 30 series, 0 findings, `anomaly_findings` empty,
+`GET /anomalies` returns `[]`. Checked independently against
+`fact_cost_daily` with hand arithmetic; it is not a bug. Why:
+
+* It scores only the **last 7 days** of each series (`scan_days=7`),
+  after dropping the final 2 points, and it ignores decreases. Spend in
+  the one account with real money fell off a cliff: $630 in July, $790
+  in August, $335 in September, $101 so far in October. Nothing rose.
+* The history *does* contain events the same thresholds flag when the
+  whole range is scanned in memory -- AWS Glue on 2026-08-12/13
+  ($69 then $224 in a day against a ~$0.03 median), with Athena,
+  CloudWatch and S3 moving the same week. They are simply two months
+  older than the scan window. Backfilling them is a product decision
+  (`--scan-days 120` would do it); it was deliberately not done.
+
+Three limits of the detector that this run exposed. None was changed --
+the instruction was not to tune until something appears -- but know
+them before trusting a quiet feed:
+
+1. **A sparse series cannot be flagged at any dollar amount.** If a
+   service was active on fewer than 14 of its trailing 28 days, the
+   median and the MAD are both 0 and `_score` returns 0.0 by design
+   ("a first charge is a new service"). Glue is in that state *today*
+   (12 of 28 days). Replaying August's $421 burst after the last real
+   row produces zero findings. The comment's rationale is also wrong
+   for the case it catches most: Bedrock model series with weeks of
+   history, not new services.
+2. **"The last 7 days" is relative to each series' last row, not to
+   today**, because zero-fill stops at the series' own last day. Glue's
+   window was 09-30..10-06; a model last billed on 09-24 was scored on
+   09-16..09-22. A charge followed by silence sits in the two dropped
+   points forever.
+3. `series_scanned` counts series before the `min_history` gate. "30
+   scanned" was 20 scored, and 8 of those 20 could only ever score 0.
+
 ## Verification gates — run these before any commit
 
 ```bash
@@ -163,7 +221,7 @@ node_modules/.bin/next build                      # must succeed -- NOT while ne
 node_modules/.bin/next lint --file <changed files>
 npm run verify:data                               # 3,940 checks, exits non-zero
 
-cd ../backend && python -m pytest tests -q        # 140 expected, ~7 min
+cd ../backend && python -m pytest tests -q        # 207 expected, ~12 min
 cd .. && terraform -chdir=terraform validate
 ```
 
@@ -197,13 +255,19 @@ Ordered.
    `/insights` carries a `Concept` badge plus a header saying "No AI model
    is called, and no endpoint backs this". Verified on screen.
 
-4. **Backfill real cost data** — actionable now that Cost Explorer has
-   populated: `cd backend && python -m costhub.cli backfill --months 4`
-   (~4 API calls at $0.01). Until this runs the database has **zero cost
-   rows** and every real chart is correctly empty.
-5. **Run the anomaly and alerts Lambdas** once ≥14 days of history exist, so
-   `/anomalies` and the alert feed have real rows:
-   `aws lambda invoke --function-name costhub-dev-anomaly out.json`
+~~4. Backfill real cost data.~~ **Done** — 105 days, 2026-07-01 onward,
+   1,301 rows across two accounts.
+~~5. Run the anomaly detector.~~ **Done** 2026-10-13: 0 findings, a true
+   negative. See "The anomaly detector" above. The alerts job has not
+   been run against real data.
+5a. **Decide what the detector should do about sparse series** (limit 1
+   above). It is the difference between a quiet feed and a blind one,
+   and it needs an owner's answer, not a threshold nudge.
+5b. **Give the office account a real role** (trap 17), or its data goes
+   stale the day nobody runs the ingest from this laptop.
+5c. **The `ingest`, `anomaly` and `alerts` Lambdas run an older build
+   than `api`** unless the deploy named them. Check `CodeSha256` on all
+   four before assuming a fix is live in the scheduled jobs.
 6. **Update `NEXT_PUBLIC_API_BASE_URL` in the Amplify console** and redeploy
    `dev` whenever `api_url` changes.
 7. **Install `pg_dump` before teardown day**, then rehearse

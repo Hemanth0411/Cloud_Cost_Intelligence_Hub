@@ -12,6 +12,7 @@ from datetime import timedelta
 from costhub.alerts import runner as alert_runner
 from costhub.anomaly import runner as anomaly_runner
 from costhub.db import fetch_all
+from costhub.ingest.stale import reap_stale_runs
 
 # Cost Explorer keeps ~14 months of daily data, so status looks no
 # further back than the backfill could have reached.
@@ -111,6 +112,7 @@ def cmd_status(_: argparse.Namespace) -> int:
             f"{a['first']} .. {a['last']}  "
             f"{len(a['days']):>6} days  ${a['total']:,.2f}"
         )
+    reap_stale_runs()  # close runs a dead process left `running`
     runs = fetch_all(
         """
         SELECT source, status, rows_written, started_at, error

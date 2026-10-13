@@ -202,3 +202,65 @@ def test_a_non_superadmin_can_neither_edit_nor_delete(as_plain_user):
     assert as_plain_user.patch(f"/admin/connections/{cid}", json={"display_name": "x"}).status_code == 403
     assert as_plain_user.delete(f"/admin/connections/{cid}").status_code == 403
     assert _row()["display_name"] == "Target", "nothing was written"
+
+
+def test_a_revived_connection_does_not_inherit_its_last_import(as_superadmin):
+    """Registering what you believe is a new account must not open with
+    "Last import: failed" from before it was deleted. The row has never
+    run as far as its new owner is concerned."""
+    cid = _create(as_superadmin)
+    store.record_ingest(connection_id=cid, status="failed")
+    as_superadmin.delete(f"/admin/connections/{cid}")
+
+    as_superadmin.post("/admin/connections", json=BODY)
+
+    row = _row()
+    assert row["last_ingest_at"] is None
+    assert row["last_ingest_status"] is None
+    listed = as_superadmin.get("/admin/connections").json()["data"]
+    assert next(c for c in listed if c["id"] == cid)["last_ingest_status"] is None
+
+
+def test_a_revive_is_audited_as_a_revive(as_superadmin):
+    """It was logged as `connection.update`, chosen by `revision == 1`,
+    so nothing in the trail said a deleted connection had come back."""
+    cid = _create(as_superadmin)
+    store.record_ingest(connection_id=cid, status="failed")
+    as_superadmin.delete(f"/admin/connections/{cid}")
+    as_superadmin.post("/admin/connections", json=BODY)
+
+    actions = [
+        r["action"]
+        for r in fetch_all(
+            "SELECT action FROM audit_log WHERE entity_id = %(i)s "
+            "AND action IN ('connection.create','connection.update','connection.revive') "
+            "ORDER BY at",
+            {"i": cid},
+        )
+    ]
+    assert actions == ["connection.create", "connection.revive"]
+
+    entry = fetch_all(
+        "SELECT before FROM audit_log WHERE action = 'connection.revive'"
+    )[0]
+    # What the revive threw away stays readable here.
+    assert entry["before"]["deleted_at"] is not None
+    assert entry["before"]["last_ingest_status"] == "failed"
+
+
+def test_re_registering_a_live_connection_keeps_its_history(as_superadmin):
+    """The reset is for revival only. An ordinary second POST is an
+    update, and its last import really did happen."""
+    cid = _create(as_superadmin)
+    store.record_ingest(connection_id=cid, status="success")
+
+    as_superadmin.post("/admin/connections", json={**BODY, "display_name": "Renamed"})
+
+    row = _row()
+    assert row["last_ingest_status"] == "success"
+    assert row["last_ingest_at"] is not None
+    last = fetch_all(
+        "SELECT action FROM audit_log WHERE entity_id = %(i)s ORDER BY at DESC LIMIT 1",
+        {"i": cid},
+    )[0]
+    assert last["action"] == "connection.update"
