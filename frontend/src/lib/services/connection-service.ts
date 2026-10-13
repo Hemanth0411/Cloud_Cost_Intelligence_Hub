@@ -84,6 +84,12 @@ export const CONNECTION_CAPABILITIES = {
   simulated: isMock(),
   /** `POST /admin/connections/{id}/enabled` exists in live mode only. */
   canToggleEnabled: !isMock(),
+  /**
+   * `POST /admin/connections/{id}/test` actually calls AWS, so it
+   * cannot be simulated honestly -- a mock 'pass' would be the
+   * opposite of what this button is for.
+   */
+  canTest: !isMock(),
 } as const;
 
 // ------------------------------------------------------------- reads
@@ -189,6 +195,26 @@ export async function setConnectionEnabled(id: string, value: boolean): Promise<
   await post(`/admin/connections/${encodeURIComponent(id)}/enabled`, undefined, {
     query: { value },
   });
+}
+
+/** The stage a failed test got to -- which decides who can fix it. */
+export interface ProbeOutcome {
+  ok: boolean;
+  stage: 'credentials' | 'assume_role' | 'cost_explorer' | 'unsupported' | 'ok';
+  detail: string;
+  sample: string[] | null;
+}
+
+/**
+ * Test a connection against the real account, now.
+ *
+ * The endpoint answers 200 whether or not the connection works: the
+ * status says "the test ran", the body says "the connection is good".
+ * So a non-ok body is NOT an error to throw -- it is the result, and the
+ * caller renders it.
+ */
+export async function testConnection(id: string): Promise<ProbeOutcome> {
+  return post<ProbeOutcome>(`/admin/connections/${encodeURIComponent(id)}/test`);
 }
 
 /**

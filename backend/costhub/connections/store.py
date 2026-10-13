@@ -24,6 +24,17 @@ def list_connections(*, enabled_only: bool = False) -> list[dict]:
     return fetch_all(sql)
 
 
+def get(connection_id: str) -> Connection | None:
+    """One connection, as the credential resolver wants it.
+
+    Returns None rather than raising so a route can answer 404 instead
+    of 500 for an id that is simply gone -- which happens the moment two
+    tabs are open and one of them deletes.
+    """
+    rows = fetch_all(SELECT + " AND id = %(id)s", {"id": connection_id})
+    return Connection.from_row(rows[0]) if rows else None
+
+
 def enabled() -> list[Connection]:
     """The connections ingest should run against."""
     return [Connection.from_row(r) for r in list_connections(enabled_only=True)]

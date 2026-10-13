@@ -17,7 +17,6 @@ three things the UI relies on:
 """
 from __future__ import annotations
 
-import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -96,16 +95,41 @@ def test_the_self_body_is_accepted_with_null_credentials(as_superadmin):
     assert row["role_arn"] is None
 
 
-def test_the_external_id_never_comes_back(as_superadmin):
+def test_the_external_id_is_readable(as_superadmin):
+    """It comes back in full, and that is a deliberate reversal.
+
+    This test previously asserted the opposite -- that the API returned
+    the literal string "set" -- on the reasoning that the ExternalId is
+    one half of the cross-account trust and the role ARN is the other.
+
+    That broke the job it exists for. An ExternalId is not a password:
+    it solves the confused-deputy problem by being unguessable to THIRD
+    parties, and it is shared by design between exactly two people, the
+    owner of this deployment and the administrator of the target
+    account. "Generate it, send it to them, they paste it into their
+    trust policy" is the entire workflow.
+
+    Redacting it from a superadmin removed the one value they have to
+    distribute, with no way to read it back -- so a typo meant deleting
+    the connection and starting over. It was incoherent too: `role_arn`,
+    the other half, was returned in full on the same row to the same
+    caller.
+
+    It cost a real round trip. A connection was registered, the handoff
+    message was sent to another team, and the ExternalId in the message
+    did not match the one stored -- which was undiscoverable precisely
+    because of this redaction.
+
+    What protects it: the route is superadmin-only and the value is a
+    UUID.
+    """
     as_superadmin.post("/admin/connections", json=FRONTEND_BODY)
     body = as_superadmin.get("/admin/connections").json()
 
     row = next(r for r in body["data"] if r["account_id"] == "123456789012")
-    # The dialog states, on screen, that this is the only place the
-    # value is ever shown. That promise is only true if the API keeps
-    # redacting -- so assert the marker AND the absence of the value.
-    assert row["external_id"] == "set"
-    assert FRONTEND_BODY["external_id"] not in json.dumps(body)
+    assert row["external_id"] == FRONTEND_BODY["external_id"]
+    assert row["external_id"] != "set", "the redaction marker must be gone"
+
 
 
 def test_a_second_post_to_the_same_account_id_updates_rather_than_fails(as_superadmin):
@@ -124,6 +148,9 @@ def test_a_second_post_to_the_same_account_id_updates_rather_than_fails(as_super
 
 
 def test_a_non_superadmin_is_refused(as_plain_user):
+    """Also the protection for the ExternalId, now that it is returned in
+    full rather than redacted -- the value is readable by a superadmin
+    and by nobody else."""
     refused = as_plain_user.post("/admin/connections", json=FRONTEND_BODY)
     assert refused.status_code == 403
     assert as_plain_user.get("/admin/connections").status_code == 403

@@ -102,8 +102,18 @@ export const ACCOUNT_PREREQUISITES: readonly string[] = [
  * resource does not match and which is not the ARN stored here either.
  * It is the one mistake that looks correct and fails closed.
  */
-export const ROOT_PATH_NOTE =
-  'Create it at the root IAM path (no custom path): the permission is granted to the exact ARN arn:aws:iam::<account>:role/CostHubCostReader.';
+export function rootPathNote(targetAccountId?: string): string {
+  // Name the ACTUAL account. This used to be a constant containing a
+  // literal `<account>`, which read as a third mystery account in a
+  // message where every other id was concrete -- and the reader's job
+  // is to paste these values into IAM, so an unsubstituted placeholder
+  // is the one thing that must not appear.
+  const id = targetAccountId && /^\d{12}$/.test(targetAccountId) ? targetAccountId : '<account>';
+  return (
+    'Create it at the root IAM path (no custom path): the permission is granted to the ' +
+    `exact ARN arn:aws:iam::${id}:role/CostHubCostReader.`
+  );
+}
 
 /** The permissions policy to attach to the role, from docs/09-deployment.md. */
 export function permissionsPolicyJson(): string {
@@ -154,7 +164,7 @@ export function handoffText(accountId: string, externalId: string): string {
     `  Role ARN  : ${costReaderArn(accountId)}`,
     `  ExternalId: ${externalId}`,
     '',
-    `  ${ROOT_PATH_NOTE}`,
+    `  ${rootPathNote(accountId)}`,
     '',
     'Also required in that account, once:',
     ...ACCOUNT_PREREQUISITES.map((p, i) => `  ${i + 1}. ${p.replace(/[“”]/g, '"')}`),

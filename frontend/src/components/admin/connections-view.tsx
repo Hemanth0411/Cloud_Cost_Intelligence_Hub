@@ -1,7 +1,7 @@
 'use client';
 
 import { KeyRound, Plus } from 'lucide-react';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { ConnectDialog } from '@/components/accounts/connect-dialog';
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
@@ -14,6 +14,8 @@ import { ApiError } from '@/lib/api/client';
 import { formatDateTime } from '@/lib/format';
 import {
   CONNECTION_CAPABILITIES,
+  testConnection,
+  type ProbeOutcome,
   ingestVerdict,
   latestRunByAccount,
   loadConnections,
@@ -89,6 +91,8 @@ export function AdminConnectionsView() {
   const [reloadKey, setReloadKey] = useState(0);
   const [adding, setAdding] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [testingId, setTestingId] = useState<string | null>(null);
+  const [outcomes, setOutcomes] = useState<Record<string, ProbeOutcome>>({});
   const state = useAsyncData(`connections:${reloadKey}`, loadConnections);
 
   const ready = state.status === 'ready';
@@ -113,6 +117,26 @@ export function AdminConnectionsView() {
           forbidden: state.error instanceof ApiError && state.error.forbidden,
         }
       : null;
+
+  function runTest(row: ConnectionRow): void {
+    setTestingId(row.id);
+    testConnection(row.id)
+      .then((outcome) => {
+        setOutcomes((prev) => ({ ...prev, [row.id]: outcome }));
+        // The stage is the actionable half, so it goes in the toast
+        // rather than only in the row.
+        toast({
+          tone: outcome.ok ? 'success' : 'warning',
+          title: outcome.ok ? `${row.displayName}: access works` : `${row.displayName}: ${outcome.stage.replace('_', ' ')}`,
+          description: outcome.detail,
+        });
+      })
+      .catch((cause: unknown) => {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        toast({ tone: 'warning', title: 'Could not run the test', description: message });
+      })
+      .finally(() => setTestingId(null));
+  }
 
   function toggle(row: ConnectionRow): void {
     setBusyId(row.id);
@@ -163,12 +187,12 @@ export function AdminConnectionsView() {
             No credential is ever stored here
           </CardTitle>
           <CardDescription>
-            An AssumeRole connection holds a role ARN and an ExternalId — never a key. The ExternalId
-            is write-only: the API returns it as <code className="font-mono text-xs">set</code> rather
-            than the value, because it is one half of the cross-account trust and the role ARN is the
-            other. Adding an account needs no infrastructure change on this side; the permission to
-            assume a <code className="font-mono text-xs">CostHubCostReader</code> role is already
-            granted for any AWS account.
+            An AssumeRole connection holds a role ARN and an ExternalId &mdash; never a key.
+            Both are shown in full: the ExternalId is not a password, it is the value the other
+            account&rsquo;s trust policy must contain, so you need to be able to read it back and
+            re-send it. Adding an account needs no infrastructure change on this side; the
+            permission to assume a <code className="font-mono text-xs">CostHubCostReader</code>{' '}
+            role is already granted for any AWS account.
             {!CONNECTION_CAPABILITIES.canToggleEnabled &&
               ' The rows below are sample data shaped like that response — mock mode calls no API.'}
           </CardDescription>
@@ -215,7 +239,7 @@ export function AdminConnectionsView() {
                 {connections.map((row) => {
                   const verdict = ingestVerdict(row);
                   const run = latestRun.get(`${row.provider}|${row.accountId}`);
-                  return (
+                  const mainRow = (
                     <TableRow key={row.id} className={row.enabled ? undefined : 'opacity-60'}>
                       <TableCell>
                         <span className="block text-sm font-medium">{row.displayName}</span>
@@ -272,17 +296,59 @@ export function AdminConnectionsView() {
                       </TableCell>
                       {CONNECTION_CAPABILITIES.canToggleEnabled && (
                         <TableCell className="text-right">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={busyId === row.id}
-                            onClick={() => toggle(row)}
-                          >
-                            {busyId === row.id ? '…' : row.enabled ? 'Disable' : 'Enable'}
-                          </Button>
+                          <div className="flex justify-end gap-1">
+                            {CONNECTION_CAPABILITIES.canTest && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={testingId === row.id}
+                                onClick={() => runTest(row)}
+                                title="Assume the role and make one Cost Explorer call now"
+                              >
+                                {testingId === row.id ? 'Testing…' : 'Test'}
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={busyId === row.id}
+                              onClick={() => toggle(row)}
+                            >
+                              {busyId === row.id ? '…' : row.enabled ? 'Disable' : 'Enable'}
+                            </Button>
+                          </div>
                         </TableCell>
                       )}
                     </TableRow>
+                  );
+                  const outcome = outcomes[row.id];
+                  if (!outcome) return mainRow;
+                  return (
+                    <Fragment key={`${row.id}-tested`}>
+                      {mainRow}
+                      {/* The detail stays on screen after the toast has
+                          gone: it names which of the three prerequisites
+                          is missing, and that is the thing somebody has
+                          to copy into an email. */}
+                      <TableRow className="hover:bg-transparent">
+                        <TableCell colSpan={6} className="bg-muted/30 text-xs">
+                          <span
+                            className={cn(
+                              'font-medium',
+                              outcome.ok ? 'text-success' : 'text-warning',
+                            )}
+                          >
+                            {outcome.ok ? 'Test passed' : `Test failed at: ${outcome.stage.replace('_', ' ')}`}
+                          </span>
+                          <span className="mt-0.5 block text-muted-foreground">{outcome.detail}</span>
+                          {outcome.sample && outcome.sample.length > 0 && (
+                            <span className="mt-1 block text-muted-foreground">
+                              Read from this account: {outcome.sample.join(', ')}
+                            </span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    </Fragment>
                   );
                 })}
               </TableBody>

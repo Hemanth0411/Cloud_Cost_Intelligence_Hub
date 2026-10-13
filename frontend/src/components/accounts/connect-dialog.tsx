@@ -13,7 +13,7 @@ import {
   ACCOUNT_PREREQUISITES,
   COST_READER_ROLE_NAME,
   DEPLOY_ACCOUNT_KNOWN,
-  ROOT_PATH_NOTE,
+  rootPathNote,
   costReaderArn,
   deployAccountLabel,
   handoffText,
@@ -52,7 +52,7 @@ import { cn } from '@/lib/utils';
  *     name, so a role called anything else is unreachable and letting
  *     someone type an arbitrary ARN would only produce connections that
  *     fail at ingest time with AccessDenied.
- *   * the ExternalId is GENERATED and shown once. It is not a secret
+ *   * the ExternalId is GENERATED here and remains readable. Not a secret
  *     the user invents on the spot -- it is a shared unguessable string
  *     the target account's trust policy will require us to present.
  *     `GET /admin/connections` redacts it to the string `"set"`, so
@@ -434,7 +434,7 @@ function CrossAccountHandoff({
         <Pair term="ExternalId" value={externalId || 'could not be generated'} />
       </dl>
 
-      <p className="text-[11px] text-muted-foreground">{ROOT_PATH_NOTE}</p>
+      <p className="text-[11px] text-muted-foreground">{rootPathNote(target)}</p>
 
       {/* These two are not IAM and are easy to leave out of a relayed
           message, but a perfectly correct role still returns
@@ -453,10 +453,9 @@ function CrossAccountHandoff({
         <p className="flex items-start gap-2 rounded border border-warning/40 bg-warning/10 px-2.5 py-2 text-[11px]">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" aria-hidden />
           <span>
-            Copy the ExternalId now. It is write-only: once registered,{' '}
-            <code className="font-mono">GET /admin/connections</code> returns it as{' '}
-            <code className="font-mono">set</code>, not as a value, so this dialog is the only place
-            it is ever shown. Lose it and the account has to be re-registered with a new one.
+            Send this ExternalId to the other account&rsquo;s administrator &mdash; their trust
+            policy has to contain this exact value. It stays readable on the Cloud accounts
+            screen, so you can look it up again rather than re-registering the account.
           </span>
         </p>
       )}

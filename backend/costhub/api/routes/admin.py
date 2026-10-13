@@ -13,7 +13,9 @@ from pydantic import BaseModel, EmailStr, Field
 
 from costhub.api.deps import SuperAdmin
 from costhub.connections import store
-from costhub.db import fetch_all
+from costhub.connections.probe import probe
+from costhub.audit import log as audit_log
+from costhub.db import connect, fetch_all
 from costhub.rbac import admin as rbac
 from costhub.rbac import pool
 
@@ -129,24 +131,31 @@ def revoke_grant(
 
 # ----------------------------------------------------------- connections
 
-# The ExternalId is one half of the cross-account trust; the role ARN,
-# which is returned beside it, is the other. Handing both to the browser
-# gives away the confused-deputy protection the ExternalId exists to
-# provide -- and it was going out in full to anything that could read the
-# admin page, including the JS console and any logging proxy in between.
+# The ExternalId is RETURNED, not redacted, and that is a reversal.
 #
-# The connection store still selects it, because ingest needs it to call
-# AssumeRole. It just never leaves the process.
-def _redact(row: dict) -> dict:
-    out = dict(row)
-    if out.get("external_id"):
-        out["external_id"] = "set"
-    return out
-
-
+# It used to come back as the literal string "set". The reasoning was
+# that it is one half of the cross-account trust and the role ARN is the
+# other, so neither should leave the process. That was wrong in a way
+# that broke the actual job.
+#
+# An ExternalId is not a password. Its purpose is the confused-deputy
+# problem, and it works by being unguessable by THIRD parties -- it is
+# shared, by design, between exactly the two people who need it: the
+# owner of this deployment and the administrator of the target account.
+# The whole workflow is "generate it, send it to them, they put it in
+# their trust policy".
+#
+# So redacting it from a superadmin removed the one value they have to
+# distribute, with no way to read it back: a typo meant deleting the
+# connection and starting again. And it was incoherent anyway, because
+# `role_arn` -- the other half -- was returned in full to the same
+# caller, on the same row.
+#
+# What actually protects it: this route is superadmin-only, and the
+# value is a UUID.
 @router.get("/connections", summary="Registered cloud accounts")
 def list_connections(_: SuperAdmin) -> dict:
-    rows = [_redact(r) for r in store.list_connections()]
+    rows = store.list_connections()
     return {"data": rows, "row_count": len(rows)}
 
 
@@ -172,6 +181,39 @@ def set_connection_enabled(
 ) -> dict:
     store.set_enabled(actor=who.email, connection_id=connection_id, value=value)
     return {"id": connection_id, "enabled": value}
+
+
+@router.post("/connections/{connection_id}/test", summary="Test a connection now")
+def test_connection(_: SuperAdmin, connection_id: str) -> dict:
+    """Resolve credentials and make one cheap Cost Explorer call.
+
+    ALWAYS 200 when the connection exists, even when the test fails. The
+    HTTP status answers "did the test run", and the body answers "did the
+    connection work" -- collapsing those into 4xx/5xx would make a
+    working endpoint reporting a broken role indistinguishable from a
+    broken endpoint, and the whole value here is telling the operator
+    WHICH of the three prerequisites is missing.
+    """
+    conn = store.get(connection_id)
+    if conn is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such connection")
+
+    result = probe(conn)
+
+    # Recorded because a test is a real attempt against someone else's
+    # account, and "who tried to reach this and when" belongs in the
+    # trail alongside the grants.
+    with connect() as db, db.cursor() as cur:
+        audit_log(
+            cur,
+            actor=_.email,
+            action="connection.test",
+            entity_type="cloud_connection",
+            entity_id=connection_id,
+            after={"ok": result.ok, "stage": result.stage},
+        )
+
+    return result.as_dict()
 
 
 # ----------------------------------------------------------------- audit
