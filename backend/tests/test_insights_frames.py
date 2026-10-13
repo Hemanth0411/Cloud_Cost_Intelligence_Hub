@@ -310,10 +310,20 @@ def _flat(account: str, service: str, per_day, days=ALL_60) -> dict:
     return {(account, service, d): D(str(per_day)) for d in days}
 
 
-def _summary(monkeypatch, rows, current=CUR, previous=PREV, findings=(), **kwargs):
+def _runs(**ends):
+    """An ingest log: every account covered for the whole span asked about,
+    except those named, whose runs are given as [start, end) pairs."""
+    def ingested(accounts, provider, lo, hi):
+        return {a: ends.get(a, [(lo, hi + timedelta(days=1))]) for a in accounts}
+    return ingested
+
+
+def _summary(monkeypatch, rows, current=CUR, previous=PREV, findings=(),
+             ingested=None, **kwargs):
     fake = rows if isinstance(rows, _Scoped) else _Scoped(rows)
     monkeypatch.setattr(facts.scoped, "series", fake.series)
     monkeypatch.setattr(facts.scoped, "by_dimension", fake.by_dimension)
+    monkeypatch.setattr(coverage, "ingested", ingested or _runs())
     return facts.summarize(WHO, current, previous, list(findings), **kwargs)
 
 
@@ -331,17 +341,21 @@ def test_flat_spend_with_complete_data_is_reported_as_flat(monkeypatch):
 def test_a_missing_last_day_is_not_called_a_fall(monkeypatch):
     """Flat $110 a day, yesterday's rows not ingested yet: 29 days against
     30. The 10% tolerance let this through as "Total spend fell 3.3%"."""
-    out = _summary(monkeypatch, _flat("A", EC2, 110, ALL_60[:-1]))
+    out = _summary(monkeypatch, _flat("A", EC2, 110, ALL_60[:-1]),
+                   ingested=_runs(A=[(PREV.start, CUR.end)]))      # end is exclusive
     assert out.comparison["comparable"] is False
-    assert "29 of 30 days in the current period" in out.comparison["note"]
+    assert out.comparison["note"].startswith(
+        f"Account A has no successful ingest covering {CUR.end:%d %b %Y}.")
     assert _kinds(out) == ["total", "top_service"]
     assert all(c.direction == "none" for c in out.cards)
 
 
 def test_a_half_covered_current_period_is_not_called_a_fall(monkeypatch):
     """12 days of data against 30: once "Total spend fell by 61.3%"."""
-    out = _summary(monkeypatch, _flat("A", EC2, 100, ALL_60[:42]))
+    out = _summary(monkeypatch, _flat("A", EC2, 100, ALL_60[:42]),
+                   ingested=_runs(A=[(PREV.start, ALL_60[42])]))
     assert out.comparison["comparable"] is False
+    assert f"covering {ALL_60[42]:%d %b %Y}" in out.comparison["note"]
     assert _kinds(out) == ["total", "top_service"]
 
 
@@ -360,19 +374,60 @@ def test_a_period_that_is_not_final_is_not_compared(monkeypatch):
 def test_a_newly_connected_account_is_not_a_rise_from_zero(monkeypatch):
     """A is steady. B has spent $200 a day all along but was connected a
     week ago. Once: "Total spend rose 46.7%" and "account B rose ... from $0.00"."""
-    out = _summary(monkeypatch, {**_flat("A", EC2, 100), **_flat("B", RDS, 200, ALL_60[-7:])})
+    out = _summary(monkeypatch, {**_flat("A", EC2, 100), **_flat("B", RDS, 200, ALL_60[-7:])},
+                   ingested=_runs(B=[(ALL_60[-7], CUR.end + timedelta(days=1))]))
     assert out.comparison["comparable"] is False
     assert out.comparison["note"].startswith(
-        "Account B has cost data for 7 of 30 days in the current period and 0 of 30")
+        f"Account B has no successful ingest covering {PREV.start:%d %b %Y}.")
     assert _kinds(out) == ["total", "top_service"]
 
 
 def test_one_accounts_stalled_ingest_is_not_a_fall(monkeypatch):
     """B's rows stop ten days ago. A is healthy, so every day has SOME row."""
-    out = _summary(monkeypatch, {**_flat("A", EC2, 100), **_flat("B", RDS, 200, ALL_60[:-10])})
+    out = _summary(monkeypatch, {**_flat("A", EC2, 100), **_flat("B", RDS, 200, ALL_60[:-10])},
+                   ingested=_runs(B=[(PREV.start, ALL_60[-10])]))
     assert out.comparison["comparable"] is False
-    assert "Account B has cost data for 20 of 30 days" in out.comparison["note"]
+    assert f"Account B has no successful ingest covering {ALL_60[-10]:%d %b %Y}" \
+        in out.comparison["note"]
     assert not {"total_change", "top_decrease", "account_mover"} & set(_kinds(out))
+
+
+def test_a_quiet_account_is_not_a_gap(monkeypatch):
+    """The case that broke the previous rule on real data. An account
+    billed on three days out of sixty was ingested for all sixty; it
+    spent nothing on the rest, and zero-cost days are not stored. Asking
+    for rows on every day read that as missing data and blocked every
+    comparison in the view."""
+    quiet = {("self", "Tax Free Thing", d): D("0.01") for d in (ALL_60[3], ALL_60[40], ALL_60[55])}
+    out = _summary(monkeypatch, {**_flat("A", EC2, 100, ALL_60[:30]),
+                                 **_flat("A", EC2, 120, ALL_60[30:]), **quiet})
+    assert out.comparison["comparable"] is True and out.comparison["note"] is None
+    assert out.comparison["accounts_checked"] == 2
+    assert out.cards[0].kind == "total_change" and out.cards[0].direction == "up"
+
+
+def test_an_unreadable_ingest_log_means_no_change_is_claimed(monkeypatch):
+    import psycopg
+
+    def broken(*a, **k):
+        raise psycopg.OperationalError("connection lost")
+
+    out = _summary(monkeypatch, _flat("A", EC2, 100), ingested=broken)
+    assert out.comparison["comparable"] is False
+    assert "could not be confirmed" in out.comparison["note"]
+    assert _kinds(out) == ["total", "top_service"]
+
+
+def test_ingest_periods_end_exclusive_and_must_join_up():
+    d = date
+    lo, hi = d(2026, 1, 1), d(2026, 1, 10)
+    gap = coverage.first_gap
+    assert gap([(lo, d(2026, 1, 11))], lo, hi) is None
+    assert gap([(lo, hi)], lo, hi) == hi                       # the end day is not covered
+    assert gap([(lo, d(2026, 1, 5)), (d(2026, 1, 5), d(2026, 1, 11))], lo, hi) is None
+    assert gap([(lo, d(2026, 1, 5)), (d(2026, 1, 6), d(2026, 1, 11))], lo, hi) == d(2026, 1, 5)
+    assert gap([(d(2026, 1, 3), d(2026, 1, 11))], lo, hi) == lo
+    assert gap([], lo, hi) == lo
 
 
 def test_a_service_that_is_idle_some_days_is_not_missing_data(monkeypatch):

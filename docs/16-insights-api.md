@@ -198,18 +198,21 @@ connected account reads as "rose from $0.00".
 `comparable` is `true` only if **both**:
 
 - the current period ends on or before the last final day; and
-- **every account in view has cost data for every day of both periods.**
-  Per account, because ingestion is per account and one healthy account
-  otherwise hides another's gap. Checked without the `service` filter,
-  because a service idle on a Sunday is not missing data.
+- **every account in view was ingested for every day of both periods** —
+  successful ingest runs for that account, taken together, cover the
+  whole span. Per account, because ingestion is per account and one
+  healthy account otherwise hides another's gap.
+
+The ingest log is what is asked, not the cost rows. Zero-cost days are
+not stored, so rows cannot tell "nothing was spent" from "nothing was
+loaded". An earlier version asked for rows on every day; on the first
+real estate it ran against, one account that spent nothing on most days
+— and had been ingested end to end — blocked every comparison.
 
 When it is `false`, no card states a change and `note` — a sentence the
-backend wrote — says which condition failed and for which account. Show
-it. `accounts_checked` is how many accounts were verified; above 25 the
-check is not attempted and no change is reported.
-
-This is conservative on purpose. An account with a genuinely free day
-loses its change cards. That is the cheap error.
+backend wrote — says which condition failed, for which account and from
+which day. Show it. `accounts_checked` is how many accounts were
+verified; above 200 the check is not attempted and no change is reported.
 
 If amounts in more than one currency are in view, **no cards are returned
 at all**: the store adds amounts without converting them, so a total
@@ -217,9 +220,11 @@ would not be a figure. `note` says to filter to one provider or account.
 
 Known limits, stated rather than hidden:
 
-- Completeness is checked per account, not per service. A service enabled
-  partway through the previous period, in an account that was otherwise
-  fully ingested, can still appear as the largest increase.
+- A successful ingest run is taken at its word. If a run recorded
+  success but loaded only part of its period, the comparison is allowed.
+- Completeness is per account, not per service. A service enabled
+  partway through the previous period, in an account that was ingested
+  throughout, appears as an increase — which is what it is.
 - Mixed currencies are detected from the smallest currency code per day
   and per key. Two currencies inside the same account on the same days
   would go unnoticed. AWS data is USD-only; this needs an Azure
@@ -412,8 +417,7 @@ risk for the figures entirely.
 
 Measured against Nova Lite: 0.8–1.5 s per call. The first call in a fresh
 process is slower because of client start-up. The endpoint also makes
-around a dozen small database reads, plus one per account for the
-completeness check.
+around a dozen small database reads, one of them on the ingest log.
 
 ## Configuration
 
