@@ -4,24 +4,22 @@ import { Caption, Eyebrow, Headline, Lede, Stage } from '../components/chrome';
 import { C, F } from '../theme';
 import { enter } from '../anim';
 
-/**
- * Scene 1 -- the hook. Claims: none beyond what the stack is, which is
- * the list in `terraform/`.
- */
-export const S01Hook: React.FC = () => {
+/** Scene 1 -- what the thing is, in one sentence. */
+export const S1What: React.FC = () => {
   const frame = useCurrentFrame();
   const stack = ['Cognito', 'API Gateway', 'Lambda', 'RDS Postgres', 'Amplify', 'Terraform'];
   return (
     <Stage>
-      <Eyebrow frame={frame}>CostHub &middot; cloud cost intelligence</Eyebrow>
-      <Headline frame={frame} size={96}>
-        Cost visibility for AWS accounts
+      <Eyebrow frame={frame}>CostHub</Eyebrow>
+      <Headline frame={frame} size={92}>
+        One dashboard for cloud spend
         <br />
-        that were never an Organization.
+        across accounts that were never
+        <br />
+        an Organization.
       </Headline>
-      <Lede frame={frame} start={12}>
-        Independent accounts. Sensitive spend. Access granted per account and per service &mdash;
-        and enforced in SQL, not in the UI.
+      <Lede frame={frame} start={14}>
+        Sign in, and see every account you are allowed to see.
       </Lede>
       <div style={{ position: 'absolute', left: 120, bottom: 150, display: 'flex', gap: 14 }}>
         {stack.map((item, i) => (
@@ -42,8 +40,8 @@ export const S01Hook: React.FC = () => {
           </span>
         ))}
       </div>
-      <Caption frame={frame} start={30} tone="live">
-        Deployed and running in AWS account 997916278551, us-east-1.
+      <Caption frame={frame} start={28} tone="live">
+        Deployed and running in AWS, us-east-1.
       </Caption>
     </Stage>
   );

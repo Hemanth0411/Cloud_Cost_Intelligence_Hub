@@ -96,18 +96,16 @@ brush = noise_brush(0.5, 0.11)
 for bar_index in range(int(TOTAL_BARS) + 1):
     place(bed, brush, bar_index * BAR, 0.3)
 
-# ---- a mark on every scene cut ------------------------------------------
-# Scene changes are the only events in the video, so they are the only
-# events in the bed. Fifth above the drone, short enough to read as a
-# punctuation mark rather than a note.
-mark = tone(659.26, 0.5, 0.004, 0.12, partials=(1.0, 0.3, 0.12))
+# ---- NO mark on scene cuts ------------------------------------------
+# There used to be a short bell on every cut. With narration over the
+# top it lands right after each spoken line and reads as a notification
+# sound, so it is gone. The cuts are already audible: the pulse and the
+# bar brush sit on the same grid.
 cuts_s: list[float] = []
 acc_bars = 0.0
 for scene in TIMING["scenes"][:-1]:
     acc_bars += scene["bars"]
     cuts_s.append(acc_bars * BAR)
-for cut in cuts_s:
-    place(bed, mark, cut, 0.16)
 
 # ---- shape: fade in, duck under the first line, fade out ----------------
 fade_in = min(N, int(1.2 * SR))

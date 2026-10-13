@@ -1,18 +1,16 @@
 {
-  "_comment": "One line per scene, spoken over it. Each line says what the scene shows and nothing more -- the narration is held to the same rule as the captions, so a listener who cannot read the screen is told the same truths, including what is mock and what is not built. `lead` is seconds after the cut before the voice starts.",
+  "_comment": "One line per scene. Each says what its scene shows and no more -- the narration is held to the same rule as the captions, so a listener who cannot read the screen is told the same truths, including what is mock and what is not built. `lead` is seconds after the cut before the voice starts.",
   "voice": "af_heart",
   "speed": 1.08,
   "lead": 0.45,
   "lines": {
-    "Hook": "Cost visibility for accounts that were never an Organization.",
-    "Problem": "Independent accounts, no payer rollup. And cost data not everyone may see.",
-    "Product": "One view over every account: a year of spend, five accounts, ten services. Mock data, not live spend.",
-    "Rbac": "The same screen, a different identity. One grant, one account. The rest were never returned.",
-    "Predicate": "Every cost query carries this predicate. Measured against the deployed database: full access, one account, one service, then nothing.",
-    "Proof": "Two real accounts. One answered with real service names; the other was refused at the cost call, and told us what to check.",
-    "Cost": "It bills itself: zero dollars so far, on one small database and five functions.",
-    "Deploy": "One command stands it up. Fifty-seven resources, no servers to patch.",
-    "Scale": "An account is a row. A provider is one adapter. Google Cloud is not built yet.",
+    "What": "CostHub. One dashboard for cloud spend across accounts that were never an Organization.",
+    "Why": "Before, every account reported on its own, and access was all or nothing. Now there is one place to look.",
+    "See": "Spend by account, by service, and by period. This is sample data, not live spend.",
+    "Who": "One person sees every account. Another sees only what they were granted, because the database never returns the rest.",
+    "Real": "It is connected to a real account. When another one cannot be read yet, it says exactly why.",
+    "Run": "One command deploys it. There are no servers to patch, and it watches its own bill.",
+    "Next": "Next: Azure, Google Cloud, sources like Databricks, and alerts that reach the right people.",
     "Close": "CostHub. Cost data people can share without over-sharing."
   }
 }

@@ -21,7 +21,7 @@ import { compactUsd, COUNT, ease, enter, LIVELY, springs, usd } from '../anim';
  */
 const GRANT_AT = 108;
 
-export const S04Rbac: React.FC = () => {
+export const S4Who: React.FC = () => {
   const frame = useCurrentFrame();
   const accounts = mock.all.accounts;
   const grantedId = mock.granted.accountId;
@@ -48,7 +48,7 @@ export const S04Rbac: React.FC = () => {
   const swap = ease(frame, GRANT_AT, LIVELY);
   return (
     <Stage>
-      <Eyebrow frame={frame}>The difference that matters</Eyebrow>
+      <Eyebrow frame={frame}>Who sees what</Eyebrow>
       <Headline frame={frame} size={70}>
         The same screen. A different identity.
       </Headline>
@@ -101,8 +101,8 @@ export const S04Rbac: React.FC = () => {
       </div>
 
       <Caption frame={frame} start={16}>
-        Mock estate, AWS accounts only. The predicate that does the narrowing is measured
-        against the deployed database in the next scene.
+        Sample estate. The narrowing is done in the database query itself, not in the screen —
+        a user with no grant gets an empty dashboard by design.
       </Caption>
     </Stage>
   );

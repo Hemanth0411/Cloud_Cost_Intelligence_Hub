@@ -1,43 +1,35 @@
 {
-  "_comment": "Single source of truth for scene length, read by src/Root.tsx AND tools/make-audio.py so the audio bed and the cuts cannot drift. Bars are at the bpm below; keep them multiples of 0.5 so every cut lands on a beat. Lengths were cut by about a bar each after a frame review found roughly two thirds of the first cut was a frozen frame.",
+  "_comment": "Scene order and length. Read by src/Root.tsx AND tools/make-audio.py / make-voice.py, so the bed, the narration and the cuts cannot drift. Bars are at the bpm below; keep them multiples of 0.5 so every cut lands on a beat.",
   "bpm": 100,
   "fps": 30,
   "scenes": [
     {
-      "id": "Hook",
-      "bars": 2
-    },
-    {
-      "id": "Problem",
+      "id": "What",
       "bars": 2.5
     },
     {
-      "id": "Product",
-      "bars": 3
-    },
-    {
-      "id": "Rbac",
-      "bars": 3
-    },
-    {
-      "id": "Predicate",
+      "id": "Why",
       "bars": 3.5
     },
     {
-      "id": "Proof",
+      "id": "See",
       "bars": 3.5
     },
     {
-      "id": "Cost",
-      "bars": 2.5
+      "id": "Who",
+      "bars": 3.5
     },
     {
-      "id": "Deploy",
-      "bars": 2.5
+      "id": "Real",
+      "bars": 3
     },
     {
-      "id": "Scale",
-      "bars": 2.5
+      "id": "Run",
+      "bars": 3
+    },
+    {
+      "id": "Next",
+      "bars": 3.5
     },
     {
       "id": "Close",

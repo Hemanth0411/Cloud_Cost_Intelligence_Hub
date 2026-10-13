@@ -11,34 +11,29 @@ import { Audio, Composition, Sequence, staticFile } from 'remotion';
 import { FPS, H, W, bars } from './theme';
 import timing from './data/timing.json';
 import { Fonts } from './fonts';
-import { S01Hook } from './scenes/S01Hook';
-import { S02Problem } from './scenes/S02Problem';
-import { S03Product } from './scenes/S03Product';
-import { S04Rbac } from './scenes/S04Rbac';
-import { S05Predicate } from './scenes/S05Predicate';
-import { S06Proof } from './scenes/S06Proof';
-import { S07Cost } from './scenes/S07Cost';
-import { S08Deploy } from './scenes/S08Deploy';
-import { S09Scale } from './scenes/S09Scale';
-import { S10Close } from './scenes/S10Close';
-
+import { S1What } from './scenes/S1What';
+import { S2Why } from './scenes/S2Why';
+import { S3See } from './scenes/S3See';
+import { S4Who } from './scenes/S4Who';
+import { S5Real } from './scenes/S5Real';
+import { S6Run } from './scenes/S6Run';
+import { S7Next } from './scenes/S7Next';
+import { S8Close } from './scenes/S8Close';
 
 /**
  * Scene order and components. The LENGTHS live in data/timing.json,
  * which the audio generator reads too -- one file, so a re-timed scene
  * moves the beat grid with it.
  */
-const COMPONENTS: Record<string, React.FC<{ duration: number }>> = {
-  Hook: S01Hook,
-  Problem: S02Problem,
-  Product: S03Product,
-  Rbac: S04Rbac,
-  Predicate: S05Predicate,
-  Proof: S06Proof,
-  Cost: S07Cost,
-  Deploy: S08Deploy,
-  Scale: S09Scale,
-  Close: S10Close,
+const COMPONENTS: Record<string, React.FC> = {
+  What: S1What,
+  Why: S2Why,
+  See: S3See,
+  Who: S4Who,
+  Real: S5Real,
+  Run: S6Run,
+  Next: S7Next,
+  Close: S8Close,
 };
 
 export const SCENES = timing.scenes.map((s) => {
@@ -62,7 +57,7 @@ const Film: React.FC<{ withAudio?: boolean }> = ({ withAudio = true }) => {
         const Scene = scene.component;
         return (
           <Sequence key={scene.id} from={from} durationInFrames={DURATIONS[i]!} name={scene.id}>
-            <Scene duration={DURATIONS[i]!} />
+            <Scene />
           </Sequence>
         );
       })}
@@ -101,7 +96,6 @@ export const RemotionRoot: React.FC = () => (
         fps={FPS}
         width={W}
         height={H}
-        defaultProps={{ duration: bars(scene.bars) }}
       />
     ))}
   </>

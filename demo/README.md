@@ -118,16 +118,14 @@ at 1.6-2.7x the between-line level, 23.8s of speech across 64.8s,
 
 | # | Scene | On screen | Provenance |
 |---|---|---|---|
-| 1 | Hook | Deployed on Cognito, API Gateway, Lambda, RDS, Amplify, in account 997916278551 | `terraform/` + `terraform output` |
-| 2 | Problem | No AWS Organization; cost data is sensitive; CID dashboards assume a payer account | `docs/01-requirements.md`, `CONTEXT.md` |
-| 3 | Product | $3,479,523.12 over the 365 days to 2026-10-11, 5 AWS accounts, 10 services, 12 monthly columns, per-account bars | `tools/dump-mock.ts` → the app's own `getDashboardData`. **Captioned as audited mock, not live spend.** The columns are a fixed 12-calendar-month look-back and so do NOT sum to the 365-day total; the scene says so. |
-| 4 | RBAC narrowing | Same screen under two identities: 5 accounts → 1, $3,479,523 → $1,436,790 | Same mock dump. The account is `aws-prod-core` because that is the one `mockGrants()` actually gives finance.lead — the scene names that user, so it has to match. Captioned as mock estate. |
-| 5 | Predicate | `GRANT_PREDICATE` verbatim; rows returned for five principals: 1301 / 27 / 10 / 0 / 0 | `tools/rbac-proof.py` against deployed RDS. The two test principals were inserted in a transaction and rolled back; the script re-checks the counts afterwards and the scene prints that. The superadmin row is a raw-SQL bypass, not an audited product read — the label says "predicate bypassed" for that reason. |
-| 6 | Real verdicts | One account OK with 6 real service names; one account failed with the real Cost Explorer denial text | `ingest_runs` on deployed RDS, `tools/dump-live.py`. **The failing account is a real third party: its 12-digit id and display name are masked in the scene** (`maskAccount` / `redact` in `S06Proof.tsx`). The capture keeps the unredacted row, so the claim stays checkable. |
-| 7 | Cost to run | Its own bill $0.00 over 27 rows / 6 services, Jul 1 – Oct 13; db.t4g.micro + four 512 MB Lambdas and one at 256; $80/month budget; $0.01 per connection test | `fact_cost_daily` scoped to `account_id = 'self'`, `terraform/lambda.tf`, `terraform/env/dev.tfvars`, `terraform/messaging.tf`. The $0.01 is the published Cost Explorer price and the caption says so. |
-| 8 | Deploy | `./do.sh up dev` step list; 57 resources; a test parses every module and fails on a stray `SELECT` | `do.sh cmd_up`, `terraform state list \| wc -l` = 57, `backend/tests/test_invariant.py` — note `READERS_ALLOWED` is **two** modules (`query/scoped.py` and `ingest/runner.py`), and the check matches SELECTs in string literals, which is what the scene now says. |
-| 9 | Scale | Account = a row; provider = one adapter entry; ingest idempotent on the natural key; **Google Cloud not built, Azure never spoken to** | `ingest/sources.py`, `ingest/runner.py` `ON CONFLICT`, `migrations/002_facts.sql` indexes, CONTEXT.md |
-| 10 | Close | Provenance line: charts are mock, measured figures are from the deployed stack | — |
+| 1 | What it is | One dashboard for accounts that were never in an Organization; the AWS stack it runs on | `terraform/` |
+| 2 | Why | Before: every account reported on its own, no single view, all-or-nothing access. Now: one place, by account/service/period, granted per account | `docs/01-requirements.md`, `CONTEXT.md` |
+| 3 | What you see | Monthly columns and per-account bars, with the app's real period set (day/month/quarter/year) | `tools/dump-mock.ts` → the app's own `getDashboardData`. **Captioned as sample data, not live spend.** |
+| 4 | Who sees what | The same screen under two identities: five accounts, then one. "Narrowing is done in the database query, not the screen" | Same mock dump; the grant is the one `mockGrants()` actually records for that user. Captioned as sample estate. |
+| 5 | And it is real | A live account's own service names; a second account that cannot be read yet, with the real message saying which switch is off | `ingest_runs` on deployed RDS via `tools/dump-live.py`. The second account's name and 12-digit id are stripped at capture time. |
+| 6 | Running it | `./do.sh up dev`; its own running cost shows up in the same dashboard; no servers; another environment is one more file | `do.sh cmd_up`, `terraform/`. **No dollar figure** — see the note in the scene source. |
+| 7 | Roadmap | Azure (written, never run), Google Cloud (not built), other per-account sources, alerts that reach people | `ingest/sources.py`, `CONTEXT.md`. Marked "not built yet" in the eyebrow, on every card and in the caption. |
+| 8 | Close | Provenance line: charts are a sample estate, the account and connection are the real deployment | — |
 
 ## What the video deliberately does NOT show
 
