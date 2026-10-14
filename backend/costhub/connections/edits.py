@@ -12,6 +12,7 @@ wrong.
 from __future__ import annotations
 
 from costhub.audit import log
+from costhub.connections import account_dim
 from costhub.connections.store import SELECT
 from costhub.db import connect
 
@@ -99,6 +100,47 @@ def update(*, actor: str, connection_id: str, changes: dict) -> dict | None:
         return dict(before)
 
 
+def set_enabled(*, actor: str, connection_id: str, value: bool) -> bool:
+    """Disable without losing history (FR-13).
+
+    Moved here from store.py, which it had pushed to the line limit; it
+    changes an existing row by `connection_id`, which is this module.
+
+    Disabling does NOT hide the account, unlike deleting: the connection
+    is still registered and still owns the account, it is only paused.
+
+    Returns False when no live row matched, so the route can answer 404.
+    It used to return None either way and the route reported success
+    unconditionally -- which soft delete made easy to hit: two tabs open,
+    one deletes, the other clicks Enable and is told it worked while
+    nothing happened and no audit row was written. Every other route on
+    this resource 404s in that situation.
+    """
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE cloud_connections
+               SET enabled = %(v)s, updated_at = now(), updated_by = %(actor)s,
+                   revision = revision + 1
+             WHERE id = %(id)s AND deleted_at IS NULL
+            RETURNING provider, account_id, enabled
+            """,
+            {"id": connection_id, "v": value, "actor": actor},
+        )
+        row = cur.fetchone()
+        if row is None:
+            return False
+        log(
+            cur,
+            actor=actor,
+            action="connection.enable" if value else "connection.disable",
+            entity_type="cloud_connection",
+            entity_id=connection_id,
+            after=dict(row),
+        )
+        return True
+
+
 def soft_delete(*, actor: str, connection_id: str) -> bool:
     """Stop importing from a connection, keeping the history.
 
@@ -136,6 +178,16 @@ def soft_delete(*, actor: str, connection_id: str) -> bool:
             """,
             {"id": connection_id, "actor": actor},
         )
+        # Take the account out of every dropdown, keeping its row so the
+        # cost history stays joinable. Without this the deleted account
+        # stayed listed with nothing behind it. See account_dim.py.
+        hidden = account_dim.deactivate(
+            cur,
+            actor=actor,
+            provider=before["provider"],
+            account_id=before["account_id"],
+            connection_id=connection_id,
+        )
         log(
             cur,
             actor=actor,
@@ -147,6 +199,6 @@ def soft_delete(*, actor: str, connection_id: str) -> bool:
                 "account_id": before["account_id"],
                 "display_name": before["display_name"],
             },
-            after={"deleted": True, "cost_rows_kept": True},
+            after={"deleted": True, "cost_rows_kept": True, "account_hidden": hidden},
         )
         return True

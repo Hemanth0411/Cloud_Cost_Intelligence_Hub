@@ -5,6 +5,7 @@ import { Fragment, useState } from 'react';
 import { ConnectDialog } from '@/components/accounts/connect-dialog';
 import { ConnectionDeleteDialog } from '@/components/admin/connection-delete-dialog';
 import { ConnectionEditDialog } from '@/components/admin/connection-edit-dialog';
+import { ConnectionImportDialog } from '@/components/admin/connection-import-dialog';
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -139,6 +140,7 @@ export function AdminConnectionsView() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [importingId, setImportingId] = useState<string | null>(null);
+  const [importPickId, setImportPickId] = useState<string | null>(null);
   const [outcomes, setOutcomes] = useState<Record<string, ProbeOutcome>>({});
   const state = useAsyncData(`connections:${reloadKey}`, loadConnections);
 
@@ -150,6 +152,7 @@ export function AdminConnectionsView() {
   const reload = (): void => setReloadKey((n) => n + 1);
   const editing = connections.find((c) => c.id === editingId) ?? null;
   const removing = connections.find((c) => c.id === removingId) ?? null;
+  const importPick = connections.find((c) => c.id === importPickId) ?? null;
 
   /**
    * A 403 here is the access control WORKING -- /admin/* is
@@ -211,9 +214,9 @@ export function AdminConnectionsView() {
       .finally(() => setTestingId(null));
   }
 
-  function runImport(row: ConnectionRow): void {
+  function runImport(row: ConnectionRow, days: number): void {
     setImportingId(row.id);
-    importNow(row.id)
+    importNow(row.id, days)
       .then((outcome) => {
         toast({
           tone: outcome.ok ? 'success' : 'warning',
@@ -324,7 +327,8 @@ export function AdminConnectionsView() {
           <CardTitle>Registered connections</CardTitle>
           <CardDescription>
             Imports run on a schedule at 06:00 UTC, and &ldquo;Import now&rdquo; runs one
-            immediately for a single account. &ldquo;Last import&rdquo; is the stored outcome of
+            immediately for a single account, over a window of up to 31 days you choose; older
+            history is a CLI backfill, and the dialog gives the command. &ldquo;Last import&rdquo; is the stored outcome of
             whichever ran most recently &mdash; not a live health check.
           </CardDescription>
         </CardHeader>
@@ -442,24 +446,19 @@ export function AdminConnectionsView() {
                                 variant="outline"
                                 size="sm"
                                 disabled={importingId === row.id || !row.enabled}
-                                onClick={() => runImport(row)}
+                                /* Opens a window picker rather than firing.
+                                   With no `days` the route's default of 7
+                                   applied to every manual import, so a new
+                                   account showed one week as its 30-day,
+                                   month-to-date AND year-to-date total. */
+                                onClick={() => setImportPickId(row.id)}
                                 title={
                                   row.enabled
-                                    ? /* EIGHT dates, not seven.
-                                         `default_window(7)` is
-                                         [today-7, today+1) -- the seven
-                                         days before today AND today,
-                                         because AWS restates recent cost
-                                         and today is re-fetched every
-                                         run. The tooltip said "the last
-                                         7 days", which is a different
-                                         window from the one the button
-                                         asks for. */
-                                      'Fetch today and the 7 days before it from this account now'
+                                    ? 'Choose a window of up to 31 days and fetch it from this account now'
                                     : 'Disabled connections are skipped by imports'
                                 }
                               >
-                                {importingId === row.id ? 'Importing…' : 'Import now'}
+                                {importingId === row.id ? 'Importing…' : 'Import now…'}
                               </Button>
                             )}
                             {CONNECTION_CAPABILITIES.canTest && (
@@ -659,6 +658,17 @@ export function AdminConnectionsView() {
         />
       )}
 
+      {importPick && (
+        <ConnectionImportDialog
+          connection={importPick}
+          onClose={() => setImportPickId(null)}
+          onImport={(days) => {
+            setImportPickId(null);
+            runImport(importPick, days);
+          }}
+        />
+      )}
+
       {removing && (
         <ConnectionDeleteDialog
           connection={removing}
@@ -669,7 +679,7 @@ export function AdminConnectionsView() {
               tone: 'success',
               title: `${removing.displayName} will no longer be imported`,
               description: costDataKept
-                ? 'Cost data already imported is kept — it is keyed by account id, not by connection. Registering the account again resumes importing.'
+                ? 'Cost data already imported is kept — it is keyed by account id, not by connection. The account leaves the account lists and filters; registering it again brings it back and resumes importing.'
                 : 'The connection was removed.',
             });
             reload();

@@ -26,7 +26,7 @@ from costhub.api import connection_keys
 from costhub.api.deps import SuperAdmin
 from costhub.api.routes import connection_edits, connection_import
 from costhub.audit import log as audit_log
-from costhub.connections import store
+from costhub.connections import edits, store
 from costhub.connections.probe import probe
 from costhub.db import connect
 from costhub.ingest.stale import reap_stale_runs
@@ -159,7 +159,7 @@ def create_connection(who: SuperAdmin, body: ConnectionIn) -> dict:
 def set_connection_enabled(
     who: SuperAdmin, connection_id: str, value: bool = True
 ) -> dict:
-    if not store.set_enabled(actor=who.email, connection_id=connection_id, value=value):
+    if not edits.set_enabled(actor=who.email, connection_id=connection_id, value=value):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such connection")
     return {"id": connection_id, "enabled": value}
 

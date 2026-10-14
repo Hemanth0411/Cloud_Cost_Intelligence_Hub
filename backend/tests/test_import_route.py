@@ -64,7 +64,7 @@ def test_a_disabled_connection_is_not_imported(as_superadmin, no_real_aws):
     """The regression. Billing an account the operator switched off is the
     one thing this must never do."""
     cid = as_superadmin.post("/admin/connections", json=BODY).json()["id"]
-    assert store.set_enabled(actor="t@costhub.test", connection_id=cid, value=False)
+    assert edits.set_enabled(actor="t@costhub.test", connection_id=cid, value=False)
 
     response = as_superadmin.post(f"/admin/connections/{cid}/import")
 

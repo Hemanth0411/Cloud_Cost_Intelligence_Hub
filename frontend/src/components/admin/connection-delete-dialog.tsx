@@ -30,7 +30,14 @@ import {
  * and `store.upsert` is `ON CONFLICT (provider, account_id) DO UPDATE`
  * with `deleted_at = NULL, enabled = true` -- so registering the same
  * provider and account id again revives this very row rather than
- * creating a second one, and picks the history back up. The caveat is
+ * creating a second one, and picks the history back up.
+ *
+ * THE ACCOUNT LEAVES THE PICKERS, and the dialog says so. The delete
+ * marks `dim_account.is_active = false` (never deletes it -- cost rows
+ * must stay joinable), which drops it from `/meta/accounts` and so from
+ * the account list and every filter; registering again re-activates it
+ * (`connections/account_dim.py`). Before that, a deleted account stayed
+ * in every dropdown with nothing behind it. The caveat is
  * worth stating too: registering it again is an UPSERT, so it rewrites
  * the credential columns and issues a new ExternalId.
  *
@@ -107,9 +114,17 @@ export function ConnectionDeleteDialog({ connection, onClose, onDeleted, onVanis
           <p className="text-muted-foreground">
             Every cost row already imported from this account.{' '}
             <code className="font-mono">fact_cost_daily</code> is keyed by provider and account id
-            rather than by connection, so the dashboards, the account breakdown and the comparisons
-            are unchanged. Nothing on this screen deletes spend history, and there is no control
-            here that does.
+            rather than by connection, so its spend stays in the totals. Nothing on this screen
+            deletes spend history, and there is no control here that does.
+          </p>
+        </div>
+
+        <div className="space-y-1.5 rounded-md border bg-muted/30 px-3 py-2.5">
+          <p className="font-medium">What is hidden</p>
+          <p className="text-muted-foreground">
+            The account itself, from the account list and every account filter. An account nobody
+            imports from any more would otherwise sit in those dropdowns with nothing new behind
+            it. It is marked inactive, not deleted, so its history still reads under its name.
           </p>
         </div>
 
@@ -117,7 +132,8 @@ export function ConnectionDeleteDialog({ connection, onClose, onDeleted, onVanis
           <p className="font-medium">It can be undone</p>
           <p className="text-muted-foreground">
             Registering <code className="font-mono">{connection.accountId}</code> again revives this
-            same row and resumes importing against the history that is still there. That path is an
+            same row, puts the account back in the lists straight away, and resumes importing
+            against the history that is still there. That path is an
             upsert, though, so it rewrites the credential fields and issues a new ExternalId &mdash;
             which the target account&rsquo;s trust policy then has to be updated with. If the ARN or
             the ExternalId is all that is wrong, Edit fixes it without any of that.

@@ -7,6 +7,7 @@ what the system can see.
 from __future__ import annotations
 
 from costhub.audit import log
+from costhub.connections import account_dim
 from costhub.connections.credentials import Connection
 from costhub.db import connect, fetch_all
 
@@ -127,6 +128,16 @@ def upsert(
         )
         row = cur.fetchone()
         assert row is not None
+        # A live connection means a visible account. Deleting one hides
+        # its account (edits.soft_delete); this is the other half. The
+        # ingest also re-activates, but only once an import succeeds, and
+        # a revived connection whose role is still wrong would otherwise
+        # keep its real history out of every dropdown. Every outcome, not
+        # just a revive: it is a no-op, unaudited, for an active account.
+        account_dim.reactivate(
+            cur, actor=actor, provider=provider, account_id=account_id,
+            connection_id=row["id"],
+        )
         if revived:
             # Close anything this row's previous life left `running`, in
             # the same transaction. Otherwise the reaper finds it later,
@@ -243,46 +254,11 @@ def rename(
         return str(before["id"])
 
 
-# `update`, `soft_delete` and the EDITABLE allowlist live in
-# connections/edits.py. Registering and reading a connection is this
+# `update`, `set_enabled`, `soft_delete` and the EDITABLE allowlist live
+# in connections/edits.py. Registering and reading a connection is this
 # module; correcting or removing one is that one. Split when this file
 # crossed the 300-line limit (NFR-18), along the boundary that was
 # already there rather than at a convenient line number.
-
-def set_enabled(*, actor: str, connection_id: str, value: bool) -> bool:
-    """Disable without losing history (FR-13).
-
-    Returns False when no live row matched, so the route can answer 404.
-    It used to return None either way and the route reported success
-    unconditionally -- which soft delete made easy to hit: two tabs open,
-    one deletes, the other clicks Enable and is told it worked while
-    nothing happened and no audit row was written. Every other route on
-    this resource 404s in that situation.
-    """
-    with connect() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            UPDATE cloud_connections
-               SET enabled = %(v)s, updated_at = now(), updated_by = %(actor)s,
-                   revision = revision + 1
-             WHERE id = %(id)s AND deleted_at IS NULL
-            RETURNING provider, account_id, enabled
-            """,
-            {"id": connection_id, "v": value, "actor": actor},
-        )
-        row = cur.fetchone()
-        if row is None:
-            return False
-        log(
-            cur,
-            actor=actor,
-            action="connection.enable" if value else "connection.disable",
-            entity_type="cloud_connection",
-            entity_id=connection_id,
-            after=dict(row),
-        )
-        return True
-
 
 def record_ingest(*, connection_id: str, status: str) -> None:
     """Stamp the outcome of the last run, for the connections screen."""
