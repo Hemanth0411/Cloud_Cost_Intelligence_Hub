@@ -179,11 +179,11 @@ def test_zero_baseline_gives_null_percent_not_infinity():
     sparse series turned it into a false-positive generator. The intent
     survives, tested against the function that owns it.
     """
-    from costhub.anomaly.mad import _pct
+    from costhub.anomaly.ceilings import pct
 
-    assert _pct(Decimal("25"), Decimal("0")) is None
-    assert _pct(Decimal("30"), Decimal("10")) == 200.0
-    assert _pct(Decimal("5"), Decimal("10")) == -50.0
+    assert pct(Decimal("25"), Decimal("0")) is None
+    assert pct(Decimal("30"), Decimal("10")) == 200.0
+    assert pct(Decimal("5"), Decimal("10")) == -50.0
 
 
 # ----------------------------------------------------------- recency guard

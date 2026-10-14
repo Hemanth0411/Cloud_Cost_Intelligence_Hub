@@ -124,10 +124,32 @@ def cmd_grant(args: argparse.Namespace) -> int:
     return 0
 
 
-def _run_ingest(start: date, end: date, dev_seed: bool) -> int:
+def _run_ingest(
+    start: date, end: date, dev_seed: bool, account_id: str | None = None
+) -> int:
     factory = dev_seed_for if dev_seed else source_for
+
+    # Scoped to one account when asked. `runner.ingest` consults
+    # `store.enabled()` only when it is NOT handed an explicit list, so
+    # the disabled check has to happen here too -- otherwise naming an
+    # account would quietly bypass the switch the operator turned off.
+    connections = None
+    if account_id is not None:
+        connections = [c for c in store.enabled() if c.account_id == account_id]
+        if not connections:
+            print(
+                f"no enabled connection for account {account_id}. "
+                "Run list-connections; a disabled or deleted one is skipped "
+                "deliberately."
+            )
+            return 1
+
     results = runner.ingest(
-        source_factory=factory, start=start, end=end, triggered_by=_actor()
+        source_factory=factory,
+        start=start,
+        end=end,
+        triggered_by=_actor(),
+        connections=connections,
     )
     print(f"window {start} .. {end}  source={'dev_seed' if dev_seed else 'cost_explorer'}")
     print(report.summarize(results))
@@ -138,7 +160,7 @@ def _run_ingest(start: date, end: date, dev_seed: bool) -> int:
 
 def cmd_ingest(args: argparse.Namespace) -> int:
     start, end = default_window(args.days)
-    return _run_ingest(start, end, args.dev_seed)
+    return _run_ingest(start, end, args.dev_seed, args.account_id)
 
 
 # Cost Explorer keeps ~14 months of daily data. Asking for more does not
@@ -176,7 +198,7 @@ def cmd_backfill(args: argparse.Namespace) -> int:
             f"outright rather than returning less."
         )
 
-    return _run_ingest(start, end, args.dev_seed)
+    return _run_ingest(start, end, args.dev_seed, args.account_id)
 
 
 # -------------------------------------------------------------------- parser
@@ -220,11 +242,15 @@ def build_parser() -> argparse.ArgumentParser:
     a = sub.add_parser("ingest")
     a.add_argument("--days", type=int, default=7)
     a.add_argument("--dev-seed", action="store_true")
+    a.add_argument("--account-id", default=None,
+                   help="only this account; omit for every enabled connection")
     a.set_defaults(fn=cmd_ingest)
 
     a = sub.add_parser("backfill")
     a.add_argument("--months", type=int, default=14)
     a.add_argument("--dev-seed", action="store_true")
+    a.add_argument("--account-id", default=None,
+                   help="only this account; omit for every enabled connection")
     a.set_defaults(fn=cmd_backfill)
 
     a = sub.add_parser("detect")

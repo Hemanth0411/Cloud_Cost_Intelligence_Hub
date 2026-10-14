@@ -185,44 +185,58 @@ and will silently rot if ignored:
     `terraform/iam.tf` (`ManageConnectionCredentials`) for the one
     prefix the Lambda may write secrets under.
 
-## The anomaly detector — what "0 findings" means
+## The anomaly detector — and why the feed is empty today
 
 Our own rolling-median + MAD detector (`anomaly/mad.py`), not AWS Cost
-Anomaly Detection. Run 2026-10-13 against the deployed database with
-default settings: 30 series, 0 findings, `anomaly_findings` empty,
-`GET /anomalies` returns `[]`. Checked independently against
-`fact_cost_daily` with hand arithmetic; it is not a bug. Why:
+Anomaly Detection. Scores against the median and MAD of a trailing
+window, needs `min_history=14` days, drops the last 2 points, and
+ignores decreases.
 
-* It scores only the **last 7 days** of each series (`scan_days=7`),
-  after dropping the final 2 points, and it ignores decreases. Spend in
-  the one account with real money fell off a cliff: $630 in July, $790
-  in August, $335 in September, $101 so far in October. Nothing rose.
-* The history *does* contain events the same thresholds flag when the
-  whole range is scanned in memory -- AWS Glue on 2026-08-12/13
-  ($69 then $224 in a day against a ~$0.03 median), with Athena,
-  CloudWatch and S3 moving the same week. They are simply two months
-  older than the scan window. Backfilling them is a product decision
-  (`--scan-days 120` would do it); it was deliberately not done.
+**Sparse-series blindness: found, then fixed** (`be23273`, 2026-10-13).
+A service billed on 12 of 28 days has more zero days than non-zero ones
+once the series is densified, so the median lands on zero however large
+the charges are — and `_score` returned 0.0, making such a series
+unflaggable *at any amount*. Measured on real data before the fix:
 
-Three limits of the detector that this run exposed. None was changed --
-the instruction was not to tune until something appears -- but know
-them before trusting a quiet feed:
+| series | active-day median | observed | before | after |
+|---|---|---|---|---|
+| AWS Glue 2026-08-12 | ~$0.03 | $224.05 | 0.0 | flags |
+| AWS Support (monthly) | $500 | $500 | 0.0 | does not |
+| a first-ever charge | no active days | any | 0.0 | does not |
 
-1. **A sparse series cannot be flagged at any dollar amount.** If a
-   service was active on fewer than 14 of its trailing 28 days, the
-   median and the MAD are both 0 and `_score` returns 0.0 by design
-   ("a first charge is a new service"). Glue is in that state *today*
-   (12 of 28 days). Replaying August's $421 burst after the last real
-   row produces zero findings. The comment's rationale is also wrong
-   for the case it catches most: Bedrock model series with weeks of
-   history, not new services.
-2. **"The last 7 days" is relative to each series' last row, not to
-   today**, because zero-fill stops at the series' own last day. Glue's
-   window was 09-30..10-06; a model last billed on 09-24 was scored on
-   09-16..09-22. A charge followed by silence sits in the two dropped
-   points forever.
-3. `series_scanned` counts series before the `min_history` gate. "30
-   scanned" was 20 scored, and 8 of those 20 could only ever score 0.
+The fix scores sparse series against their **own active days**, ignoring
+the densified zeros: a gap is missing data, not a measurement of
+nothing. That keeps the recurring-charge behaviour the 0.0 was there to
+protect while restoring the one case it hid. Two numeric clamps went in
+with it (`anomaly/ceilings.py`) because `score` and `delta_pct` are both
+`numeric(10,4)`, and one overflow raised inside the per-series loop had
+taken an entire scan down. It then produced **18 findings**, led by
+`2026-08-12 step AWS Glue $0.03 -> $224.05`.
+
+**Why `anomaly_findings` is empty right now (2026-10-14).** All 18 of
+those findings belonged to account `881953306582`, whose cost rows were
+deleted at the owner's request so the account could be re-keyed and
+re-imported. Deleting the rows took the findings with them. The only
+remaining account with real spend, `820242903235`, holds 7 days against
+`min_history=14`, so it cannot be scored at all yet. The feed comes back
+after a backfill:
+
+```bash
+./do.sh cli dev backfill --months 14 --account-id 820242903235
+./do.sh cli dev detect --lookback 420 --scan-days 400
+```
+
+Defaults score only the last 7 days, which finds nothing in freshly
+imported back history — hence the wide `--scan-days` above.
+
+Two limits that remain true, and are worth knowing before trusting a
+quiet feed:
+
+1. **"The last 7 days" is relative to each series' last row, not to
+   today**, because zero-fill stops at the series' own last day. A
+   charge followed by silence sits in the two dropped points forever.
+2. `series_scanned` counts series *before* the `min_history` gate, so
+   the number it reports overstates what was actually scored.
 
 ## Verification gates — run these before any commit
 

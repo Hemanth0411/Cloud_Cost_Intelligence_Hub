@@ -23,6 +23,7 @@ from decimal import Decimal
 from typing import Sequence
 
 from costhub.anomaly.ports import Finding, Point
+from costhub.anomaly.ceilings import clamp_score, pct
 
 # 0.6745 rescales MAD so the score reads like a standard deviation, which
 # makes 3.5 the conventional cutoff for a "modified z-score".
@@ -33,21 +34,6 @@ MAD_TO_SIGMA = Decimal("0.6745")
 # fails the INSERT with "numeric field overflow" -- which took the whole
 # scan down rather than skipping one finding.
 #
-# Clamping rather than widening the column: the score is a SIGNAL, not a
-# measurement. A service whose active-day MAD is a fraction of a cent
-# divides by almost nothing, so a real $224 charge scored in the
-# millions. Past a certain point "definitely anomalous" is all the number
-# means, and ordering among absurd values is not information worth a
-# migration.
-SCORE_CEILING = 9999.0
-
-
-def _clamp(score: float) -> float:
-    if score != score:  # NaN, from 0/0 in a degenerate window
-        return 0.0
-    return max(-SCORE_CEILING, min(SCORE_CEILING, score))
-
-
 class MadDetector:
     name = "mad"
 
@@ -136,40 +122,27 @@ class MadDetector:
         mad = Decimal(str(statistics.median([abs(v - baseline) for v in window])))
 
         if mad > 0:
-            return _clamp(float(MAD_TO_SIGMA * (observed - baseline) / mad))
+            return clamp_score(float(MAD_TO_SIGMA * (observed - baseline) / mad))
 
         # A perfectly flat series has MAD 0, which would make every score
         # infinite. Fall back to relative change, expressed on the same
         # scale so one threshold still works.
         if baseline > 0:
             rel = float((observed - baseline) / baseline)
-            return _clamp(self.z_threshold * (rel / self.min_rel_delta)) if rel > 0 else 0.0
+            return clamp_score(self.z_threshold * (rel / self.min_rel_delta)) if rel > 0 else 0.0
 
-        # baseline == 0 AND mad == 0: the window's median is zero, which a
-        # SPARSE series produces as soon as it is densified -- a service
-        # billed on 12 of 28 days has more zero days than non-zero ones,
-        # so the median lands on zero however large the charges are.
-        #
-        # This returned exactly `z_threshold` once, which `_flag_days`
-        # accepts with `>=` -- a pass by default -- so every ordinary
-        # charge on an intermittent series flagged: AWS Support at
-        # $500/month was reported as a spike on every scan. The fix was
-        # to return 0.0, and that over-corrected: it made a sparse series
-        # unflaggable AT ANY AMOUNT. Measured on real data, AWS Glue
-        # billing $0.03 on a typical active day and then $224.05 scored
-        # zero, because 12 active days out of 28 is enough to zero the
-        # median.
-        #
-        # The discriminator was already in the window: compare against
-        # the series' OWN ACTIVE DAYS, ignoring the densified zeros. A
-        # gap is missing data, not a measurement of nothing.
+        # baseline == 0 AND mad == 0: a SPARSE series does this as soon
+        # as it is densified -- billed on 12 of 28 days, the median lands
+        # on zero however large the charges are. So score against the
+        # series' OWN ACTIVE DAYS: a gap is missing data, not a
+        # measurement of nothing.
         #
         #   Glue        active median ~$0.03, observed $224  -> flags
         #   AWS Support active median  $500,  observed $500  -> does not
         #   first charge no active days at all               -> does not
         #
-        # That keeps the recurring-charge behaviour the 0.0 was protecting
-        # while restoring the one case it was hiding.
+        # Both earlier answers here were wrong in opposite directions;
+        # CONTEXT.md "The anomaly detector" has the measurements.
         active = [v for v in window if v > 0]
         if not active:
             # A genuinely first-ever charge is a NEW SERVICE, not an
@@ -182,10 +155,10 @@ class MadDetector:
             str(statistics.median([abs(v - active_baseline) for v in active]))
         )
         if active_mad > 0:
-            return _clamp(float(MAD_TO_SIGMA * (observed - active_baseline) / active_mad))
+            return clamp_score(float(MAD_TO_SIGMA * (observed - active_baseline) / active_mad))
         if active_baseline > 0:
             rel = float((observed - active_baseline) / active_baseline)
-            return _clamp(self.z_threshold * (rel / self.min_rel_delta)) if rel > 0 else 0.0
+            return clamp_score(self.z_threshold * (rel / self.min_rel_delta)) if rel > 0 else 0.0
         return 0.0
 
     def _group(
@@ -253,7 +226,7 @@ class MadDetector:
             baseline_value=baseline,
             observed_value=observed,
             delta_abs=observed - baseline,
-            delta_pct=_pct(observed, baseline),
+            delta_pct=pct(observed, baseline),
             score=round(flagged[peak][1], 4),
             method=self.name,
         )
@@ -287,28 +260,7 @@ class MadDetector:
             baseline_value=was,
             observed_value=now,
             delta_abs=now - was,
-            delta_pct=_pct(now, was),
+            delta_pct=pct(now, was),
             score=round(float(now / was), 4),
             method=self.name,
         )
-
-
-# `anomaly_findings.delta_pct` is numeric(10,4), so the same 10^6 ceiling
-# as the score applies.
-PCT_CEILING = 99999.99
-
-
-def _pct(observed: Decimal, baseline: Decimal) -> float | None:
-    """None, not infinity, when there is nothing to compare against.
-
-    Clamped for the same reason the score is: a baseline of a fraction of
-    a cent against a real charge produces a percentage in the millions,
-    which overflows the column and took the ENTIRE scan down with
-    "numeric field overflow" rather than skipping one finding. Beyond
-    about 100,000% the number has stopped being informative anyway -- the
-    UI already renders large percentages as "new" territory.
-    """
-    if baseline == 0:
-        return None
-    pct = round(float((observed - baseline) / baseline * 100), 2)
-    return max(-PCT_CEILING, min(PCT_CEILING, pct))

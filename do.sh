@@ -7,6 +7,7 @@
 #   ./do.sh build
 #   ./do.sh up       dev
 #   ./do.sh migrate  dev
+#   ./do.sh cli      dev backfill --months 14
 #   ./do.sh outputs  dev
 #   ./do.sh teardown dev     # backup -> verify -> destroy -> prove
 #   ./do.sh restore  dev backups/dev-....sql
@@ -368,6 +369,46 @@ branding_died() {
   die "login branding not applied"
 }
 
+# The deployed DATABASE_URL, read from the API Lambda rather than from
+# Terraform state. Two reasons, and the second one is why this exists:
+#
+#  1. It is the value the deployed app actually uses. Terraform state is
+#     what we asked for; this is what is running.
+#  2. The state file is a LOCAL file with no lock server (trap 11), so
+#     `terraform output` fails outright while any other session is
+#     running terraform: "The process cannot access the file because
+#     another process has locked a portion of the file." An ops command
+#     has no business being blocked by someone else's apply.
+#
+# Falls back to the state file, for the case where the Lambda does not
+# exist yet (a first `up` has not run).
+db_url_live() {
+  local url
+  url="$(aws lambda get-function-configuration             --function-name "costhub-${ENV}-api"             --query "Environment.Variables.DATABASE_URL"             --output text 2>/dev/null || true)"
+  if [ -n "$url" ] && [ "$url" != "None" ]; then
+    printf '%s' "$url"
+    return 0
+  fi
+  echo "  Lambda costhub-${ENV}-api has no DATABASE_URL; falling back to terraform state" >&2
+  db_url
+}
+
+cmd_cli() {
+  # `python -m costhub.cli` with DATABASE_URL pointed at the DEPLOYED
+  # database. Without this you get backend/.env, which is the Neon
+  # sandbox full of dev_seed rows -- so `status` cheerfully reports a
+  # healthy estate that nobody is looking at. Trap 8.
+  need_python_deps
+  need_env "${1:-}"
+  shift
+  [ "$#" -gt 0 ] || die "nothing to run: ./do.sh cli $ENV backfill --months 14"
+  step "costhub.cli $* ($ENV)"
+  local url
+  url="$(db_url_live)"
+  [ -n "$url" ] || die "could not resolve the deployed DATABASE_URL for $ENV"
+  ( cd "$BACKEND" && DATABASE_URL="$url" python -m costhub.cli "$@" )
+}
+
 cmd_migrate() {
   need_python_deps
   need_env "${1:-}"
@@ -602,6 +643,7 @@ case "$CMD" in
   test)        cmd_test ;;
   up)          cmd_up "$@" ;;
   migrate)     cmd_migrate "$@" ;;
+  cli)         cmd_cli "$@" ;;
   outputs)     cmd_outputs "$@" ;;
   export-data) cmd_export_data "$@" ;;
   teardown)    cmd_teardown "$@" ;;
