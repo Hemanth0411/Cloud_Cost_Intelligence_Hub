@@ -52,7 +52,7 @@ changed mid-project when an apply replaced a resource. Always
 | Cognito email-OTP sign-in | **live**, proven end to end; the managed login page is branded from `branding/` — see its README |
 | Backend API (all endpoints) | **live**, 207 tests passing |
 | Database + migrations | **live** (RDS) |
-| `/admin/users`, `/admin/audit` | **live data.** Removing a user and granting/revoking superadmin are now routes, not CLI-only -- but the Cognito half of a removal needs the IAM apply in item 5d below |
+| `/admin/users`, `/admin/audit` | **live data**, and deployed 2026-10-14: removing a user (soft delete + Cognito disable) and granting/revoking superadmin are routes, not CLI-only. Probed on the deployed API -- both answer 401 unauthenticated, where an unmounted path answers 404 |
 | Cost screens (dashboard, accounts, services, compare) | see `NEXT_PUBLIC_USE_MOCK` |
 | `/insights` | **has no backend endpoint at all.** Prose generated client-side. Cannot be real without Bedrock (TODO-18) |
 | `/anomalies` | **live and honestly empty.** The detector ran on 105 days of real data (2026-10-13): 30 series, **0 findings**, and that is a true negative -- see "The anomaly detector" below before concluding it is broken or tuning it |
@@ -295,17 +295,17 @@ Ordered.
    nothing long-lived — or, if nobody will create one, switch it to
    `secret` and enter an access key in Edit. Both now work from the
    browser; `profile` never will.
-5d. **`terraform apply` is OWED for the Cognito user-management IAM.**
-   `DELETE /admin/users/{id}` disables the removed person's pool user, and
-   inviting them back re-enables it, so `terraform/iam.tf` gained
-   `AdminDisableUser` and `AdminEnableUser` under `ManageInvitedUsers`.
-   Until that is applied the deployed API answers 200 with
-   `login_disabled: false` and an AccessDenied in `login_detail` -- the
-   person IS removed and every endpoint refuses them (`_load_user`
-   requires `deleted_at IS NULL`), but their Cognito login stays enabled
-   and they keep receiving codes for a shell with nothing in it. The
-   route reports that rather than hiding it, which is why this is
-   recoverable rather than silent. The UI says it too.
+~~5d. `terraform apply` is owed for the Cognito user-management IAM.~~
+   **Done** 2026-10-14. `AdminDisableUser` and `AdminEnableUser` are live
+   on `costhub-dev-lambda` under `ManageInvitedUsers`, and the code that
+   uses them is deployed (`CodeSha256 BkyLACDk...` on all five functions).
+   Worth knowing anyway, because it is the shape of the failure if the
+   permission is ever lost: `DELETE /admin/users/{id}` answers 200 with
+   `login_disabled: false` and the AccessDenied in `login_detail` rather
+   than failing. The person IS still removed -- every endpoint refuses a
+   row with `deleted_at` set -- but their Cognito login stays enabled and
+   they keep receiving codes for a shell with nothing in it. The route
+   reports that instead of hiding it, and the UI repeats it.
 5e. **The invite sends no email, and that is deliberate.**
    `rbac/pool.create_user` passes `MessageAction="SUPPRESS"` because
    Cognito's invitation exists to deliver a temporary password and this
