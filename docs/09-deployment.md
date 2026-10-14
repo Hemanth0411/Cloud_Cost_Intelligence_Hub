@@ -1,7 +1,10 @@
 # Deployment
 
-One Terraform root module, applied to the personal account. Stemline is a
-data source only.
+One Terraform root module, applied to the deploy account. Every other cloud
+account is a data source only, reached read-only.
+
+One environment exists: `dev`, in a single AWS account, us-east-1.
+`staging` and `main` are supported by the code and have never been applied.
 
 ---
 
@@ -22,7 +25,7 @@ destroys anything, so without the client tools that step cannot run —
 destroy with an empty dump file. The client also has to be at least as
 new as the server, so a Postgres 17 database needs a 17 client.
 
-### In the deploy account (personal — you are root)
+### In the deploy account (you are root)
 
 | # | Step | Note |
 |---|---|---|
@@ -38,7 +41,7 @@ Step 1 is the gate people lose a day to: with it off, a correct IAM policy
 still returns `AccessDenied` on every cost API. Sender-identity choice and
 the DMARC trap are in [11-configuration.md](11-configuration.md).
 
-### In each data-source account (stemline)
+### In each data-source account
 
 Requires someone with root and someone with IAM access:
 
@@ -46,15 +49,16 @@ Requires someone with root and someone with IAM access:
 |---|---|---|
 | 1 | Enable "IAM User and Role Access to Billing Information" | **root** |
 | 2 | Confirm Cost Explorer is enabled | billing access |
-| 3 | Create role `CostHubCostReader` | IAM access |
+| 3 | Create role `CostHubCostReader`, **at the root IAM path** | IAM access |
 
-Role specification:
+Role specification. **Only two Cost Explorer permissions are ever used** —
+verified against the code, which calls `get_cost_and_usage` and
+`get_dimension_values` and nothing else:
 
 ```json
 // permissions
 { "Effect": "Allow",
-  "Action": ["ce:GetCostAndUsage","ce:GetCostForecast",
-             "ce:GetDimensionValues","ce:GetTags","ce:GetAnomalies"],
+  "Action": ["ce:GetCostAndUsage", "ce:GetDimensionValues"],
   "Resource": "*" }
 
 // trust policy
@@ -64,16 +68,27 @@ Role specification:
   "Condition": { "StringEquals": { "sts:ExternalId": "<EXTERNAL_ID>" } } }
 ```
 
-`AWSBillingReadOnlyAccess` is the managed-policy alternative — broader, but
-an easier approval.
+Cost Explorer has no resource-level permissions, so `"Resource": "*"` is
+the only valid value. `AWSBillingReadOnlyAccess` is the managed-policy
+alternative — far broader than two actions, but sometimes an easier
+approval.
+
+**The role name and path are both load-bearing.** Our own policy grants
+`arn:aws:iam::*:role/CostHubCostReader` — exactly that name, at the root
+path. A role created under a path has the ARN
+`...:role/<path>/CostHubCostReader`, which is a valid ARN, so STS evaluates
+it and answers `AccessDenied` — and it is **our** policy denying it, before
+their trust policy is consulted. The connection probe detects that case and
+says so.
 
 This role is **deliberately outside our Terraform**: we do not own that
 account, and it must survive our teardown.
 
-> **Verified state as of 2026-10-07** in account `881953306582`: every cost
-> API is denied (`ce:*`, `budgets:*`, `bcm-data-exports:*`, `cur:*`), and the
-> denials read *"no identity-based policy allows"* — an implicit deny, so no
-> SCP is blocking it. Adding the role is sufficient; no org-level change needed.
+**If nobody in that account will create a role**, use
+`credential_mode = "secret"` instead: an access key entered once in the
+browser, written to Secrets Manager, with only the ARN stored. Do **not**
+reach for `credential_mode = "profile"` — it cannot run in Lambda at all.
+See [17-connection-lifecycle.md](17-connection-lifecycle.md).
 
 ---
 
@@ -81,20 +96,33 @@ account, and it must survive our teardown.
 
 ```
 terraform/
-├── main.tf          providers, locals
-├── variables.tf     region, name_prefix, account ids, external id
-├── iam.tf           Lambda execution roles under path /costhub/
+├── main.tf          providers, locals, the workspace guard,
+│                    allowed_account_ids, default_tags
+├── variables.tf     region, name_prefix, schedules, db sizing,
+│                    insights_model_id, allow_local_frontend
+├── iam.tf           the shared Lambda role + four separate policies:
+│                    base, assume-cost-roles, insights-bedrock,
+│                    connection-secrets
 ├── network.tf       security group for the database
 ├── database.tf      RDS instance, subnet group, parameter group, AZ filter
-├── lambda.tf        5 functions + Function URL
-├── schedule.tf      EventBridge rules
+├── lambda.tf        4 app functions + presignup, from one zip. NO Function URL
+├── apigateway.tf    the HTTP API, integration, $default route and stage,
+│                    throttling, and the service-principal permission
+├── schedule.tf      EventBridge rules for ingest, anomaly, alerts
 ├── cognito.tf       user pool, client, Managed Login domain, superadmin user
-├── amplify.tf       app, branch, basic auth
-├── messaging.tf     budget + the SES identity ARN (neither the identity nor any topic is managed here)
-├── secrets.tf       Secrets Manager entries
+├── amplify.tf       app, branch, the co-owned environment_variables map
+├── messaging.tf     budget + the composed SES identity ARN
+│                    (neither the identity nor any topic is managed here)
+├── secrets.tf       the generated database password and its secret
 ├── logs.tf          explicit log groups with retention
-└── outputs.tf       frontend URL, API URL, pool id, DB endpoint
+└── outputs.tf       frontend URL, API URL, pool id, DB endpoint, tags
 ```
+
+`presignup` is deliberately a **separate** resource from the four app
+functions: the user pool needs that function's ARN while the others need
+the pool's id, so keeping them in one `for_each` is a dependency cycle.
+Splitting it is also honest, since the trigger needs none of the pool's
+configuration.
 
 Single root module, **local state**. An S3 backend has a bootstrap
 chicken-and-egg that is not worth it for a 10-day project — but never commit
@@ -187,8 +215,8 @@ allowed to deploy into. Terraform's `allowed_account_ids` enforces it and
 
 This is not hypothetical. The machine this was built on has its **default
 profile pointed at a work account**, so without the guard `./do.sh up dev`
-would have begun creating 41 resources there and failed partway through on
-a permission denial. Use a named profile for the deploy account:
+would have begun creating the whole stack there and failed partway through
+on a permission denial. Use a named profile for the deploy account:
 
 ```bash
 aws configure --profile costhub          # once
@@ -215,13 +243,22 @@ terraform -chdir=terraform init
 `terraform apply` → `ensure_login_branding` → `migrate` → `outputs`.
 
 ```bash
-# 2. point it at an account to read
-cd backend && python -m costhub.cli add-connection \
-  --provider aws --account-id self --name personal
+# 2. point it at an account to read -- or do this in the UI, which is
+#    the normal path and gives you the two-stage probe and an inline import
+./do.sh cli dev add-connection \
+  --provider aws --account-id self --name "Deploy account"
 
-# 3. first ingest
-aws lambda invoke --function-name costhub-dev-ingest /dev/stdout
+# 3. first ingest, and then score what it wrote
+./do.sh cli dev backfill --months 14 --account-id <account>
+./do.sh cli dev detect --lookback 420 --scan-days 400
 ```
+
+Step 3 uses a wide `--scan-days` on purpose: the detector's defaults score
+only the last 7 days, which finds nothing in freshly imported back history.
+
+`./do.sh cli` is what points `DATABASE_URL` at the **deployed** database.
+Running `python -m costhub.cli` directly reads `backend/.env`, which is the
+local Neon sandbox.
 
 ### What this does NOT need
 
@@ -236,41 +273,77 @@ aws lambda invoke --function-name costhub-dev-ingest /dev/stdout
   `superadmin_email`. The CLI command still exists for promoting someone
   later.
 
-### The database is RDS, not Neon
+### The database is RDS. Neon is not an environment
 
-`backend/.env` points at Neon, and that is **local development only**. The
-deployed stack creates `aws_db_instance.main` and composes
-`DATABASE_URL` from it with a Terraform-generated password
-(`secrets.tf`); nothing deployed ever reads the Neon URL. On a
-`db.t4g.micro` with 20 GB that is roughly $0.5/day — the one line item
+`backend/.env` points at Neon, and that is **a local development sandbox,
+nothing more** — it is full of `dev_seed` rows. Every environment, `dev`
+included, uses RDS: the stack creates `aws_db_instance.main` and composes
+`DATABASE_URL` from it with a Terraform-generated password (`secrets.tf`).
+Nothing deployed ever reads the Neon URL.
+
+On a `db.t4g.micro` with 20 GB that is roughly $0.5/day — the one line item
 in this stack that is not free, and it stops when you tear down.
+
+Conflating the two has already caused someone to read 1,428 seeded rows as
+live state. To talk to the deployed database, go through `do.sh`:
+
+```bash
+./do.sh cli dev status
+```
+
+`./do.sh cli <env> <args>` resolves `DATABASE_URL` by reading it off the
+**API Lambda's own configuration** (`aws lambda
+get-function-configuration --function-name costhub-<env>-api`), falling
+back to Terraform state only if that comes back empty. Reading it from the
+Lambda means the CLI agrees with whatever the deployed API is actually
+using, and needs no Terraform state at all. CONTEXT.md trap 8.
 
 ### If the API returns 403 and Terraform says everything applied
 
-A Function URL with `authorization_type = "NONE"` still needs a
-resource-based policy allowing `lambda:InvokeFunctionUrl`. The console
-adds one when you create a URL by hand; Terraform does not. Without it
-the config plans and applies perfectly and the URL serves 403 to
-everything.
+**Do not reach for a Lambda Function URL.** There is no longer one, and
+adding one back will not work: this account blocks **anonymous Lambda
+invocation**. A Function URL with a textbook-correct public resource policy
+returned `403 AccessDeniedException` to every request with no invocation
+recorded in CloudWatch, and a hand-built throwaway function URL did the
+same — so it was never this stack's configuration. The evidence is written
+up in the header comment of `terraform/apigateway.tf`.
 
-`aws_lambda_permission.api_url` in `lambda.tf` is that policy. If a 403
-ever comes back, check it exists before looking anywhere else:
+The API is reached through the HTTP API, which invokes the function as the
+`apigateway.amazonaws.com` **service principal**. If a 403 comes back now,
+check that permission before anything else:
 
 ```bash
 aws lambda get-policy --function-name costhub-dev-api
+# expect a statement AllowAPIGatewayInvoke with
+# Principal apigateway.amazonaws.com and a SourceArn ending /*/*
 ```
+
+One piece of cleanup is **not** in Terraform. While the 403 was being
+diagnosed, the console added a duplicate public-access statement. Terraform
+does not know about it, so clear it by hand:
+
+```bash
+aws lambda remove-permission --function-name costhub-dev-api \
+  --statement-id FunctionURLAllowPublicAccess --region us-east-1
+```
+
+If the API returns 500 on every request and the browser reports a CORS
+error, that is a different failure with the same symptom — see
+[05-backend.md](05-backend.md) on the middleware order, and CONTEXT.md trap
+3 on `*.dist-info`.
 
 ---
 
 ## Deployment permissions
 
-Not needed in the personal account (root). This is the list **if** someone
-insists on deploying into a work account.
+Not needed when you are root in the deploy account. This is the list **if**
+someone insists on deploying into an account where you are not.
 
 | Service | Actions |
 |---|---|
 | IAM | `CreateRole`, `DeleteRole`, `GetRole`, `TagRole`, `AttachRolePolicy`, `DetachRolePolicy`, `PutRolePolicy`, `DeleteRolePolicy`, **`PassRole`** |
-| Lambda | `CreateFunction`, `DeleteFunction`, `GetFunction`, `UpdateFunctionCode`, `UpdateFunctionConfiguration`, `AddPermission`, `CreateFunctionUrlConfig`, `TagResource` |
+| Lambda | `CreateFunction`, `DeleteFunction`, `GetFunction`, `UpdateFunctionCode`, `UpdateFunctionConfiguration`, `AddPermission`, `TagResource` |
+| API Gateway v2 | `CreateApi`, `DeleteApi`, `GetApi`, `CreateIntegration`, `CreateRoute`, `CreateStage`, `UpdateStage`, `TagResource` |
 | RDS | `CreateDBInstance`, `DeleteDBInstance`, `DescribeDBInstances`, `ModifyDBInstance`, `CreateDBSubnetGroup`, `CreateDBParameterGroup`, `ModifyDBParameterGroup`, `AddTagsToResource` |
 | EC2 (networking) | `DescribeVpcs`, `DescribeSubnets`, `DescribeSecurityGroups`, `CreateSecurityGroup`, `AuthorizeSecurityGroupIngress`, `RevokeSecurityGroupIngress`, `DeleteSecurityGroup`, `CreateTags` |
 | Secrets Manager | `CreateSecret`, `PutSecretValue`, `GetSecretValue`, `DescribeSecret`, `DeleteSecret`, `TagResource` |
@@ -294,27 +367,41 @@ Lambda function requires an execution role.
 
 ## Environments
 
-| | dev | demo |
-|---|---|---|
-| Database | Neon free tier | RDS `db.t4g.micro` |
-| Frontend | local dev server | Amplify branch |
-| Jobs | invoked manually | EventBridge |
-| Auth | Cognito (shared pool) | Cognito |
-| Access gate | — | Amplify branch password |
+Every environment is the same code against the same shape of
+infrastructure. Only the Terraform workspace differs, and from it every
+resource name, log group, secret path and tag (NFR-21).
 
-Identical code; only `DATABASE_URL` and the job trigger differ (NFR-21).
+| | Local development | A deployed environment |
+|---|---|---|
+| Database | **Neon sandbox**, `backend/.env`, `dev_seed` rows | **RDS** `costhub-<env>-db`, real cost data |
+| API | `uvicorn costhub.api.main:app --reload` | the api Lambda behind the HTTP API |
+| Frontend | `npx next dev -p 3000` | the Amplify branch named after the workspace |
+| Jobs | run by hand through `./do.sh cli <env> …` | EventBridge, 06:00 / 06:30 / 07:00 UTC |
+| Auth | Cognito, or the `X-Dev-User` header if `ALLOW_DEV_AUTH` is set | Cognito only — Terraform never sets that variable |
+
+Neon is on the **left-hand** column only. It is not the `dev` environment;
+`dev` uses RDS. See
+[13-environments-and-teardown.md](13-environments-and-teardown.md).
 
 ---
 
 ## Demo-day checklist
 
-- [ ] Amplify branch password set and shared with stakeholders
+- [ ] `./do.sh outputs dev` run, and `NEXT_PUBLIC_*` matching it in the
+      Amplify console — an apply has wiped those before
+- [ ] `NEXT_PUBLIC_USE_MOCK` set deliberately, and the sidebar badge
+      checked on screen to confirm which mode is live
 - [ ] Budget alerts active (50% / 80% of `budget_limit_usd`)
-- [ ] SES sender verified, or recipients verified if still sandboxed
-- [ ] Both connections ingesting; `ingest_runs` shows `success`
-- [ ] Superadmin and restricted analyst accounts both invited and tested
+- [ ] SES sender verified, and each recipient verified if still sandboxed
+- [ ] A test code received in a real inbox on the allowed domain
+- [ ] Every connection ingesting; `/admin/connections` shows a recent
+      success and `/admin/ingest-runs` has no stuck `running` row
+- [ ] `CodeSha256` checked on **all five** functions — the job Lambdas run
+      an older build than `api` unless the deploy named them
+- [ ] Superadmin and a restricted analyst both invited and signed in
 - [ ] A no-grant user exists, to demonstrate the empty state
-- [ ] Planted anomalies present in the real data window, or dev_seed if sparse
-- [ ] Showcase fixtures labelled, toggle defaulting to OFF
-- [ ] `as_of` timestamp visible on every chart
-- [ ] `terraform destroy` rehearsed on a throwaway apply
+- [ ] Anomaly findings present in the window being shown; after a backfill
+      that needs a wide `--scan-days`, since the default scores 7 days
+- [ ] `as_of` visible on every chart
+- [ ] `pg_dump` installed and `./do.sh teardown` rehearsed — it has
+      **never been run**

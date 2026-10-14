@@ -1,244 +1,401 @@
 # Architecture
 
-## 1. Context diagram
+Three levels, in the order they are useful: who the system serves, what it
+is deployed as, and what the code is made of. Then the decisions behind the
+shape, and what is deliberately absent.
 
-Who and what the system touches.
-
-```mermaid
-graph TB
-    SA["Superadmin<br/>(grants access)"]
-    U["Analyst<br/>(scoped view)"]
-    ST["Stakeholder<br/>(read-only demo)"]
-
-    subgraph CM["Cloud Cost Intelligence Hub (personal AWS account)"]
-        APP["Application"]
-    end
-
-    PERS["AWS: personal<br/>Cost Explorer API"]
-    STEM["AWS: stemline<br/>Cost Explorer API"]
-    COG["Amazon Cognito"]
-    SES["Amazon SES"]
-
-    SA --> APP
-    U --> APP
-    ST --> APP
-    APP -->|"AssumeRole, read-only"| STEM
-    APP -->|"local credentials"| PERS
-    APP <-->|"email OTP"| COG
-    APP -->|"alert email"| SES
-```
-
-Key separation: **deployment target and data source are different concerns.**
-The app is deployed once, in the personal account, and reaches into other
-accounts read-only. We never need deploy rights in stemline.
+Everything below is drawn from `terraform/` and `backend/costhub/` as they
+stand. Behavioural flows are in [04-data-flow.md](04-data-flow.md); the
+sign-in sequence is in [07-security-rbac.md](07-security-rbac.md); a
+connection's life is in
+[17-connection-lifecycle.md](17-connection-lifecycle.md).
 
 ---
 
-## 2. High-level architecture
+## Level 1 — Context
+
+Who uses it, and what it talks to. No internals.
 
 ```mermaid
 graph TB
-    subgraph EDGE["Edge"]
-        AMP["Amplify Hosting<br/>static frontend<br/>basic-auth gated"]
+    SA["Superadmin<br/>invites users, grants access,<br/>registers cloud accounts"]
+    AN["Analyst<br/>sees only granted<br/>accounts and services"]
+
+    subgraph SYS["CostHub"]
+        APP["One scoped view of cloud cost<br/>across independent accounts"]
     end
 
-    subgraph COMPUTE["Compute — AWS Lambda (zip)"]
-        API["api<br/>Function URL"]
-        ING["ingest<br/>scheduled"]
-        ANO["anomaly<br/>scheduled"]
-        ALR["alerts<br/>scheduled"]
-        PRE["cognito pre-signup<br/>domain gate"]
+    AWSB["AWS Cost Explorer API<br/>per account, us-east-1 only"]
+    AZB["Azure Cost Management API<br/>adapter written,<br/>never run against Azure"]
+    MAIL["The user's inbox<br/>sign-in codes, alert email"]
+
+    SA -->|"browser, HTTPS"| APP
+    AN -->|"browser, HTTPS"| APP
+    APP -->|"read-only cost data"| AWSB
+    APP -->|"read-only cost data"| AZB
+    APP -->|"one-time codes, alerts"| MAIL
+```
+
+Two things this picture is making explicit.
+
+**Deployment target and data source are different concerns.** The system is
+deployed once, into one AWS account, and reads other accounts read-only. It
+never needs deploy rights anywhere else — only a read-only role, or a
+read-only key, in each account it reads.
+
+**There is no Google Cloud edge.** `ingest/sources.py` has adapters for
+`aws` and `azure` only, so a GCP connection raises `NoAdapter`. See
+[What is deliberately absent](#what-is-deliberately-absent).
+
+---
+
+## Level 2 — Containers
+
+What is actually deployed. Every box below is a Terraform resource in
+`terraform/`.
+
+```mermaid
+graph TB
+    BR["Browser<br/>Next.js 15 app router"]
+
+    subgraph HOST["Hosting"]
+        AMP["Amplify Hosting<br/>platform WEB_COMPUTE<br/>branch = workspace name"]
     end
 
-    subgraph DATA["Data"]
-        PG[("PostgreSQL<br/>Neon dev / RDS demo")]
-        SM["Secrets Manager"]
+    subgraph EDGE["API edge"]
+        AGW["API Gateway HTTP API<br/>default stage and route<br/>payload format 2.0<br/>no cors_configuration"]
     end
 
-    subgraph AUTH["Identity"]
-        COG["Cognito user pool<br/>email OTP"]
+    subgraph FN["Lambda - one zip, five handlers"]
+        API["api<br/>30s, 512 MB<br/>FastAPI via Mangum"]
+        ING["ingest<br/>600s, 512 MB"]
+        ANO["anomaly<br/>300s, 512 MB"]
+        ALR["alerts<br/>300s, 512 MB"]
+        PRE["presignup<br/>10s, 256 MB"]
     end
 
-    EB["EventBridge<br/>Scheduler"]
-    SES["SES"]
+    subgraph STATE["State"]
+        RDS[("RDS PostgreSQL 16<br/>db.t4g.micro, public,<br/>rds.force_ssl = 1")]
+        SM["Secrets Manager<br/>database-url<br/>connections prefix"]
+    end
 
-    AMP -->|HTTPS| API
-    AMP -->|auth| COG
-    COG --> PRE
+    COG["Cognito user pool<br/>ESSENTIALS, Managed Login v2<br/>invite-only"]
+    SES["SES<br/>verified sender identity"]
+    EB["EventBridge rules<br/>three schedules"]
+    BED["Amazon Bedrock<br/>amazon.nova-lite-v1:0"]
+
+    BR -->|"NEXT_PUBLIC_API_BASE_URL"| AGW
+    BR -->|"authorization code + PKCE"| COG
+    AMP -.->|"serves the app"| BR
+    AGW -->|"apigateway.amazonaws.com<br/>service principal"| API
+    COG -->|"pre-sign-up trigger"| PRE
+    COG -->|"sends the one-time code"| SES
     EB --> ING
     EB --> ANO
     EB --> ALR
-    API --> PG
-    ING --> PG
-    ANO --> PG
-    ALR --> PG
-    ALR --> SES
-    ING --> SM
+    API --> RDS
+    ING --> RDS
+    ANO --> RDS
+    ALR --> RDS
     API --> SM
+    ING --> SM
+    ALR -->|"alert email"| SES
+    API -->|"wording only"| BED
 ```
 
-### Why this shape
+### Which Lambda is on which schedule
 
-| Decision | Reason |
-|---|---|
-| Lambda, not EC2/ECS | Every job is a few seconds, once or twice a day. Compute idles 99.99% of the time. Also no deploy rights for ECS/App Runner/Lightsail in the work account. |
-| Zip packages, not container images | No Docker on the dev machine. The AWS-managed `AWSSDKPandas-Python312` layer supplies pandas/numpy. |
-| No VPC | The ingest Lambda needs internet (Cost Explorer API) **and** the database. Putting Lambda in a VPC would require a NAT Gateway at ~$32/month — larger than the rest of the stack combined. Public Postgres with TLS avoids it. Hardening is [deferred, not missed](10-todo-future.md). |
-| Postgres, not DynamoDB | Queries are "sum cost grouped by service for these accounts over this range, compared to last month", and the grant filter is a join. DynamoDB has neither aggregation nor joins — authorization would move into application code, breaking NFR-1. |
-| Postgres, not Athena | No transactions, no `UPDATE` (so no acknowledging an alert or revoking a grant), 1–3s query floor, per-query cost on a clicked dashboard. Athena is right for the deep layer, not app state. |
-| Amplify, not raw S3+CloudFront | Amplify *is* S3+CloudFront plus a build pipeline. It gives a free HTTPS URL, atomic deploys, and per-branch password protection — the last one is how stakeholders get access without waiting for auth to be finished. |
+From `terraform/variables.tf`; overridable per environment.
+
+| Function | Trigger | Schedule, UTC | Why then |
+|---|---|---|---|
+| `api` | API Gateway HTTP API | on request | — |
+| `ingest` | EventBridge rule `costhub-<env>-ingest` | `cron(0 6 * * ? *)` | yesterday's cost has usually landed by 06:00 |
+| `anomaly` | EventBridge rule `costhub-<env>-anomaly` | `cron(30 6 * * ? *)` | detect on what ingest just wrote |
+| `alerts` | EventBridge rule `costhub-<env>-alerts` | `cron(0 7 * * ? *)` | alert on what was detected |
+| `presignup` | Cognito `pre_sign_up` | on sign-up | domain gate |
+
+Spread across the hour rather than chained, so each is independently
+retryable. A failure at 06:00 does not stop 06:30 running on yesterday's
+data.
+
+### Two edge facts that are easy to get wrong
+
+**There is no Lambda Function URL, and reintroducing one will not work.**
+This account blocks anonymous Lambda invocation: a Function URL with a
+textbook-correct public resource policy returned `403
+AccessDeniedException` to every request, with no invocation recorded in
+CloudWatch, and a hand-built throwaway function URL did the same. API
+Gateway sidesteps it because the invocation is no longer anonymous — API
+Gateway calls the function as the `apigateway.amazonaws.com` service
+principal, authorised by `aws_lambda_permission.apigateway` scoped to that
+API's execution ARN. The full evidence is in the header comment of
+`terraform/apigateway.tf`.
+
+Payload format 2.0 is identical to what a Function URL sends, so Mangum and
+the application needed no change. What the HTTP API adds that the URL could
+not is throttling — `throttling_burst_limit = 20` and
+`throttling_rate_limit = 50` on the default stage — which matters because
+the account's Lambda concurrency ceiling is 10.
+
+**CORS has exactly one owner: the FastAPI app.** The HTTP API deliberately
+declares no `cors_configuration`. Two layers each adding
+`Access-Control-Allow-Origin` produces a duplicated header that browsers
+reject outright — a failure that reads as "CORS is broken" while both
+layers are individually correct. With no CORS block on the gateway,
+`OPTIONS` passes through and `CORSMiddleware` in `api/main.py` answers the
+preflight. Its allowed origins come from the `CORS_ORIGINS` Lambda
+environment variable, built in `terraform/lambda.tf` from the Amplify
+branch domain plus `http://localhost:3000` when `allow_local_frontend` is
+true.
 
 ---
 
-## 3. Two data layers
+## Level 3 — Components
 
-The common mistake is choosing one store. The answer differs per layer.
-
-| Layer | Volume | Access pattern | Store | Status |
-|---|---|---|---|---|
-| **App layer** — rollup, grants, rules, audit | ~10⁴ rows/month | join, aggregate, update | PostgreSQL | built |
-| **Deep layer** — FOCUS/CUR line items | 10⁸+ rows | scan, drill to resource | S3 + Athena | deferred |
-
-The daily rollup is what makes sub-second dashboards and a trivially simple
-grant join possible at the same time.
-
----
-
-## 4. Component architecture (backend)
+Inside `backend/costhub/`. Arrows point the way the dependency points.
 
 ```mermaid
 graph TD
-    subgraph PORTS["Swap points (protocols)"]
-        CS["CostSource"]
-        DET["Detector"]
-        NOT["Notifier"]
+    subgraph ENTRY["Entry points"]
+        LH["lambda_handlers<br/>five handlers, one zip"]
+        CLI["cli, cli_jobs<br/>operator commands"]
     end
 
-    ING["ingest/runner"] --> CS
-    CS -.-> CE["cost_explorer (AWS)"]
-    CS -.-> AZ["azure_cm (Azure)"]
-    CS -.-> MK["dev_seed"]
-    CS -.-> FC["focus_export (future)"]
+    subgraph HTTP["api/"]
+        MAIN["main<br/>app, CORS, 500-inside-CORS,<br/>422 credential scrub"]
+        DEPS["deps<br/>the only place a<br/>Principal is built"]
+        ENV["envelope<br/>as_of, metric, partial_period"]
+        RT["routes/<br/>cost meta anomalies alerts<br/>admin connections insights"]
+    end
 
-    ANO["anomaly/runner"] --> DET
-    DET -.-> MAD["mad (level-shift)"]
-    DET -.-> CAD["aws_cad (future)"]
+    SCOPED["query/scoped<br/>THE ONLY READER OF<br/>fact_cost_daily"]
 
-    ALR["alerts/evaluate"] --> NOT
-    NOT -.-> IN["inapp"]
-    NOT -.-> SE["ses"]
+    subgraph DOMAIN["Domain"]
+        RBAC["rbac/<br/>admin resolve pool users"]
+        CONN["connections/<br/>store edits credentials<br/>key_store probe account_dim"]
+        INGEST["ingest/<br/>runner sources ports<br/>cost_explorer azure_cm stale"]
+        ANOM["anomaly/<br/>runner mad ceilings ports"]
+        ALERTS["alerts/<br/>runner evaluate inapp ses ports"]
+        INS["insights/<br/>facts frames narrate<br/>service cache cards"]
+    end
 
-    ING --> STORE[("store")]
-    QRY["query/scoped ★"] --> STORE
-    ANO --> QRY
-    ALR --> QRY
-    API["api"] --> QRY
-    API --> RBAC["rbac"]
-    ALR --> RBAC
-    RBAC --> STORE
-    AUD["audit"] --> STORE
+    subgraph BASE["Foundation"]
+        DB["db<br/>connections, fetch helpers"]
+        AUDIT["audit<br/>append-only writer,<br/>takes a cursor"]
+        CFG["config<br/>Settings from the environment"]
+    end
+
+    LH --> MAIN
+    LH --> INGEST
+    LH --> ANOM
+    LH --> ALERTS
+    CLI --> INGEST
+    CLI --> ANOM
+    CLI --> ALERTS
+    CLI --> RBAC
+
+    MAIN --> RT
+    RT --> DEPS
+    RT --> ENV
+    RT --> SCOPED
+    RT --> RBAC
+    RT --> CONN
+    RT --> INS
+    DEPS --> SCOPED
+
+    ANOM --> SCOPED
+    ALERTS --> SCOPED
+    ALERTS --> RBAC
+    INS --> SCOPED
+    INGEST --> CONN
+    INGEST --> DB
+
+    SCOPED --> DB
+    SCOPED --> AUDIT
+    RBAC --> DB
+    RBAC --> AUDIT
+    CONN --> DB
+    CONN --> AUDIT
+    DB --> CFG
 ```
 
-`★` marks the single authorization point. Note that `anomaly`, `alerts` and
-`api` all read facts **through** `query/scoped`, never directly — that is
-what makes NFR-1 testable rather than aspirational.
+### The one direction that is a rule, not a preference
+
+Every reader of cost data points at `query/scoped`, and `query/scoped`
+points at nothing above it. `anomaly`, `alerts`, `insights` and the API all
+read facts **through** it — none of them queries `fact_cost_daily`.
+
+That is enforced, not asserted. `backend/tests/test_invariant.py` parses
+every module in the package and fails the build if a SQL string literal
+outside the allowlist selects from the fact table. The allowlist is two
+entries: `query/scoped.py`, which reads, and `ingest/runner.py`, which
+writes. The same file also fails the build on a module that constructs its
+own `Principal(role="superadmin")`, because that replaces the grant
+predicate wholesale; `scoped.system_principal()` is the one sanctioned way
+for a background job to see every account.
+
+The invariant had already silently become false twice — `anomaly/runner.py`
+and `cli.py` both grew direct reads while five documents asserted it held.
+
+### What each component owns
+
+| Component | Owns | Does not |
+|---|---|---|
+| `api/deps` | constructing a `Principal` from a verified JWT | decide which rows it may see |
+| `query/scoped` | the grant predicate, every fact read, the bypass audit | know anything about HTTP |
+| `rbac/` | users, grants, Cognito pool writes | read cost data |
+| `connections/` | `cloud_connections` rows, credential resolution, the probe | fetch cost |
+| `ingest/` | fetching, upserting, `ingest_runs` lineage | authorisation |
+| `anomaly/` | scoring a series, persisting findings | fetching the series |
+| `alerts/` | rule evaluation, the grant re-check, delivery | computing cost |
+| `insights/` | computing figures and writing candidate sentences | letting a model compute anything |
+| `audit` | one append-only row, inside the caller's transaction | its own connection |
 
 ---
 
-## 5. Deployment architecture
+## Why this shape
+
+| Decision | Reason |
+|---|---|
+| Lambda, not EC2 or ECS | Every job is a few seconds, once or twice a day. Compute idles essentially all of the time. |
+| One zip, five handlers | The code is small, and a single artifact means one build step and no chance of the API drifting from the jobs. |
+| Zip packages, not container images | No Docker on the dev machine. |
+| API Gateway HTTP API, not a Function URL | The account refuses anonymous Lambda invocation. The gateway also gives throttling, which the URL could not. |
+| No VPC | The jobs need the internet, for Cost Explorer, **and** the database. A VPC would require a NAT Gateway at roughly $32/month, more than the rest of the stack combined. Public Postgres with enforced TLS avoids it; hardening is [deferred, not missed](10-todo-future.md). |
+| Postgres, not DynamoDB | The query is "sum cost grouped by service for these accounts over this range", and the grant filter is a join. DynamoDB has neither, so authorisation would move into application code and break NFR-1. |
+| Postgres, not Athena | No transactions and no `UPDATE`, so no acknowledging a finding or revoking a grant; a 1-3s floor and a per-query charge on a clicked dashboard. Athena is right for a deep layer, not for app state. |
+| Amplify Hosting, not raw S3 and CloudFront | Amplify *is* S3 plus CloudFront plus a build pipeline. A free HTTPS URL and atomic deploys, with nothing to wire. |
+| Next.js on `WEB_COMPUTE` | The frontend is Next 15 app router, which needs server rendering. Amplify's `WEB` platform is static-only and serves a broken tree. |
+| Terraform workspace as the environment | State and environment cannot disagree, and `destroy` on `dev` physically cannot reach `main`. |
+
+---
+
+## Two data layers
+
+The common mistake is choosing one store for both.
+
+| Layer | Volume | Access pattern | Store | State |
+|---|---|---|---|---|
+| **App layer** — daily rollup, grants, rules, findings, audit | tens of thousands of rows per month | join, aggregate, update | PostgreSQL | built |
+| **Deep layer** — FOCUS or CUR line items | 10⁸+ rows | scan, drill to resource | S3 and Athena | deferred, TODO-15 |
+
+The daily rollup is what makes a sub-second dashboard and a one-line grant
+join possible at the same time.
+
+---
+
+## Deployment
 
 ```mermaid
 graph TB
-    subgraph PERSONAL["AWS account: personal (deploy + data)"]
-        AMP["Amplify app<br/>+ branch"]
-        LAM["5 Lambda functions"]
-        RDS[("RDS Postgres<br/>db.t4g.micro")]
+    subgraph DEPLOY["Deploy account - one Terraform root module"]
+        AMP["Amplify app and branch"]
+        AGW["API Gateway HTTP API"]
+        LAM["5 Lambda functions<br/>one shared execution role"]
+        RDS[("RDS PostgreSQL")]
         SM["Secrets Manager"]
         COG["Cognito user pool"]
         EB["EventBridge rules"]
-        CWL["CloudWatch Logs"]
+        CWL["CloudWatch log groups<br/>declared explicitly"]
+        BUD["Budget, 50% and 80%"]
         ROLE["IAM roles<br/>path /costhub/"]
     end
 
-    subgraph STEMLINE["AWS account: stemline (data only)"]
-        CRR["IAM role<br/>CostHubCostReader<br/>read-only + ExternalId"]
+    subgraph OTHER["A data-source account we do not own"]
+        CRR["IAM role CostHubCostReader<br/>root path, ExternalId gated<br/>created by hand"]
     end
 
-    LAM -->|sts:AssumeRole| CRR
+    AGW --> LAM
+    EB --> LAM
+    LAM -->|"sts:AssumeRole"| CRR
     LAM --> RDS
     LAM --> SM
-    AMP --> LAM
-    EB --> LAM
     LAM --> CWL
 ```
 
-All of the left box is one Terraform root module, created and destroyed as a
-unit. The right box is **one role, created once by hand** by whoever holds
-IAM access in stemline — it is deliberately outside our Terraform because we
-do not own that account.
+Everything in the left box is created and destroyed as a unit. The right
+box is **one role, created once by hand** by whoever holds IAM access in
+that account — deliberately outside this Terraform, because we do not own
+the account and the role must survive our teardown. An account where nobody
+will create that role uses `credential_mode = "secret"` instead; see
+[17-connection-lifecycle.md](17-connection-lifecycle.md).
+
+The Lambda execution role is **shared by all five functions**, which is
+worth knowing before reasoning about blast radius: the Bedrock grant and
+the Secrets Manager write grant are held by the job functions too, even
+though only the API uses them.
 
 ### Environments
 
-Three, selected by **one switch** — `ENV` — which in Terraform is the
-workspace itself, so state and environment cannot disagree.
+Three are declared; **one exists**. `dev`, in a single AWS account,
+us-east-1. `staging` and `main` are supported by the code and have never
+been applied.
 
 | `ENV` | Database | Frontend | Jobs |
 |---|---|---|---|
-| `dev` | Neon free tier | Amplify `dev` branch | invoked manually |
-| `staging` | RDS `db.t4g.micro` | Amplify `staging` branch | EventBridge |
-| `main` | RDS `db.t4g.micro` | Amplify `main` branch | EventBridge |
+| `dev` | RDS `costhub-dev-db` | Amplify `dev` branch | EventBridge |
+| `staging` | RDS | Amplify `staging` branch | EventBridge |
+| `main` | RDS | Amplify `main` branch | EventBridge |
 
-Every resource name, log group, secret path and tag derives from `ENV`.
-Per-environment values live in exactly one file each: `terraform/env/<env>.tfvars`.
-
-Identical code throughout; only `DATABASE_URL` and the job trigger differ
-(NFR-21).
-
-```bash
-terraform workspace select dev
-terraform apply -var-file=env/dev.tfvars
-```
-
-Because each workspace holds its own state, `terraform destroy` on `dev`
-cannot touch `main`. Teardown is a single command that backs up, verifies the
-backup, destroys, then proves completion with a tag sweep:
+**Every environment uses RDS.** Neon is not an environment — it is the
+local sandbox that `backend/.env` points at, full of `dev_seed` rows. See
+[15-mock-vs-live.md](15-mock-vs-live.md) and CONTEXT.md trap 8; conflating
+the two has already caused someone to read seeded rows as live state.
 
 ```bash
-./do.sh teardown dev
+./do.sh up dev        # build, apply, branding, migrate, outputs
+./do.sh outputs dev   # re-read live values into frontend/.env.local
 ```
 
-Full design in [13-environments-and-teardown.md](13-environments-and-teardown.md).
+Full design in
+[13-environments-and-teardown.md](13-environments-and-teardown.md).
 
 ---
 
-## 6. Technology choices
+## Technology choices
 
 | Concern | Choice | Note |
 |---|---|---|
-| Language | Python 3.11 | 3.14 is too new for some wheels |
-| API | FastAPI on Lambda Function URL | no API Gateway; fewer moving parts |
-| DB driver | `psycopg` 3 + plain SQL | no ORM — the grant predicate stays reviewable |
-| Migrations | numbered `.sql` + 30-line runner | no Alembic; schema is small |
-| Tests | pytest | |
-| Frontend | React + Recharts | see [06-frontend.md](06-frontend.md) |
-| IaC | Terraform (`required_version >= 1.5`), single root module, local state | |
-| Auth | Cognito, Essentials tier, Managed Login | Essentials required for passwordless; classic Hosted UI does not support it |
+| Language | Python 3.11 | the Lambda runtime |
+| API | FastAPI behind an API Gateway HTTP API, via Mangum | not a Function URL |
+| DB driver | `psycopg` 3 and plain SQL | no ORM; the grant predicate stays reviewable |
+| Migrations | numbered `.sql` files plus a small runner | 001-008 applied; no Alembic |
+| Tests | pytest | including `test_invariant.py`, which enforces architecture |
+| Frontend | Next.js 15 app router, React 19, Tailwind, Recharts | [06-frontend.md](06-frontend.md) |
+| IaC | Terraform `>= 1.5`, single root module, **local state** | one machine, no lock server |
+| Auth | Cognito ESSENTIALS tier, Managed Login v2 | ESSENTIALS is required for passwordless |
+| Narration | Amazon Bedrock, `amazon.nova-lite-v1:0` | wording only; [16-insights-api.md](16-insights-api.md) |
 
 ---
 
-## 7. What is deliberately absent
+## What is deliberately absent
 
-Named here so that "we knew and deferred" is distinguishable from "we missed it".
+Named here so "we knew and deferred" is distinguishable from "we missed
+it".
 
-- No VPC, NAT Gateway or private subnets — [TODO-1](10-todo-future.md)
-- No API Gateway (Function URL instead) — no throttling layer yet
-- No caching tier — the rollup is fast enough at this volume
-- No queue between ingest and store — single-writer, low volume
-- No multi-region, no HA — a 10-day demo
-- No GCP ingestion — architecture ready, no project available
-- **Azure ingestion is built but unverified** — the adapter exists; it needs a
-  subscription and a Cost Management Reader role. Built ahead of access so
-  the request is concrete rather than speculative.
-- No currency conversion — every account in scope bills in **USD** (NFR-7b)
-- No synthetic data in the database — multi-account and Azure views in the
-  demo are **frontend fixtures**, removable without touching the backend
+- **No GCP adapter.** `ingest/sources.py` `ADAPTERS` is `{aws, azure}`, so
+  a GCP connection raises `NoAdapter` and imports nothing. The mock estate
+  shows three Google Cloud accounts and the connect dialog offers a GCP
+  project-id field, so this is the one place the demo promises more than
+  exists. It is a missing module rather than an impossible one — one entry
+  in `ADAPTERS` and one new file. Owner's call: write it, or say on screen
+  that Google Cloud is a roadmap item. TODO-16.
+- **Azure is written and has never spoken to Azure.** `azure_cm.py` is
+  unit-tested against recorded response shapes through a mock HTTP client,
+  so the request shape and pagination are real; the live path is not. The
+  connection probe returns `stage="unsupported"` for a non-AWS provider
+  rather than guessing.
+- No VPC, NAT Gateway or private subnets — TODO-1. The database is publicly
+  reachable with TLS enforced and a generated password.
+- No caching tier. The rollup is fast enough at this volume.
+- No queue between ingest and store. Single writer, low volume.
+- No multi-region and no HA.
+- No SNS topic. One existed as a landing point for AWS Cost Anomaly
+  Detection findings; nothing ever published to it, so it was two
+  resources, a dead IAM action and a dead environment variable supporting a
+  feature that does not exist. TODO-17 creates it when something needs it.
+- No currency conversion. Every account in scope bills in USD (NFR-7b).
+- No synthetic data in the database. The mock estate lives entirely in the
+  frontend and never becomes a row — see
+  [15-mock-vs-live.md](15-mock-vs-live.md).

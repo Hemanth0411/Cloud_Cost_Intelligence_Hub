@@ -23,8 +23,8 @@ from it. Nothing else in the repository names an environment.
 | Terraform | `terraform.workspace` — the workspace **is** the environment |
 | Backend (local) | `APP_ENV` in `.env` |
 | Backend (Lambda) | `APP_ENV`, set by Terraform from the workspace |
-| Frontend (local) | `frontend/.env.<env>`, written by `./do.sh outputs` |
-| Frontend (Amplify) | per-branch environment variable |
+| Frontend (local) | `frontend/.env.local`, written by `./do.sh outputs <env>` |
+| Frontend (Amplify) | per-branch environment variables, set **in the console** — a dependency cycle keeps them out of terraform |
 
 ### Why Terraform workspaces, not `-var env=`
 
@@ -86,14 +86,20 @@ amplify_basic_auth_password = "<set>"
 ses_sender_email     = "noreply@yourdomain.com"
 superadmin_email     = "you@chryselys.com"
 data_source_accounts = [
-  { account_id = "self", name = "personal", role_arn = null, external_id = null },
+  { account_id = "self", name = "Deploy account", role_arn = null, external_id = null },
 ]
 ```
 
-`main.tfvars` differs in `log_retention_days` and sets
-`allow_local_frontend = false`; the stemline connection
-is present but commented out until the cross-account role exists. Nothing
-else differs.
+A shared environment should differ in `log_retention_days` and set
+`allow_local_frontend = false`, so a deployed API does not advertise a
+developer's laptop as an allowed CORS origin with `allow_credentials =
+true`. Nothing else needs to differ.
+
+`data_source_accounts` can stay empty: it only widens the
+`sts:AssumeRole` grant to named ARNs, and the grant is already
+name-constrained to any root-path `CostHubCostReader` in any account.
+Connections themselves live in the `cloud_connections` table and are
+registered through the UI.
 
 ### Usage
 
@@ -105,16 +111,28 @@ terraform apply -var-file=env/dev.tfvars
 
 ### Backend convention
 
-`config.py` is the **only** module that reads `os.environ`. Everything else
-takes a `Settings` object. One place to audit, one place to change, and no
-module can quietly depend on an undeclared variable.
+`config.py` is **almost** the only module that reads `os.environ`, and
+everything else takes a `Settings` object — one place to audit, one place
+to change. The exceptions are real and worth naming rather than repeating
+the stronger claim: `lambda_handlers.py` reads `INGEST_DAYS` and
+`ALLOWED_EMAIL_DOMAIN` directly, because a Lambda entry point runs before
+`Settings` is useful, and the `insights` package reads its `INSIGHTS_*`
+variables directly.
 
 ```python
 class Settings(BaseSettings):
-    app_env: str = "dev"          # the switch
+    # NOT "dev". Terraform sets APP_ENV to the workspace name, so a
+    # default of "dev" meant a deployed dev environment permanently
+    # satisfied one of the three dev-auth conditions.
+    app_env: str = "prod"
     database_url: str
+    # Never set by terraform, which is what keeps the X-Dev-User
+    # bypass unreachable in any deployed environment.
+    allow_dev_auth: bool = False
     ...
 ```
+
+An insecure default is not a default.
 
 ### Frontend convention
 
@@ -130,8 +148,15 @@ build-time environment selection logic to get wrong.
 ./do.sh teardown dev
 ```
 
-Four steps, and the verification steps are the point — a teardown you cannot
-confirm is not a teardown.
+Four steps, and the verification steps are the point — a teardown you
+cannot confirm is not a teardown.
+
+> **This has never been run.** It needs `pg_dump`, which is not installed
+> on the dev machine, and `do.sh` checks for the PostgreSQL client tools up
+> front and refuses rather than reaching the destroy with an empty dump
+> file. Install them and rehearse this on a throwaway apply **before**
+> teardown day — everything in this project that had never been run turned
+> out to be broken.
 
 ```
 1. BACKUP   pg_dump app tables → backups/<env>-<utc-timestamp>.sql
@@ -221,6 +246,16 @@ Empty output = teardown complete. Any ARN = something was created outside
 Terraform, or a flag is missing. This is the only way to *confirm* rather
 than assume.
 
+**One class of resource the sweep has to catch, because `destroy` cannot.**
+A connection in `credential_mode = "secret"` has its access key written to
+Secrets Manager **by the API at runtime**, under
+`costhub/<env>/connections/*`. Terraform does not know those secrets exist,
+so `destroy` will not remove them and `default_tags` cannot reach them —
+which is why `key_store.py` tags each one `Project` / `Environment`
+itself, and why the Lambda role holds `secretsmanager:TagResource`.
+Untagged, a live credential would survive a teardown with nothing to reveal
+it. If the sweep lists one, delete it.
+
 ### Deliberate exceptions
 
 Three things survive teardown on purpose. Each is account-level
@@ -270,7 +305,8 @@ recreated with `AdminCreateUser` from the restored `users` table.
 | `./do.sh restore <env> <file>` | apply, migrate, restore, re-ingest |
 | `./do.sh export-data <env>` | backup only |
 | `./do.sh sweep <env>` | tag sweep only, no changes |
-| `./do.sh outputs <env>` | write `frontend/.env.<env>` from Terraform outputs |
+| `./do.sh outputs <env>` | write `frontend/.env.local` from Terraform outputs |
+| `./do.sh cli <env> <args>` | run `costhub.cli` against the **deployed** database, reading `DATABASE_URL` off the api Lambda |
 
 `ENV` is required on every target. No default — defaulting to an
 environment is how the wrong one gets destroyed.
