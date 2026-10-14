@@ -56,6 +56,12 @@ INSERT INTO dim_account (provider, account_id, account_name, created_by, updated
 VALUES (%(provider)s, %(account_id)s, %(name)s, %(actor)s, %(actor)s)
 ON CONFLICT (provider, account_id) DO UPDATE SET
   account_name = EXCLUDED.account_name,
+  -- Re-activate. `scoped.py` lists accounts `WHERE is_active`, so a
+  -- dimension row left inactive would hide an account that we have just
+  -- imported real cost for -- its spend would be in fact_cost_daily and
+  -- absent from every dropdown. Importing cost for an account is the
+  -- definition of it being active.
+  is_active = true,
   updated_at = now(), updated_by = EXCLUDED.updated_by,
   revision = dim_account.revision + 1
 """
