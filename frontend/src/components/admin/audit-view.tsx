@@ -20,12 +20,17 @@ type Variant = 'success' | 'warning' | 'destructive' | 'outline';
 const ACTION_LABEL: Record<AuditAction, string> = {
   'user.invite': 'User invited',
   'user.disable': 'User disabled',
+  'user.remove': 'User removed',
+  'user.role': 'Role changed',
   'grant.create': 'Access granted',
   'grant.revoke': 'Access revoked',
   'connection.create': 'Account connected',
   'connection.update': 'Account updated',
   'connection.enable': 'Account enabled',
   'connection.disable': 'Account disabled',
+  // The backend has written this one since the delete route existed; it
+  // had no label and fell through to the raw string.
+  'connection.delete': 'Account removed',
   'anomaly.scan': 'Anomaly scan',
   'access.superadmin_bypass': 'Superadmin bypass',
 };
@@ -33,12 +38,18 @@ const ACTION_LABEL: Record<AuditAction, string> = {
 const ACTION_VARIANT: Record<AuditAction, Variant> = {
   'user.invite': 'outline',
   'user.disable': 'warning',
+  'user.remove': 'destructive',
+  // Destructive, in both directions. A promotion hands over every
+  // account's spend and a demotion can strip the last administrator, so
+  // neither belongs in the same shade as renaming a connection.
+  'user.role': 'destructive',
   'grant.create': 'success',
   'grant.revoke': 'warning',
   'connection.create': 'success',
   'connection.update': 'outline',
   'connection.enable': 'success',
   'connection.disable': 'warning',
+  'connection.delete': 'destructive',
   'anomaly.scan': 'outline',
   'access.superadmin_bypass': 'destructive',
 };
@@ -54,6 +65,8 @@ const variantFor = (action: string): Variant => ACTION_VARIANT[action as AuditAc
 
 type Scope = 'all' | 'access' | 'bypass';
 
+const ACCESS_ACTIONS = /^(grant\.|user\.role$|user\.remove$|user\.disable$)/;
+
 export function AuditView() {
   const { audit, loading, error, reload } = useAdmin();
   const now = useDemoNow();
@@ -65,7 +78,11 @@ export function AuditView() {
     const term = query.trim().toLowerCase();
     return audit.filter((e) => {
       if (scope === 'bypass' && e.action !== 'access.superadmin_bypass') return false;
-      if (scope === 'access' && !e.action.startsWith('grant.')) return false;
+      // "Access" is not only grants. A superadmin promotion is the
+      // largest access change the product can make -- it replaces the
+      // grant predicate outright -- and a removal is the largest
+      // revocation, so both belong in the filter an auditor reaches for.
+      if (scope === 'access' && !ACCESS_ACTIONS.test(e.action)) return false;
       if (!term) return true;
       return (
         e.actor.toLowerCase().includes(term) ||

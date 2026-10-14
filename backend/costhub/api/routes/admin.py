@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, EmailStr, Field
 
 from costhub.api.deps import SuperAdmin
+from costhub.api.routes import user_edits
 from costhub.db import fetch_all
 from costhub.rbac import admin as rbac
 from costhub.rbac import pool
@@ -72,6 +73,11 @@ def invite(who: SuperAdmin, body: InviteIn) -> dict:
         )
     return {"id": uid, "email": str(body.email).lower()}
 
+
+# Removing a user and changing their role live in routes/user_edits.py,
+# mounted at the bottom of this file so the paths are unchanged. They are
+# the two routes that can take access away, and they share a set of
+# refusals that is worth reading in one place.
 
 # ---------------------------------------------------------------- grants
 
@@ -162,3 +168,9 @@ def ingest_runs(_: SuperAdmin, limit: Annotated[int, Query(ge=1, le=200)] = 50) 
         {"lim": limit},
     )
     return {"data": rows, "row_count": len(rows)}
+
+
+# Mounted last, once every route above exists, and under this router so
+# `DELETE /admin/users/{id}` and `POST /admin/users/{id}/role` keep the
+# /admin prefix and the `admin` tag.
+router.include_router(user_edits.router)

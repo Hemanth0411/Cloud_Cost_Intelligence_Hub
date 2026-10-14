@@ -89,7 +89,16 @@ def create_user(email: str) -> str:
             # idempotent too, so the whole invite can be retried safely --
             # which matters, because a partial failure is recovered by
             # running it again.
-            return "exists"
+            #
+            # AND IT RE-ENABLES THEM, which is not decoration.
+            # `disable_user` below is how a removed user stops being able
+            # to sign in, and AdminCreateUser does not clear that: without
+            # this line, removing someone and then inviting them again
+            # gave them a revived `users` row and a pool user still
+            # disabled -- an invite that cannot work, which is the exact
+            # failure this module was written to end. `invite_user`
+            # un-deletes the row; this un-disables the login.
+            return "re-enabled" if _enable(client, s, email) else "exists"
         if code == "UserLambdaValidationException":
             # The pre-sign-up trigger rejected it, and the only rule it
             # enforces is the email domain. Say that, rather than
@@ -99,3 +108,71 @@ def create_user(email: str) -> str:
                 f"@{s.allowed_email_domain} addresses"
             ) from exc
         raise PoolError(f"could not create the pool user for {email}: {exc}") from exc
+
+
+def _enable(client, s, email: str) -> bool:
+    """Clear a disabled pool user, for the re-invite path. Best effort.
+
+    Returns whether it changed anything. A failure here is NOT raised:
+    the caller is inside `invite_user`'s transaction, and refusing an
+    otherwise-good invite because the re-enable call failed would leave
+    the operator with no way forward at all. The invite reports "exists"
+    instead, which is true, and a retry tries again.
+    """
+    from botocore.exceptions import ClientError
+
+    try:
+        client.admin_enable_user(UserPoolId=s.cognito_user_pool_id, Username=email)
+        return True
+    except ClientError as exc:
+        log.warning("could not re-enable the pool user for %s: %s", email, exc)
+        return False
+
+
+def disable_user(email: str) -> str:
+    """Stop a removed user signing in. Idempotent.
+
+    Returns one of "disabled", "absent" or "skipped".
+
+    DISABLE, NOT DELETE, and the choice is deliberate:
+
+    * It mirrors what the database does. `users` is soft-deleted so the
+      `audit_log` rows naming that user still resolve to a row; a pool
+      user hard-deleted would leave the other half of the same identity
+      gone, and re-inviting the person would mint a NEW Cognito `sub`.
+      `identities.subject` stores that sub, so a delete orphans those
+      rows while a disable keeps the pairing intact.
+    * It is reversible by the invite path, which is the only way a
+      removed person comes back. `create_user` re-enables above.
+    * It is sufficient. Cognito refuses both authentication and token
+      refresh for a disabled user, so no new session can start and an
+      existing one cannot be extended.
+
+    The app does not depend on this call to deny access, and that is
+    worth knowing before trusting it: `api/deps._load_user` requires
+    `deleted_at IS NULL`, so a removed user is refused by every endpoint
+    the moment the row is stamped -- even with a still-valid token, and
+    even if this call fails. What this prevents is the narrower and
+    stranger thing: someone removed from the product still receiving
+    login codes and reaching a signed-in shell with nothing in it.
+    """
+    if not pool_configured():
+        log.info("no Cognito pool configured; %s keeps no login to disable", email)
+        return "skipped"
+
+    import boto3
+    from botocore.exceptions import ClientError
+
+    s = settings()
+    client = boto3.client("cognito-idp", region_name=s.aws_region)
+
+    try:
+        client.admin_disable_user(UserPoolId=s.cognito_user_pool_id, Username=email)
+        return "disabled"
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code", "")
+        if code == "UserNotFoundException":
+            # Nothing to disable. True for anyone invited before the pool
+            # write existed, and for a local row that never had a login.
+            return "absent"
+        raise PoolError(f"could not disable the pool user for {email}: {exc}") from exc

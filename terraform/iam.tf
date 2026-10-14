@@ -88,6 +88,16 @@ data "aws_iam_policy_document" "lambda" {
       "cognito-idp:AdminCreateUser",
       "cognito-idp:AdminGetUser",
       "cognito-idp:ListUsers",
+
+      # Removing a user from the app disables their pool user, or they
+      # keep a working sign-in after being removed -- see
+      # rbac/pool.disable_user for why disable and not delete. Enable is
+      # the other half: inviting a removed person back has to clear it,
+      # otherwise the revived account cannot log in and the invite is a
+      # lie. AdminDeleteUser is deliberately NOT here; nothing in the
+      # code calls it, and identities.subject would be orphaned by it.
+      "cognito-idp:AdminDisableUser",
+      "cognito-idp:AdminEnableUser",
     ]
     resources = [aws_cognito_user_pool.main.arn]
   }

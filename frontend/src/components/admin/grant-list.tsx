@@ -72,14 +72,24 @@ export function GrantList({
                   {left <= 0 ? 'Expired' : `${left}d left`}
                 </Badge>
               )}
+              {/* LABELLED, not an icon on its own. This is the only
+                  control in the product that takes away access to a
+                  single account, and as a bare shield glyph it was both
+                  unfindable and ambiguous -- it could as easily have
+                  meant "this grant is protected". The aria-label names
+                  the account so a screen reader does not announce four
+                  identical "Revoke" buttons. */}
               {onRevoke && (
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => onRevoke(grant)}
                   aria-label={`Revoke access to ${grant.accountName}`}
+                  title={`Revoke access to ${grant.accountName} only`}
+                  className="text-destructive hover:text-destructive"
                 >
-                  <ShieldOff className="h-4 w-4" aria-hidden />
+                  <ShieldOff className="mr-1.5 h-3.5 w-3.5" aria-hidden />
+                  Revoke
                 </Button>
               )}
             </div>

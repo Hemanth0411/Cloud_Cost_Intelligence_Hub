@@ -1,11 +1,14 @@
 'use client';
 
-import { KeyRound, ShieldCheck, UserPlus, Users } from 'lucide-react';
+import { ChevronDown, ChevronRight, KeyRound, ShieldCheck, UserPlus, Users } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { useAdmin } from '@/components/admin/admin-context';
 import { GrantDialog } from '@/components/admin/grant-dialog';
 import { GrantList } from '@/components/admin/grant-list';
 import { InviteDialog } from '@/components/admin/invite-dialog';
+import { UserActions } from '@/components/admin/user-actions';
+import { UserRemoveDialog } from '@/components/admin/user-remove-dialog';
+import { UserRoleDialog } from '@/components/admin/user-role-dialog';
 import { KpiCard } from '@/components/dashboard/kpi-card';
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
@@ -15,7 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useDemoNow } from '@/hooks/use-demo-now';
 import { formatRelative } from '@/lib/format';
 import { visibleAccountCount } from '@/lib/services/admin-service';
-import type { Grant, ManagedUser, UserStatus } from '@/types/domain';
+import type { ManagedUser, UserStatus } from '@/types/domain';
 import { AdminState } from './admin-state';
 
 const STATUS_VARIANT: Record<UserStatus, 'success' | 'warning' | 'secondary'> = {
@@ -25,12 +28,13 @@ const STATUS_VARIANT: Record<UserStatus, 'success' | 'warning' | 'secondary'> = 
 };
 
 export function UsersView() {
-  const { users, grants, accounts, grantsFor, revoke, disable, enable, loading, error, reload, can } =
-    useAdmin();
+  const { users, grants, accounts, grantsFor, revoke, loading, error, reload } = useAdmin();
   const now = useDemoNow();
 
   const [inviting, setInviting] = useState(false);
   const [granting, setGranting] = useState<ManagedUser | null>(null);
+  const [changingRole, setChangingRole] = useState<ManagedUser | null>(null);
+  const [removing, setRemoving] = useState<ManagedUser | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   // The accounts the API says exist, not the mock catalogue. In live
@@ -42,10 +46,6 @@ export function UsersView() {
   const withoutAccess = users.filter(
     (u) => u.role !== 'superadmin' && u.status !== 'disabled' && grantsFor(u.id).length === 0,
   ).length;
-
-  function onRevoke(grant: Grant): void {
-    revoke(grant.id, 'Revoked from the users screen');
-  }
 
   return (
     <div className="space-y-6">
@@ -108,18 +108,38 @@ export function UsersView() {
                   <Fragment key={user.id}>
                     <TableRow>
                       <TableCell>
+                        {/* The chevron is not decoration. The grants
+                            panel -- and the only per-account revoke in
+                            the product -- lives behind this toggle, and
+                            with nothing but a bold name there was no
+                            sign the row opened at all. */}
                         <button
                           type="button"
                           onClick={() => setExpanded(open ? null : user.id)}
-                          className="text-left"
+                          className="flex items-start gap-1.5 text-left"
                           aria-expanded={open}
                         >
-                          <span className="block text-sm font-medium">
-                            {user.displayName ?? user.email}
-                          </span>
-                          {user.displayName && (
-                            <span className="block text-xs text-muted-foreground">{user.email}</span>
+                          {open ? (
+                            <ChevronDown
+                              className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
+                              aria-hidden
+                            />
+                          ) : (
+                            <ChevronRight
+                              className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
+                              aria-hidden
+                            />
                           )}
+                          <span>
+                            <span className="block text-sm font-medium">
+                              {user.displayName ?? user.email}
+                            </span>
+                            {user.displayName && (
+                              <span className="block text-xs text-muted-foreground">
+                                {user.email}
+                              </span>
+                            )}
+                          </span>
                         </button>
                       </TableCell>
                       <TableCell>
@@ -145,35 +165,34 @@ export function UsersView() {
                         {user.lastSeenAt ? formatRelative(user.lastSeenAt, now) : 'never'}
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          <Button variant="outline" size="sm" onClick={() => setGranting(user)}>
-                            Grant
-                          </Button>
-                          {/* No endpoint enables or disables a user, so in
-                              live mode the control is absent rather than
-                              present and broken. See CAPABILITIES. */}
-                          {can.canSetUserStatus &&
-                            (user.status === 'disabled' ? (
-                              <Button variant="ghost" size="sm" onClick={() => enable(user.id)}>
-                                Enable
-                              </Button>
-                            ) : (
-                              <Button variant="ghost" size="sm" onClick={() => disable(user.id)}>
-                                Disable
-                              </Button>
-                            ))}
-                        </div>
+                        <UserActions
+                          user={user}
+                          onGrant={() => setGranting(user)}
+                          onChangeRole={() => setChangingRole(user)}
+                          onRemove={() => setRemoving(user)}
+                        />
                       </TableCell>
                     </TableRow>
                     {open && (
                       <TableRow>
                         <TableCell colSpan={6} className="bg-muted/30">
-                          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                             {user.role === 'superadmin'
                               ? 'Superadmin — sees every account regardless of grants'
                               : 'Grants'}
                           </p>
-                          <GrantList grants={userGrants} now={now} onRevoke={onRevoke} />
+                          {/* Says what Revoke does, because it takes one
+                              account and reads like all of them. This is
+                              the only control in the product that
+                              removes a single account, and nothing on
+                              screen stated its scope. */}
+                          {user.role !== 'superadmin' && userGrants.length > 0 && (
+                            <p className="mb-2 mt-1 text-xs text-muted-foreground">
+                              Revoke removes access to that one account. Their other grants are
+                              unaffected, and the revoked grant is kept with a timestamp.
+                            </p>
+                          )}
+                          <GrantList grants={userGrants} now={now} onRevoke={revoke} />
                         </TableCell>
                       </TableRow>
                     )}
@@ -187,6 +206,8 @@ export function UsersView() {
 
       <InviteDialog open={inviting} onClose={() => setInviting(false)} />
       <GrantDialog user={granting} onClose={() => setGranting(null)} />
+      <UserRoleDialog user={changingRole} onClose={() => setChangingRole(null)} />
+      <UserRemoveDialog user={removing} onClose={() => setRemoving(null)} />
     </div>
   );
 }

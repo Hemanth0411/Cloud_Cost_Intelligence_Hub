@@ -370,12 +370,15 @@ export interface Grant {
 export type AuditAction =
   | 'user.invite'
   | 'user.disable'
+  | 'user.remove'
+  | 'user.role'
   | 'grant.create'
   | 'grant.revoke'
   | 'connection.create'
   | 'connection.update'
   | 'connection.enable'
   | 'connection.disable'
+  | 'connection.delete'
   | 'anomaly.scan'
   | 'access.superadmin_bypass';
 

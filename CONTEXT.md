@@ -52,7 +52,7 @@ changed mid-project when an apply replaced a resource. Always
 | Cognito email-OTP sign-in | **live**, proven end to end; the managed login page is branded from `branding/` — see its README |
 | Backend API (all endpoints) | **live**, 207 tests passing |
 | Database + migrations | **live** (RDS) |
-| `/admin/users`, `/admin/audit` | **live data** |
+| `/admin/users`, `/admin/audit` | **live data.** Removing a user and granting/revoking superadmin are now routes, not CLI-only -- but the Cognito half of a removal needs the IAM apply in item 5d below |
 | Cost screens (dashboard, accounts, services, compare) | see `NEXT_PUBLIC_USE_MOCK` |
 | `/insights` | **has no backend endpoint at all.** Prose generated client-side. Cannot be real without Bedrock (TODO-18) |
 | `/anomalies` | **live and honestly empty.** The detector ran on 105 days of real data (2026-10-13): 30 series, **0 findings**, and that is a true negative -- see "The anomaly detector" below before concluding it is broken or tuning it |
@@ -295,6 +295,27 @@ Ordered.
    nothing long-lived — or, if nobody will create one, switch it to
    `secret` and enter an access key in Edit. Both now work from the
    browser; `profile` never will.
+5d. **`terraform apply` is OWED for the Cognito user-management IAM.**
+   `DELETE /admin/users/{id}` disables the removed person's pool user, and
+   inviting them back re-enables it, so `terraform/iam.tf` gained
+   `AdminDisableUser` and `AdminEnableUser` under `ManageInvitedUsers`.
+   Until that is applied the deployed API answers 200 with
+   `login_disabled: false` and an AccessDenied in `login_detail` -- the
+   person IS removed and every endpoint refuses them (`_load_user`
+   requires `deleted_at IS NULL`), but their Cognito login stays enabled
+   and they keep receiving codes for a shell with nothing in it. The
+   route reports that rather than hiding it, which is why this is
+   recoverable rather than silent. The UI says it too.
+5e. **The invite sends no email, and that is deliberate.**
+   `rbac/pool.create_user` passes `MessageAction="SUPPRESS"` because
+   Cognito's invitation exists to deliver a temporary password and this
+   pool is EMAIL_OTP only. So inviting someone delivers NOTHING: the
+   admin has to pass them the app URL themselves, and the one-time code
+   is emailed only when they sign in. The button used to say "Send
+   invite"; it now says "Create user" and the confirmation hands over a
+   copyable link. **Mail is not broken** -- SES has production access and
+   the sign-in code is delivered normally. Only the invite is silent, so
+   do not go debugging SES on the strength of "no email arrived".
 5c. **The `ingest`, `anomaly` and `alerts` Lambdas run an older build
    than `api`** unless the deploy named them. Check `CodeSha256` on all
    four before assuming a fix is live in the scheduled jobs.

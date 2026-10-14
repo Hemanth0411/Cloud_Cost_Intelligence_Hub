@@ -16,6 +16,8 @@
  *   inviteUser      -> POST   /admin/users
  *   grantAccess     -> POST   /admin/grants
  *   revokeGrant     -> DELETE /admin/grants/{id}
+ *   removeUser      -> DELETE /admin/users/{id}
+ *   changeUserRole  -> POST   /admin/users/{id}/role
  *
  * All of them are superadmin-only and the API enforces that regardless
  * of what the UI renders -- these screens are a convenience, not the
@@ -28,15 +30,19 @@
  * React tree, where a partially-arrived set renders rows with blank
  * names. They are requested in parallel and assembled here.
  *
- * TWO CAPABILITIES ARE MOCK-ONLY, and the flags below say so rather
- * than the buttons silently failing:
+ * ONE CAPABILITY IS STILL MOCK-ONLY, and the flag below says so rather
+ * than the button silently failing:
  *
  *  * `canSetUserStatus` -- there is no endpoint to enable or disable a
  *    user. The `users.status` column and its CHECK constraint exist;
- *    nothing in `api/routes/admin.py` writes them.
- *  * `canSetUserRole` -- `POST /admin/users` takes `email` and
- *    `display_name` only. A role picker on the invite dialog would be a
- *    control that changes nothing, which is worse than its absence.
+ *    nothing in the API writes them. Note this is NOT the same thing as
+ *    removing a user, which now has a real route: disable is a pause,
+ *    removal is a soft delete that also disables the Cognito login.
+ *  * `canSetRoleAtInvite` -- `POST /admin/users` takes `email` and
+ *    `display_name` only, so a role picker on the invite DIALOG would
+ *    change nothing. Changing a role AFTER the invite is real in both
+ *    modes; the two were one flag called `canSetUserRole`, and the name
+ *    could not tell them apart.
  */
 import { del, get, getRows, post } from '@/lib/api/client';
 import { isMock } from '@/lib/mode';
@@ -62,8 +68,52 @@ export interface AdminSnapshot {
 /** What this mode can actually do, so the UI offers only that. */
 export const CAPABILITIES = {
   canSetUserStatus: isMock(),
-  canSetUserRole: isMock(),
+  /** A role picker on the invite dialog. The invite route has no role. */
+  canSetRoleAtInvite: isMock(),
 } as const;
+
+/**
+ * Why a removal would be refused, or null if it would not be.
+ *
+ * THE SERVER IS THE AUTHORITY. `rbac/users.py` re-checks both rules
+ * under a row lock, which is the only version that is safe against two
+ * administrators acting at once. This exists so the UI can disable the
+ * control and SAY WHY, instead of offering a button whose only outcome
+ * is a 409 -- and so mock mode refuses the same things live mode does,
+ * rather than demoing a product that would let you lock yourself out.
+ */
+export function removalRefusal(
+  target: ManagedUser,
+  actorEmail: string,
+  users: readonly ManagedUser[],
+): string | null {
+  if (target.email.toLowerCase() === actorEmail.toLowerCase()) {
+    return 'You cannot remove your own account.';
+  }
+  if (target.role === 'superadmin' && superadminCount(users) <= 1) {
+    return 'This is the only superadmin. Promote someone else first.';
+  }
+  return null;
+}
+
+/** The same two rules, for taking superadmin away. */
+export function demotionRefusal(
+  target: ManagedUser,
+  actorEmail: string,
+  users: readonly ManagedUser[],
+): string | null {
+  if (target.role !== 'superadmin') return null;
+  if (target.email.toLowerCase() === actorEmail.toLowerCase()) {
+    return 'You cannot remove your own superadmin role.';
+  }
+  if (superadminCount(users) <= 1) {
+    return 'This is the only superadmin. Promote someone else first.';
+  }
+  return null;
+}
+
+const superadminCount = (users: readonly ManagedUser[]): number =>
+  users.filter((u) => u.role === 'superadmin').length;
 
 // ----------------------------------------------------- pure selectors
 
@@ -418,6 +468,101 @@ export async function revokeGrant(grantId: string, actor: string, reason?: strin
     entityId: grantId,
     before: { account_id: target.accountId, service_name: target.serviceName },
     after: { revoked_at: revokedAt, reason: reason ?? target.reason },
+  });
+}
+
+/** What `DELETE /admin/users/{id}` answers, and the UI has to report. */
+export interface RemovalOutcome {
+  /** False means they are out of the app but their Cognito login is not. */
+  loginDisabled: boolean;
+  /** The raw verdict: "disabled", "absent", "skipped", or "failed: ...". */
+  loginDetail: string;
+}
+
+/**
+ * Remove a user. Soft delete, and their Cognito login is disabled.
+ *
+ * WHAT "REMOVE" DOES NOT DO, because the word implies more than it
+ * delivers: the `users` row survives with `deleted_at` stamped, so the
+ * audit entries naming this person still resolve, and their grants are
+ * left exactly as they were. Nothing of theirs is erased. What stops is
+ * access -- every endpoint refuses a removed row, and Cognito stops
+ * issuing them a code.
+ *
+ * `loginDisabled` is returned rather than assumed. The database stamp is
+ * what denies access and it commits first, so the Cognito half can fail
+ * on its own; a UI that showed an unconditional success would hide an
+ * enabled pool user for someone who has left.
+ */
+export async function removeUser(userId: string, actor: string): Promise<RemovalOutcome> {
+  if (!isMock()) {
+    const body = await del<{ loginDisabled?: boolean; loginDetail?: string }>(
+      `/admin/users/${encodeURIComponent(userId)}`,
+    );
+    return {
+      loginDisabled: body.loginDisabled ?? false,
+      loginDetail: body.loginDetail ?? 'unknown',
+    };
+  }
+
+  const state = mock();
+  const target = state.users.find((u) => u.id === userId);
+  if (!target) throw new Error('That user is no longer on the list.');
+  // The server's refusals, re-run here so a demo cannot do what the
+  // product will not. Live mode reaches the real check instead.
+  // Against the overlay's OWN list, not a snapshot handed in by the
+  // caller: that list is what the demo is actually showing, and a stale
+  // copy would count a superadmin who has already gone.
+  const refusal = removalRefusal(target, actor, state.users);
+  if (refusal) throw new Error(refusal);
+
+  state.users = state.users.filter((u) => u.id !== userId);
+  record({
+    actor,
+    action: 'user.remove',
+    entityType: 'user',
+    entityId: userId,
+    before: { email: target.email, role: target.role, status: target.status },
+    after: { deleted: true, grants_kept: true, login: 'disabled' },
+  });
+  return { loginDisabled: true, loginDetail: 'disabled' };
+}
+
+/**
+ * Grant or revoke superadmin.
+ *
+ * Promotion is unrestricted. Demotion refuses the caller's own row and
+ * the last superadmin, because either would leave nobody able to reach
+ * these screens -- and the only recovery is a CLI command on the one
+ * laptop that holds the deployed database URL.
+ */
+export async function changeUserRole(
+  userId: string,
+  role: Role,
+  actor: string,
+): Promise<void> {
+  if (!isMock()) {
+    await post(`/admin/users/${encodeURIComponent(userId)}/role`, { role });
+    return;
+  }
+
+  const state = mock();
+  const target = state.users.find((u) => u.id === userId);
+  if (!target) throw new Error('That user is no longer on the list.');
+  if (target.role === role) return;
+  if (role !== 'superadmin') {
+    const refusal = demotionRefusal(target, actor, state.users);
+    if (refusal) throw new Error(refusal);
+  }
+
+  state.users = state.users.map((u) => (u.id === userId ? { ...u, role } : u));
+  record({
+    actor,
+    action: 'user.role',
+    entityType: 'user',
+    entityId: userId,
+    before: { email: target.email, role: target.role },
+    after: { role },
   });
 }
 

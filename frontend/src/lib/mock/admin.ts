@@ -27,6 +27,23 @@ function iso(daysAgo: number, hourOffset = 0): string {
 }
 
 const USERS: ManagedUser[] = [
+  // THE SIGNED-IN DEMO ADMIN, and they have to be here.
+  //
+  // In live mode a superadmin reading this screen sees their own row,
+  // because `GET /admin/users` returns every user. The mock list left
+  // the demo account out, so the one person looking at the table was
+  // the one person missing from it -- and the rules that refuse to let
+  // you remove or demote YOURSELF were unreachable in a demo, since no
+  // row matched the session. Their email is DEMO_CREDENTIALS.email.
+  {
+    id: 'u-0000',
+    email: 'admin@costhub.demo',
+    displayName: 'You (demo admin)',
+    role: 'superadmin',
+    status: 'active',
+    invitedAt: iso(30),
+    lastSeenAt: iso(0),
+  },
   {
     id: 'u-0001',
     email: 'hemanth.reddy@chryselys.com',

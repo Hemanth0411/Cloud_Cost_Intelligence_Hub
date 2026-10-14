@@ -98,8 +98,25 @@ def invite_user(
             INSERT INTO users (email, display_name, created_by, updated_by)
             VALUES (%(email)s, %(name)s, %(actor)s, %(actor)s)
             ON CONFLICT (email) DO UPDATE
+              -- INVITING SOMEONE BACK REVIVES THEM. `rbac/users.remove_user`
+              -- is a soft delete, so without these three lines a removed
+              -- person could never return: the upsert found their row,
+              -- reported success, and `deleted_at` stayed stamped --
+              -- which `api/deps._load_user` refuses. An invite that
+              -- cannot produce a usable account is the failure this
+              -- module exists to prevent, so the revive belongs here and
+              -- not in a separate "undelete" nobody would find.
+              --
+              -- `status` only moves for a row that WAS deleted. Re-inviting
+              -- a live 'active' user must not knock them back to 'invited'.
+              -- The role is deliberately left alone: the row comes back as
+              -- it was, and a superadmin who removed a superadmin can see
+              -- that in the users table straight afterwards.
               SET updated_at = now(), updated_by = %(actor)s,
-                  revision = users.revision + 1
+                  revision = users.revision + 1,
+                  deleted_at = NULL, deleted_by = NULL,
+                  status = CASE WHEN users.deleted_at IS NOT NULL
+                                THEN 'invited' ELSE users.status END
             RETURNING id, status
             """,
             {"email": normalized, "name": display_name, "actor": actor},
