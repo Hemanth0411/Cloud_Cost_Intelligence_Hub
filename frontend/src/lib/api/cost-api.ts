@@ -344,6 +344,24 @@ export function ackFinding(findingId: string, status: 'acknowledged' | 'dismisse
   return post(`/anomalies/${encodeURIComponent(findingId)}/ack`, undefined, { query: { status } });
 }
 
+/** `POST /anomalies/scan`: what one detection pass did. Superadmin only. */
+export interface ScanOutcome {
+  seriesScanned: number;
+  findings: number;
+  created: number;
+  updated: number;
+}
+
+export async function runDetection(): Promise<ScanOutcome> {
+  const raw = await post<Partial<ScanOutcome>>('/anomalies/scan');
+  return {
+    seriesScanned: Number(raw.seriesScanned ?? 0),
+    findings: Number(raw.findings ?? 0),
+    created: Number(raw.created ?? 0),
+    updated: Number(raw.updated ?? 0),
+  };
+}
+
 export function markAlertEventRead(eventId: string): Promise<unknown> {
   return post(`/alerts/feed/${encodeURIComponent(eventId)}/read`);
 }

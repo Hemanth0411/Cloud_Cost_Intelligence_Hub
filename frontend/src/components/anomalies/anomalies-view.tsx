@@ -30,6 +30,7 @@ import { AnomalyTimelineChart } from './anomaly-timeline-chart';
 import { useDetectionConfig } from './detection-config-context';
 import { DetectionSettingsDialog } from './detection-settings-dialog';
 import { InvestigationDialog } from './investigation-dialog';
+import { RunDetectionButton } from './run-detection-button';
 
 const KIND_HELP: Record<AnomalyKind, string> = {
   spike: 'One day far above comparable days',
@@ -72,7 +73,8 @@ export function AnomaliesView() {
   const { filters } = useFilters();
   const { config, isDefault, reset } = useDetectionConfig();
   const { overrides, setStatus } = useAnomalyStatus();
-  const state = useAnomalyData(filters, overrides, config);
+  const [refresh, setRefresh] = useState(0);
+  const state = useAnomalyData(filters, overrides, config, refresh);
   const configurable = COST_CAPABILITIES.detectionSettings;
   const kinds = configurable ? CLIENT_KINDS : SERVER_KINDS;
 
@@ -124,6 +126,7 @@ export function AnomaliesView() {
                 <Badge variant={isDefault ? 'secondary' : 'default'} className="ml-1">{presetLabel}</Badge>
               </Button>
             )}
+            {!configurable && <RunDetectionButton onDone={() => setRefresh((n) => n + 1)} />}
             <Button
               variant="outline"
               size="sm"

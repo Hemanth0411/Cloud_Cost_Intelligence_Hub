@@ -1,7 +1,9 @@
-"""Anomaly findings.
+"""Anomaly findings: read them, act on them, and run detection now.
 
-Detection is not built yet; these endpoints read the table so the
-frontend can be developed against the real shape.
+Detection itself lives in `costhub/anomaly` and runs nightly from
+EventBridge (`handler_anomaly`). `POST /anomalies/scan` runs the same
+pass on demand, so nobody has to wait for 06:30 UTC or invoke a Lambda
+by hand to see what a fresh import contains.
 """
 from __future__ import annotations
 
@@ -9,7 +11,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Path, Query, status
 
-from costhub.api.deps import CurrentUser
+from costhub.api.deps import CurrentUser, SuperAdmin
 from costhub.api.envelope import as_of
 from costhub.db import connect, fetch_all
 
@@ -55,6 +57,36 @@ def list_findings(
         {"user_id": who.user_id, "st": status_filter, "lim": limit},
     )
     return {"data": rows, "as_of": as_of(), "row_count": len(rows)}
+
+
+@router.post("/scan", summary="Run anomaly detection now")
+def scan_now(who: SuperAdmin) -> dict:
+    """Run the nightly detection pass inline and return what it found.
+
+    SUPERADMIN ONLY, because detection reads every account as the system
+    principal -- an anomaly in an account nobody holds a grant for is
+    still an anomaly -- and the findings it writes are seen by everyone.
+    `runner.scan` writes one audit row naming the caller.
+
+    INLINE, NOT AN INVOKE OF THE ANOMALY LAMBDA: an async invoke returns
+    nothing, and the button's whole point is the answer. It fits the
+    29-second budget comfortably today (the scheduled run takes ~3s over
+    six series); it grows with the number of account x service series,
+    which is the first thing to revisit if the estate gets large.
+
+    Safe to repeat: findings are upserted on their natural key and a
+    status somebody already set is never reset to new.
+    """
+    from costhub.anomaly import runner
+
+    result = runner.scan(actor=who.email)
+    return {
+        "series_scanned": result.series_scanned,
+        "findings": result.findings,
+        "created": result.created,
+        "updated": result.updated,
+        "by_kind": result.by_kind or {},
+    }
 
 
 @router.post("/{finding_id}/ack", summary="Acknowledge or dismiss a finding")
